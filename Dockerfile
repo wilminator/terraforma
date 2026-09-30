@@ -25,5 +25,7 @@ CMD ["uvicorn", "vanguard_tavern:app", "--factory", "--host", "0.0.0.0", "--port
 FROM base AS test
 RUN pip install -e ".[dev]"
 COPY tests ./tests
+# The tests run as terraforma and need to write pytest's cache in /app.
+RUN chown terraforma:terraforma /app
 USER terraforma
 CMD ["pytest"]
