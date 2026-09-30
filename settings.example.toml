@@ -1,0 +1,11 @@
+# Copy to settings.toml (never commit that one) and fill in.
+
+# postgresql+asyncpg://..., mysql+aiomysql://... or sqlite+aiosqlite:///path.db
+database_url = "postgresql+asyncpg://terraforma:terraforma@postgres/terraforma"
+
+# Signs the login cookie. At least 32 random characters, e.g.
+#   python -c "import secrets; print(secrets.token_urlsafe(48))"
+session_secret = "change me to a long random string, 32 characters or more"
+
+# HTTPS only. Set to false only for local development over plain http.
+secure_cookies = false
