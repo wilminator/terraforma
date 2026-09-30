@@ -11,7 +11,9 @@ from contextlib import asynccontextmanager
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Path, Request, WebSocket, WebSocketDisconnect, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -90,6 +92,16 @@ def create_app(settings: Settings, game: Game | None = None) -> FastAPI:
     async def about(request: Request) -> dict:
         game = request.app.state.game
         return {"engine": ENGINE.strip(), "game": game.name if game else None}
+
+    @app.get("/api/health")
+    async def health(request: Request) -> JSONResponse:
+        """For the container's health check: up, and the database answers."""
+        try:
+            async with request.app.state.sessionmaker() as session:
+                await session.execute(text("SELECT 1"))
+        except Exception:
+            return JSONResponse({"ok": False, "database": False}, status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return JSONResponse({"ok": True, "database": True})
 
     @app.post("/api/login")
     async def login(body: LoginRequest, request: Request, db: Db) -> dict:

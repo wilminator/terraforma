@@ -1,0 +1,46 @@
+# Every push and pull request: the whole test suite on SQLite, Postgres and MySQL.
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: terraforma
+          POSTGRES_PASSWORD: terraforma
+          POSTGRES_DB: terraforma_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U terraforma"
+          --health-interval 2s --health-retries 30
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: terraforma-root
+          MYSQL_USER: terraforma
+          MYSQL_PASSWORD: terraforma
+          MYSQL_DATABASE: terraforma_test
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uterraforma -pterraforma"
+          --health-interval 2s --health-retries 60
+    env:
+      TERRAFORMA_TEST_DATABASES: >-
+        sqlite+aiosqlite:///{tmp}/test.db,
+        postgresql+asyncpg://terraforma:terraforma@127.0.0.1:5432/terraforma_test,
+        mysql+aiomysql://terraforma:terraforma@127.0.0.1:3306/terraforma_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: pytest

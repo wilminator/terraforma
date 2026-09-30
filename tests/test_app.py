@@ -6,7 +6,8 @@ from starlette.websockets import WebSocketDisconnect
 
 from terraforma.accounts.service import create_account
 from terraforma.app import create_app
-from terraforma.db.session import create_tables, make_engine, make_sessionmaker
+from terraforma.db.migrate import upgrade
+from terraforma.db.session import make_engine, make_sessionmaker
 from terraforma.settings import Settings
 
 from .conftest import run
@@ -25,7 +26,7 @@ def client(tmp_path):
 
     async def setup():
         engine = make_engine(url)
-        await create_tables(engine)
+        await upgrade(engine)
         async with make_sessionmaker(engine)() as session:
             await create_account(session, "Mike", "correct horse battery")
             await session.commit()
@@ -41,6 +42,10 @@ def log_in(client) -> str:
     answer = client.post("/api/login", json={"username": "mike", "password": "correct horse battery"})
     assert answer.status_code == 200, answer.text
     return answer.json()["csrf_token"]
+
+
+def test_health(client):
+    assert client.get("/api/health").json() == {"ok": True, "database": True}
 
 
 def test_login(client):
