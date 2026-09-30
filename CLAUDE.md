@@ -16,6 +16,6 @@
   - Encryption keys have two slots.
   - A player's public handle can't match their username or email.
   - Admins earn tokens only when fighting as a player.
-- Only Mike's own art, sound and music may be used.
+- Assets (art, sound, music, fonts) must be legally usable. Many of DragonStar's assets are copyrighted and can't come across: they need replacements. Use only assets Mike made, commissioned, or that carry a license allowing use in the game (for example CC0, or CC-BY with credit given). Record each asset's source and license beside it, and never add one whose license is unknown.
 - The browser code ported from DragonStar gets no feature work until DragonStar's features are ported. Fixes needed for the new server are fine.
 - The plan lives in the TerraFroma plan doc. Work goes on branches with pull requests.
