@@ -1,0 +1,62 @@
+# Local development and tests.
+#
+#   docker compose up app                   the game on http://localhost:8000 (Postgres)
+#   docker compose run --rm test            every test, on SQLite, Postgres and MySQL
+#   docker compose run --rm test pytest -k clock    some of them
+#
+# The game reads settings.toml from the project folder (copy
+# settings.example.toml to start).
+
+services:
+  app:
+    build: { context: ., target: app }
+    ports: ["8000:8000"]
+    volumes:
+      - ./settings.toml:/app/settings.toml:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  test:
+    build: { context: ., target: test }
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+    environment:
+      TERRAFORMA_TEST_DATABASES: >-
+        sqlite+aiosqlite:///{tmp}/test.db,
+        postgresql+asyncpg://terraforma:terraforma@postgres/terraforma_test,
+        mysql+aiomysql://terraforma:terraforma@mysql/terraforma_test
+    depends_on:
+      postgres: { condition: service_healthy }
+      mysql: { condition: service_healthy }
+    profiles: [test]
+
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: terraforma
+      POSTGRES_PASSWORD: terraforma
+      POSTGRES_DB: terraforma
+    volumes:
+      - postgres:/var/lib/postgresql/data
+      - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "terraforma"]
+      interval: 2s
+      retries: 30
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: terraforma-root
+      MYSQL_USER: terraforma
+      MYSQL_PASSWORD: terraforma
+      MYSQL_DATABASE: terraforma_test
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uterraforma", "-pterraforma"]
+      interval: 2s
+      retries: 60
+    profiles: [test]
+
+volumes:
+  postgres:
