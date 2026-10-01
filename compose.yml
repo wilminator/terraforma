@@ -58,7 +58,7 @@ services:
       POSTGRES_USER: terraforma
       POSTGRES_PASSWORD: terraforma
       POSTGRES_DB: terraforma_test
-    command: [postgres, -c, fsync=off, -c, synchronous_commit=off, -c, full_page_writes=off]
+    command: [postgres, -c, fsync=off, -c, synchronous_commit=off, -c, full_page_writes=off, -c, max_connections=300]
     tmpfs: [/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "terraforma", "-d", "terraforma_test"]
@@ -73,7 +73,7 @@ services:
       MYSQL_USER: terraforma
       MYSQL_PASSWORD: terraforma
       MYSQL_DATABASE: terraforma_test
-    command: [--innodb-flush-log-at-trx-commit=0, --innodb-doublewrite=OFF, --sync-binlog=0, --skip-log-bin]
+    command: [--innodb-flush-log-at-trx-commit=0, --innodb-doublewrite=OFF, --sync-binlog=0, --skip-log-bin, --performance-schema=OFF, --innodb-buffer-pool-size=256M, --max-connections=300]
     tmpfs: [/var/lib/mysql]
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uterraforma", "-pterraforma"]
