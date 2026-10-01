@@ -1,4 +1,4 @@
-"""Accounts: creating them, confirming email, checking passwords, resetting them (Argon2id)."""
+"""Accounts: creating them, confirming and changing email, checking passwords, resetting them (Argon2id)."""
 
 import re
 
@@ -159,4 +159,43 @@ async def reset_password(session: AsyncSession, account_id: int, version: int, p
     # Getting the reset mail proves the address, as the confirmation link would.
     if account.email_confirmed_at is None:
         account.email_confirmed_at = wallclock.now()
+    return account
+
+
+def check_email(email: str) -> str:
+    """The address, trimmed, if it looks like one."""
+    email = email.strip()
+    if len(email) > 254 or not EMAIL.fullmatch(email):
+        raise AccountError("that doesn't look like an email address")
+    return email
+
+
+async def email_available(session: AsyncSession, account: Account, email: str) -> bool:
+    """Whether $email is free for $account to move to (it isn't another account's)."""
+    other = await session.scalar(select(Account.id).where(Account.email_key == email_key(email), Account.id != account.id))
+    return other is None
+
+
+async def change_email(session: AsyncSession, account_id: int, old_key: str, new_email: str) -> Account | None:
+    """Moves the account to $new_email, if it still has the address the link was made for.
+
+    The link went to the new address, so following it proves the player
+    controls it: the new address counts as confirmed. Every login ends, so
+    a stolen session can't outlive the change. None if the link is stale;
+    EmailTaken if someone took the address meanwhile; AccountError if the
+    handle would now give the new address away.
+    """
+    new_email = check_email(new_email)
+    account = await session.get(Account, account_id)
+    if account is None or account.email_key != old_key:
+        return None
+    if not await email_available(session, account, new_email):
+        raise EmailTaken("that email address already has an account")
+    if account.handle:
+        check_handle(account.handle, username=account.username, email=new_email)
+    account.email = new_email
+    account.email_key = email_key(new_email)
+    account.email_confirmed_at = wallclock.now()
+    account.session_version += 1
+    await session.flush()
     return account

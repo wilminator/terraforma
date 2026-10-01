@@ -20,6 +20,7 @@ LIFETIMES = {
     "confirm-email": 3 * 24 * 60 * 60,
     "password-reset": 60 * 60,
     "twofa-change": 60 * 60,
+    "change-email": 60 * 60,
 }
 
 

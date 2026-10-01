@@ -1,4 +1,5 @@
-"""The account calls: register, confirm email, log in (with a 2FA code when it's on) and out, reset a password, set a handle.
+"""The account calls: register, confirm email, log in (with a 2FA code when it's on) and out, reset a password,
+change the email address, set a handle.
 
 Calls made before logging in can't carry the CSRF token, but they only
 accept a JSON body, which another site's page can't send cross-origin
@@ -45,6 +46,10 @@ class LoginRequest(Strict):
 
 class HandleRequest(Strict):
     handle: str = Field(min_length=1, max_length=24)
+
+
+class EmailChangeRequest(Strict):
+    email: str = Field(min_length=3, max_length=254)
 
 
 class ResetRequest(Strict):
@@ -197,5 +202,69 @@ async def password_reset_complete(body: ResetComplete, request: Request, db: Db)
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
     if account is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "this link has already been used")
+    request.session.clear()
+    return {"ok": True, "username": account.username}
+
+
+@router.post("/email-change", status_code=status.HTTP_202_ACCEPTED)
+async def email_change(body: EmailChangeRequest, request: Request, account: ActingAccount, db: Db) -> dict:
+    """Mails a link to the NEW address; the change happens when it's followed. Never needs the password.
+
+    The old address is told too, so a hijacked login can't change it silently.
+    An address another account has gets a warning instead, and the caller
+    sees the same answer either way.
+    """
+    await limited(request, ratelimit.EMAIL_CHANGE_BY_ACCOUNT, str(account.id))
+    try:
+        new_email = service.check_email(body.email)
+        if account.handle:
+            service.check_handle(account.handle, username=account.username, email=new_email)
+    except service.AccountError as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
+    name = game_name(request)
+    if service.email_key(new_email) == account.email_key:
+        return ACCEPTED
+    if not await service.email_available(db, account, new_email):
+        await send(request, Mail(
+            to=new_email,
+            subject=f"{name}: someone tried to use your address",
+            body=f"Someone tried to move a {name} account to this email address, which already has one.\n\n"
+                 "If it was you, log in to that account instead. If not, you can ignore this.\n",
+        ))
+        return ACCEPTED
+    token = request.app.state.tokens.make("change-email", account.id, old=account.email_key, new=new_email)
+    await send(request, Mail(
+        to=new_email,
+        subject=f"{name}: confirm your new email address",
+        body=f"{account.username} asked to use this address for their {name} account.\n\n"
+             f"To make the change:\n\n{link(request, '/change-email', token)}\n\n"
+             "The link works for an hour, once, and logs the account out everywhere. If you didn't ask, ignore this.\n",
+    ))
+    await send(request, Mail(
+        to=account.email,
+        subject=f"{name}: your email address is being changed",
+        body=f"A change of the email address on {account.username} was requested, to {new_email}.\n\n"
+             "Nothing changes until the link sent to the new address is followed. If this wasn't you, "
+             "reset your password: that logs out whoever is in your account.\n",
+    ))
+    return ACCEPTED
+
+
+@router.post("/email-change/complete")
+async def email_change_complete(body: TokenRequest, request: Request, db: Db) -> dict:
+    """Following the link sent to the new address. Works once: the old address must still be the account's."""
+    try:
+        token = request.app.state.tokens.read("change-email", body.token)
+        account = await service.change_email(
+            db, token.account_id, str(token.data.get("old", "")), str(token.data.get("new", ""))
+        )
+    except TokenError as error:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from error
+    except service.EmailTaken as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
+    except service.AccountError as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
+    if account is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "this link is no longer valid")
     request.session.clear()
     return {"ok": True, "username": account.username}

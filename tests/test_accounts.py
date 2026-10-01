@@ -196,3 +196,92 @@ def test_rate_limits_store_no_names_or_addresses(mike):
 
 async def _subjects(db, query):
     return list((await db.scalars(query)).all())
+
+
+# --- changing the email address ---------------------------------------------
+
+NEW = "mike.new@example.com"
+
+
+@pytest.fixture
+def mike(app_client):
+    in_app_db(app_client, lambda db: create_account(db, "Mike", MIKE["password"], email=MIKE["email"], confirmed=True))
+    token = log_in(app_client).json()["csrf_token"]
+    return app_client, {"X-CSRF-Token": token}
+
+
+def ask_to_change(client, headers, email=NEW):
+    return client.post("/api/email-change", json={"email": email}, headers=headers)
+
+
+def test_changing_email_goes_by_a_link_to_the_new_address_and_never_asks_for_the_password(mike, mailbox):
+    client, headers = mike
+    assert ask_to_change(client, headers).status_code == 202
+    assert "confirm your new email" in mailbox.last_to(NEW).subject
+    assert "being changed" in mailbox.last_to(MIKE["email"]).subject, "the old address is warned"
+    assert client.post("/api/email-change/complete", json={"token": token_in(mailbox.last_to(NEW))}).status_code == 200
+    assert log_in(client, MIKE["password"]).status_code == 200, "same password, now with the new address"
+    assert client.post("/api/password-reset", json={"email": NEW}).status_code == 202
+    assert mailbox.last_to(NEW).subject.endswith("reset your password")
+
+
+def test_changing_email_ends_every_login(mike, mailbox):
+    client, headers = mike
+    ask_to_change(client, headers)
+    client.post("/api/email-change/complete", json={"token": token_in(mailbox.last_to(NEW))})
+    assert client.get("/api/me").status_code == 401
+
+
+def test_the_change_call_needs_login_and_the_csrf_token(app_client, mike):
+    client, headers = mike
+    assert client.post("/api/email-change", json={"email": NEW}).status_code == 403
+    client.post("/api/logout", headers=headers)
+    assert client.post("/api/email-change", json={"email": NEW}).status_code == 401
+
+
+def test_a_change_link_works_once_and_only_while_the_address_is_unchanged(mike, mailbox):
+    client, headers = mike
+    ask_to_change(client, headers)
+    first = token_in(mailbox.last_to(NEW))
+    ask_to_change(client, headers, "mike.other@example.com")
+    second = token_in(mailbox.last_to("mike.other@example.com"))
+    assert client.post("/api/email-change/complete", json={"token": first}).status_code == 200
+    assert client.post("/api/email-change/complete", json={"token": first}).status_code == 400, "once"
+    assert client.post("/api/email-change/complete", json={"token": second}).status_code == 400, "old address moved on"
+
+
+def test_change_links_expire_and_are_not_other_links(mike, mailbox, later):
+    client, headers = mike
+    ask_to_change(client, headers)
+    token = token_in(mailbox.last_to(NEW))
+    assert client.post("/api/confirm-email", json={"token": token}).status_code == 400
+    later(60 * 60 + 1)
+    assert client.post("/api/email-change/complete", json={"token": token}).status_code == 400
+
+
+def test_an_address_with_an_account_gets_a_warning_and_the_caller_cannot_tell(mike, mailbox, app_client):
+    client, headers = mike
+    in_app_db(client, lambda db: create_account(db, "Ann", MIKE["password"], email="ann@example.com", confirmed=True))
+    assert ask_to_change(client, headers, "ANN@example.com").status_code == 202, "same answer as success"
+    assert "tried to move" in mailbox.last_to("ANN@example.com").body
+    assert "token=" not in mailbox.last_to("ANN@example.com").body
+
+
+def test_an_address_taken_after_the_link_was_sent_is_refused(mike, mailbox):
+    client, headers = mike
+    ask_to_change(client, headers)
+    in_app_db(client, lambda db: create_account(db, "Ann", MIKE["password"], email=NEW, confirmed=True))
+    assert client.post("/api/email-change/complete", json={"token": token_in(mailbox.last_to(NEW))}).status_code == 409
+
+
+def test_a_bad_address_is_refused_and_the_handle_is_checked_against_the_new_one(mike):
+    client, headers = mike
+    assert ask_to_change(client, headers, "not-an-address").status_code == 422
+    assert client.post("/api/handle", json={"handle": "Dragon Slayer"}, headers=headers).status_code == 200
+    assert ask_to_change(client, headers, "dragon.slayer@example.com").status_code == 422, "would give the handle away"
+
+
+def test_changing_email_is_rate_limited(mike):
+    client, headers = mike
+    codes = [ask_to_change(client, headers, f"m{n}@example.com").status_code for n in range(4)]
+    assert codes == [202, 202, 202, 429]
