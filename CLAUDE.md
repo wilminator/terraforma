@@ -38,12 +38,12 @@ How to work under it:
 Status is one of: done, next, waiting (names what it waits for), idea (not yet scoped; confirm with Mike first).
 
 1. **Keys in two slots, and the public handle**: done (engine #3, game #10).
-2. **2FA (TOTP)**: next. Setup, login with a code, recovery codes, and turning it off.
+2. **2FA (TOTP)**: done (engine PR from branch `two-factor`). Setup, login with a code, recovery codes, and turning it off.
    - The secret is stored encrypted: register its column with `keys.encrypted_column`.
    - Any change to 2FA (turn on, turn off, new recovery codes) is confirmed by an emailed link, which is a new token purpose in `accounts/tokens.py`.
    - A code can't be used twice; the 2FA calls and the login code check are rate-limited (`accounts/ratelimit.py`, in the database).
    - New migration 0004. Every table and call works on SQLite, Postgres and MySQL.
-3. **Email change**: waiting (on slice 2, since it needs the 2FA code check). With 2FA on, only an OTP changes the email. Without it, an emailed link does. Never the password. Re-check the handle against the new address (`check_handle`), end other logins (`session_version`), and tell the old address.
+3. **Email change**: next (needs slice 2's merged 2FA code check, `accounts.twofa.check_code`; branch `email-change` already has the link half). With 2FA on, only an OTP changes the email. Without it, an emailed link does. Never the password. Re-check the handle against the new address (`check_handle`), end other logins (`session_version`), and tell the old address.
 4. **Release v0.2.0**: waiting (on slices 2 and 3). Mike creates the tag (Claude's sessions can't create tags). Then the games' dependency changes from `@main` to the tag only if Mike says the API is stable enough; until then they follow `main`.
 5. **Other work from the TerraForma plan doc** (fights engine, maps, seed loading and the rest): idea. Independent of accounts, so it can run alongside slices 2 to 4. Scope it with Mike first.
 

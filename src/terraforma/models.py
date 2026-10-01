@@ -3,11 +3,12 @@
 import secrets
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, update
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db.base import Base, Timestamps
+from .keys import encrypted_column
 from .world.location import Located, Position
 
 
@@ -80,6 +81,19 @@ class Account(Timestamps, Base):
     handle_key: Mapped[str | None] = mapped_column(String(24), unique=True)
     # Every login carries this number; bumping it ends them all (a password reset does).
     session_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Two-factor login (see accounts.twofa). The secret is encrypted; it is set
+    # when setup starts and only counts once totp_enabled_at is.
+    totp_secret: Mapped[str | None] = mapped_column(String(255))
+    totp_enabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The last 30-second step a code was accepted for: each code works once.
+    totp_last_step: Mapped[int | None] = mapped_column(BigInteger)
+    # SHA-256 of each unused recovery code.
+    recovery_codes: Mapped[list | None] = mapped_column(JSON)
+    # Names the one emailed 2FA change that is still open (a newer request replaces it).
+    twofa_change_nonce: Mapped[str | None] = mapped_column(String(43))
+
+
+encrypted_column(Account.__table__.c.totp_secret, "accounts.totp_secret")
 
 
 class RateLimitHit(Base):

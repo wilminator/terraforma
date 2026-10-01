@@ -18,6 +18,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from . import __doc__ as ENGINE
 from . import logscrub
 from .accounts.routes import router as account_router
+from .accounts.twofa_routes import router as twofa_router
 from .accounts.tokens import Tokens
 from .api.deps import ActingAccount
 from .api.security import SESSION_ACCOUNT, SESSION_VERSION, same_origin
@@ -88,6 +89,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
         https_only=settings.secure_cookies,
     )
     app.include_router(account_router)
+    app.include_router(twofa_router)
 
     @app.get("/api/about")
     async def about(request: Request) -> dict:

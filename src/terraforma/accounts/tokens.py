@@ -5,7 +5,8 @@ made, signed with the server's secret so it can't be forged or reused for
 another purpose. Each purpose has a lifetime. A token also carries
 whatever must still be true for it to count: the email address being
 confirmed, or the account's session version for a password reset (which
-the reset itself bumps, so each reset link works once).
+the reset itself bumps, so each reset link works once), or the nonce
+of the 2FA change it confirms.
 """
 
 from dataclasses import dataclass
@@ -18,6 +19,7 @@ from .. import wallclock
 LIFETIMES = {
     "confirm-email": 3 * 24 * 60 * 60,
     "password-reset": 60 * 60,
+    "twofa-change": 60 * 60,
 }
 
 
