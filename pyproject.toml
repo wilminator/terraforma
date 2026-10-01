@@ -34,7 +34,7 @@ postgres = ["asyncpg>=0.30"]
 mysql = ["aiomysql>=0.2"]
 all-databases = ["terraforma[sqlite,postgres,mysql]"]
 # For tests, the engine's and a game's (terraforma.testing).
-testing = ["pytest>=8.3", "httpx2"]
+testing = ["pytest>=8.3", "pytest-xdist>=3.6", "httpx2"]
 dev = [
     "terraforma[all-databases,testing]",
 ]

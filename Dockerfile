@@ -33,4 +33,5 @@ COPY tests ./tests
 # The tests run as terraforma and need to write pytest's cache in /app.
 RUN chown terraforma:terraforma /app
 USER terraforma
-CMD ["pytest"]
+# One worker per CPU, each with its own databases (terraforma.testing).
+CMD ["pytest", "-n", "auto"]

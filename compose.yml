@@ -3,7 +3,7 @@
 #   docker compose up app                   the game on http://localhost:8000 (Postgres)
 #   docker compose run --rm test            every test, on SQLite, Postgres and MySQL
 #                                           (the test databases run in RAM: postgres-test, mysql-test)
-#   docker compose run --rm test pytest -k clock    some of them
+#   docker compose run --rm test pytest -k clock    some of them (add -n auto to run them in parallel)
 #
 # The game reads settings.toml from the project folder (copy
 # settings.example.toml to start).
@@ -75,6 +75,8 @@ services:
       MYSQL_DATABASE: terraforma_test
     command: [--innodb-flush-log-at-trx-commit=0, --innodb-doublewrite=OFF, --sync-binlog=0, --skip-log-bin, --performance-schema=OFF, --innodb-buffer-pool-size=256M, --max-connections=300]
     tmpfs: [/var/lib/mysql]
+    volumes:
+      - ./docker/mysql-test-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uterraforma", "-pterraforma"]
       interval: 2s
