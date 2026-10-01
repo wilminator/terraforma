@@ -5,7 +5,15 @@ build-backend = "hatchling.build"
 [project]
 name = "terraforma"
 version = "0.1.0"
-description = "TerraForma RPG engine, and Vanguard Tavern, the first game on it"
+description = "The TerraForma RPG Engine: build a browser RPG as a module of content and rules"
+readme = "README.md"
+license-files = ["LICENSE", "LICENSE-EXCEPTION.md"]
+authors = [{ name = "Michael Allen Wilmes" }]
+classifiers = [
+    "License :: OSI Approved :: GNU Affero General Public License v3",
+    "Programming Language :: Python :: 3.14",
+    "Framework :: FastAPI",
+]
 requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.115",
@@ -24,14 +32,14 @@ sqlite = ["aiosqlite>=0.20"]
 postgres = ["asyncpg>=0.30"]
 mysql = ["aiomysql>=0.2", "cryptography>=43"]
 all-databases = ["terraforma[sqlite,postgres,mysql]"]
+# For tests, the engine's and a game's (terraforma.testing).
+testing = ["pytest>=8.3", "httpx2"]
 dev = [
-    "terraforma[all-databases]",
-    "pytest>=8.3",
-    "httpx2",
+    "terraforma[all-databases,testing]",
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/terraforma", "src/vanguard_tavern"]
+packages = ["src/terraforma"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -8,7 +8,7 @@ from terraforma import wallclock
 from terraforma.accounts import ratelimit
 from terraforma.accounts.service import create_account
 
-from .conftest import in_app_db
+from terraforma.testing import in_app_db
 
 MIKE = {"username": "Mike", "email": "mike@example.com", "password": "correct horse battery"}
 

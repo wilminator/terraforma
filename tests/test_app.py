@@ -5,7 +5,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from terraforma.accounts.service import create_account
 
-from .conftest import in_app_db
+from terraforma.testing import in_app_db
 
 ORIGIN = {"origin": "http://testserver"}
 COMMAND = {
@@ -105,9 +105,9 @@ def test_about_names_the_game():
 
     from terraforma.app import create_app
     from terraforma.mail import MemoryMailer
+    from terraforma.game import Game
     from terraforma.settings import Settings
-    from vanguard_tavern import GAME
 
     settings = Settings(database_url="sqlite+aiosqlite://", session_secret="x" * 32, secure_cookies=False)
-    with TestClient(create_app(settings, GAME, mailer=MemoryMailer())) as client:
-        assert client.get("/api/about").json()["game"] == "Vanguard Tavern"
+    with TestClient(create_app(settings, Game(name="Some Game"), mailer=MemoryMailer())) as client:
+        assert client.get("/api/about").json()["game"] == "Some Game"

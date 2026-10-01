@@ -50,3 +50,11 @@ def test_the_migrate_command_builds_the_tables(tmp_path, monkeypatch, capsys):
     tables = {row[0] for row in sqlite3.connect(database).execute("select name from sqlite_master where type = 'table'")}
     assert {"accounts", "worlds", "maps", "fighters", "alembic_version"} <= tables
     assert main(["terraforma", "nonsense"]) == 2
+
+
+def test_the_development_app_starts_from_the_settings_file(tmp_path, monkeypatch):
+    from terraforma.devserver import app
+
+    path = write(tmp_path, f'database_url = "sqlite+aiosqlite:///{tmp_path}/dev.db"\nsession_secret = "' + "x" * 32 + '"\n')
+    monkeypatch.setenv("TERRAFORMA_SETTINGS", str(path))
+    assert app().title == "TerraForma (development)"

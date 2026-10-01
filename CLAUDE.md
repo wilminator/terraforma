@@ -2,9 +2,9 @@
 
 - The engine's name is TerraForma (the TerraForma RPG Engine). "TerraFroma" is a common typo for it: always correct it.
 - Mike runs the tests for validation. Write tests with every change, run them where you can, and say which ones you ran. The full suite runs with `docker compose run --rm test`.
-- The app is built to run in Docker (on a QNAP NAS in production). Settings come from `settings.toml`, never from environment variables. The only exception is `TERRAFORMA_TEST_DATABASES` for the test runner.
+- This is the public engine (AGPL-3.0 plus the module permission in LICENSE-EXCEPTION.md). Never add game content, secrets or anything from the private Vanguard Tavern repo here. The engine runs in Docker; games deploy it (Vanguard Tavern on a QNAP NAS). Settings come from `settings.toml`, never from environment variables. The only exception is `TERRAFORMA_TEST_DATABASES` for the test runner.
 - The target is Python 3.14.
-- The engine (`terraforma`) never imports the game (`vanguard_tavern`). Game content is data (JSON seed files) and assets.
+- The engine never imports a game. Games plug in through the public interfaces (Game, create_app, seed formats, terraforma.testing): changing those is a change to what the license exception covers, so keep them deliberate and documented.
 - Database-agnostic: follow the rules in README.md. Database-specific code goes only in `terraforma/db/dialect.py`. Every database test must pass on SQLite, Postgres and MySQL.
 - Map-ready: new things that exist somewhere get a location. Randomness comes from `WorldRng` streams, never the `random` module. Time comes from the world clock.
 - Every server call is its own route, with a strict Pydantic model for its arguments. Calls that change something depend on `ActingAccount` (login plus CSRF token); calls that only read use `CurrentAccount`. The fight WebSocket checks the Origin header.
@@ -17,6 +17,6 @@
   - Encryption keys have two slots.
   - A player's public handle can't match their username or email.
   - Admins earn tokens only when fighting as a player.
-- Assets (art, sound, music, fonts) must be legally usable. Many of DragonStar's assets are copyrighted and can't come across: they need replacements. Use only assets Mike made, commissioned, or that carry a license allowing use in the game (for example CC0, or CC-BY with credit given). Record each asset's source and license beside it, and never add one whose license is unknown.
+- Any asset in this repo (art, sound, music, fonts) must be legally usable and compatible with a public repo: Mike's own, or openly licensed (CC0, CC-BY with credit). Record each asset's source and license beside it, and never add one whose license is unknown. Nothing from DragonStar's assets.
 - The browser code ported from DragonStar gets no feature work until DragonStar's features are ported. Fixes needed for the new server are fine.
-- The plan lives in the TerraForma plan doc. Work goes on branches with pull requests.
+- The plan lives in the TerraForma plan doc. Work goes on branches with pull requests; tag releases (v0.x.y) for games to depend on.
