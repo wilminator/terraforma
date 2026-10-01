@@ -20,6 +20,7 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U terraforma"
           --health-interval 2s --health-retries 30
+          --tmpfs /var/lib/postgresql/data
       mysql:
         image: mysql:8.4
         env:
@@ -31,6 +32,7 @@ jobs:
         options: >-
           --health-cmd "mysqladmin ping -h 127.0.0.1 -uterraforma -pterraforma"
           --health-interval 2s --health-retries 60
+          --tmpfs /var/lib/mysql
     env:
       TERRAFORMA_TEST_DATABASES: >-
         sqlite+aiosqlite:///{tmp}/test.db,
@@ -43,4 +45,15 @@ jobs:
           python-version: "3.14"
           cache: pip
       - run: pip install -e ".[dev]"
-      - run: pytest
+      # Each pytest worker makes its own databases (terraforma_test_gw0, ...): MySQL's
+      # test user needs the right to, as docker/mysql-test-init.sql gives it in compose.
+      - name: Let the MySQL test user make per-worker databases
+        run: |
+          python - <<'PY'
+          import pymysql
+          connection = pymysql.connect(host="127.0.0.1", user="root", password="terraforma-root")
+          with connection.cursor() as cursor:
+              cursor.execute("GRANT ALL PRIVILEGES ON `terraforma\\_test\\_%`.* TO 'terraforma'@'%'")
+          connection.close()
+          PY
+      - run: pytest -n auto
