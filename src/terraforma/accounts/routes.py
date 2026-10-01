@@ -1,4 +1,4 @@
-"""The account calls: register, confirm email, log in and out, reset a password, set a handle.
+"""The account calls: register, confirm email, log in (with a 2FA code when it's on) and out, reset a password, set a handle.
 
 Calls made before logging in can't carry the CSRF token, but they only
 accept a JSON body, which another site's page can't send cross-origin
@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..api.deps import ActingAccount, CurrentAccount, Db, client_address
 from ..api.security import start_session
 from ..mail import Mail
-from . import ratelimit, service
+from . import ratelimit, service, twofa
 from .tokens import TokenError
 
 router = APIRouter(prefix="/api")
@@ -39,6 +39,8 @@ class TokenRequest(Strict):
 class LoginRequest(Strict):
     username: str = Field(min_length=1, max_length=32)
     password: str = Field(min_length=1, max_length=service.PASSWORD_MAX)
+    # An app code or a recovery code; only for accounts with 2FA on.
+    code: str | None = Field(default=None, min_length=1, max_length=32)
 
 
 class HandleRequest(Strict):
@@ -131,6 +133,13 @@ async def login(body: LoginRequest, request: Request, db: Db) -> dict:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "wrong username or password")
     if account.email_confirmed_at is None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "confirm your email address first: the link is in your inbox")
+    if twofa.enabled(account):
+        if body.code is None:
+            # The password was right; now the second factor. No login yet.
+            return JSONResponse({"needs_code": True}, status_code=status.HTTP_202_ACCEPTED)
+        await limited(request, ratelimit.TWOFA_CODE_BY_ACCOUNT, str(account.id))
+        if not twofa.check_code(request.app.state.keys, account, body.code):
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "wrong username, password or code")
     token = start_session(request, account.id, account.session_version)
     return {"username": account.username, "csrf_token": token}
 
