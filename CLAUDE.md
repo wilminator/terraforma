@@ -38,13 +38,13 @@ How to work under it:
 Status is one of: done, next, waiting (names what it waits for), idea (not yet scoped; confirm with Mike first).
 
 1. **Keys in two slots, and the public handle**: done (engine #3, game #10).
-2. **2FA (TOTP)**: done (engine PR from branch `two-factor`). Setup, login with a code, recovery codes, and turning it off.
+2. **2FA (TOTP)**: done (engine #5). Setup, login with a code, recovery codes, and turning it off.
    - The secret is stored encrypted: register its column with `keys.encrypted_column`.
    - Any change to 2FA (turn on, turn off, new recovery codes) is confirmed by an emailed link, which is a new token purpose in `accounts/tokens.py`.
    - A code can't be used twice; the 2FA calls and the login code check are rate-limited (`accounts/ratelimit.py`, in the database).
    - New migration 0004. Every table and call works on SQLite, Postgres and MySQL.
-3. **Email change**: next (needs slice 2's merged 2FA code check, `accounts.twofa.check_code`; branch `email-change` already has the link half). With 2FA on, only an OTP changes the email. Without it, an emailed link does. Never the password. Re-check the handle against the new address (`check_handle`), end other logins (`session_version`), and tell the old address.
-4. **Release v0.2.0**: waiting (on slices 2 and 3). Mike creates the tag (Claude's sessions can't create tags). Then the games' dependency changes from `@main` to the tag only if Mike says the API is stable enough; until then they follow `main`.
+3. **Email change**: done (engine #6). With 2FA on, a live code is needed as well as the link mailed to the new address. With 2FA on, only an OTP changes the email. Without it, an emailed link does. Never the password. Re-check the handle against the new address (`check_handle`), end other logins (`session_version`), and tell the old address.
+4. **Release v0.2.0**: next, once both pull requests are merged and Mike has run the full suite. Mike creates the tag (Claude's sessions can't create tags). Then the games' dependency changes from `@main` to the tag only if Mike says the API is stable enough; until then they follow `main`.
 5. **Content and fights**: proposed, waiting for Mike to confirm the order and depth of each piece (the pieces below replace the old "other work" idea; they follow the plan doc's phases as the code's comments name them). They share the models module and the migration chain, so they run in order, one pull request each. Each takes the next free migration number when its branch is cut.
    - **5a. Content models and seed loading**: models for abilities, items, jobs, monsters and personalities; strict Pydantic checks of each seed file (`seed.py`); an idempotent load into the database at startup (`db.dialect.upsert`), so a game's seed is data the engine understands. The seed file formats are a public interface (the license exception covers them): document them in the README. Unblocks the game module loading real content.
    - **5b. Heroes and teams**: a hero belongs to an account (a job, stats, a location), a team groups heroes; calls to create, list and rename them, with limits per account.
@@ -62,3 +62,4 @@ Slices 2 and 3 must be in order. Slice 5's pieces can run beside slices 2 to 4 i
 One line per finished slice or change of plan: date, what, pull request.
 
 - 2026-09-30: slice 1 merged (engine #3, game #10). Games follow the engine's `main` (game #8, example #3); the game promotes `staging` to `main` itself (game #12).
+- 2026-10-01: slice 2 (2FA) merged (engine #5); slice 3 (email change) in review (engine #6). Test run sped up: databases in RAM, `pytest -n auto` with a database per worker (engine #7).

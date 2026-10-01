@@ -196,3 +196,125 @@ def test_rate_limits_store_no_names_or_addresses(mike):
 
 async def _subjects(db, query):
     return list((await db.scalars(query)).all())
+
+
+# --- changing the email address ---------------------------------------------
+
+NEW = "mike.new@example.com"
+
+
+@pytest.fixture
+def member(app_client):
+    in_app_db(app_client, lambda db: create_account(db, "Mike", MIKE["password"], email=MIKE["email"], confirmed=True))
+    token = log_in(app_client).json()["csrf_token"]
+    return app_client, {"X-CSRF-Token": token}
+
+
+def ask_to_change(client, headers, email=NEW):
+    return client.post("/api/email-change", json={"email": email}, headers=headers)
+
+
+def test_changing_email_goes_by_a_link_to_the_new_address_and_never_asks_for_the_password(member, mailbox):
+    client, headers = member
+    assert ask_to_change(client, headers).status_code == 202
+    assert "confirm your new email" in mailbox.last_to(NEW).subject
+    assert "being changed" in mailbox.last_to(MIKE["email"]).subject, "the old address is warned"
+    assert client.post("/api/email-change/complete", json={"token": token_in(mailbox.last_to(NEW))}).status_code == 200
+    assert log_in(client, MIKE["password"]).status_code == 200, "same password, now with the new address"
+    assert client.post("/api/password-reset", json={"email": NEW}).status_code == 202
+    assert mailbox.last_to(NEW).subject.endswith("reset your password")
+
+
+def test_changing_email_ends_every_login(member, mailbox):
+    client, headers = member
+    ask_to_change(client, headers)
+    client.post("/api/email-change/complete", json={"token": token_in(mailbox.last_to(NEW))})
+    assert client.get("/api/me").status_code == 401
+
+
+def test_the_change_call_needs_login_and_the_csrf_token(app_client, member):
+    client, headers = member
+    assert client.post("/api/email-change", json={"email": NEW}).status_code == 403
+    client.post("/api/logout", headers=headers)
+    assert client.post("/api/email-change", json={"email": NEW}).status_code == 401
+
+
+def test_a_change_link_works_once_and_only_while_the_address_is_unchanged(member, mailbox):
+    client, headers = member
+    ask_to_change(client, headers)
+    first = token_in(mailbox.last_to(NEW))
+    ask_to_change(client, headers, "mike.other@example.com")
+    second = token_in(mailbox.last_to("mike.other@example.com"))
+    assert client.post("/api/email-change/complete", json={"token": first}).status_code == 200
+    assert client.post("/api/email-change/complete", json={"token": first}).status_code == 400, "once"
+    assert client.post("/api/email-change/complete", json={"token": second}).status_code == 400, "old address moved on"
+
+
+def test_change_links_expire_and_are_not_other_links(member, mailbox, later):
+    client, headers = member
+    ask_to_change(client, headers)
+    token = token_in(mailbox.last_to(NEW))
+    assert client.post("/api/confirm-email", json={"token": token}).status_code == 400
+    later(60 * 60 + 1)
+    assert client.post("/api/email-change/complete", json={"token": token}).status_code == 400
+
+
+def test_an_address_with_an_account_gets_a_warning_and_the_caller_cannot_tell(member, mailbox, app_client):
+    client, headers = member
+    in_app_db(client, lambda db: create_account(db, "Ann", MIKE["password"], email="ann@example.com", confirmed=True))
+    assert ask_to_change(client, headers, "ANN@example.com").status_code == 202, "same answer as success"
+    assert "tried to move" in mailbox.last_to("ANN@example.com").body
+    assert "token=" not in mailbox.last_to("ANN@example.com").body
+
+
+def test_an_address_taken_after_the_link_was_sent_is_refused(member, mailbox):
+    client, headers = member
+    ask_to_change(client, headers)
+    in_app_db(client, lambda db: create_account(db, "Ann", MIKE["password"], email=NEW, confirmed=True))
+    assert client.post("/api/email-change/complete", json={"token": token_in(mailbox.last_to(NEW))}).status_code == 409
+
+
+def test_a_bad_address_is_refused_and_the_handle_is_checked_against_the_new_one(member):
+    client, headers = member
+    assert ask_to_change(client, headers, "not-an-address").status_code == 422
+    assert client.post("/api/handle", json={"handle": "Dragon Slayer"}, headers=headers).status_code == 200
+    assert ask_to_change(client, headers, "dragon.slayer@example.com").status_code == 422, "would give the handle away"
+
+
+def test_changing_email_is_rate_limited(member):
+    client, headers = member
+    codes = [ask_to_change(client, headers, f"m{n}@example.com").status_code for n in range(6)]
+    assert codes == [202] * 5 + [429]
+
+
+def turn_on_2fa(client):
+    """Switches 2FA on directly (the 2FA flow has its own tests). Returns the secret."""
+    from terraforma.accounts import twofa
+
+    secret = twofa.new_secret()
+
+    async def work(db):
+        from sqlalchemy import select
+
+        from terraforma.models import Account
+
+        account = await db.scalar(select(Account))
+        account.totp_secret = client.app.state.keys.encrypt(secret, twofa.PURPOSE)
+        account.totp_enabled_at = wallclock.now()
+
+    in_app_db(client, work)
+    return secret
+
+
+def test_with_2fa_on_a_live_code_is_needed_to_change_the_email(member, mailbox, later):
+    from terraforma.accounts import twofa
+
+    client, headers = member
+    secret = turn_on_2fa(client)
+    assert ask_to_change(client, headers).status_code == 401, "the emailed link alone isn't enough"
+    assert client.post("/api/email-change", json={"email": NEW, "code": "000000"}, headers=headers).status_code == 401
+    assert not any(mail.to == NEW for mail in mailbox.sent), "nothing is mailed to the new address"
+    code = twofa.code_at(secret, twofa.current_step())
+    assert client.post("/api/email-change", json={"email": NEW, "code": code}, headers=headers).status_code == 202
+    later(30)
+    assert client.post("/api/email-change", json={"email": NEW, "code": code}, headers=headers).status_code == 401, "a code works once"
