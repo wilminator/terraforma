@@ -1,16 +1,11 @@
-"""The web app: login, a typed call, and the fight WebSocket."""
+"""The web app: a typed call and the fight WebSocket, on every database."""
 
 import pytest
-from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from terraforma.accounts.service import create_account
-from terraforma.app import create_app
-from terraforma.db.migrate import upgrade
-from terraforma.db.session import make_engine, make_sessionmaker
-from terraforma.settings import Settings
 
-from .conftest import run
+from .conftest import in_app_db
 
 ORIGIN = {"origin": "http://testserver"}
 COMMAND = {
@@ -21,21 +16,9 @@ COMMAND = {
 
 
 @pytest.fixture
-def client(tmp_path):
-    url = f"sqlite+aiosqlite:///{tmp_path}/app.db"
-
-    async def setup():
-        engine = make_engine(url)
-        await upgrade(engine)
-        async with make_sessionmaker(engine)() as session:
-            await create_account(session, "Mike", "correct horse battery")
-            await session.commit()
-        await engine.dispose()
-
-    run(setup())
-    settings = Settings(database_url=url, session_secret="x" * 32, secure_cookies=False)
-    with TestClient(create_app(settings)) as client:
-        yield client
+def client(app_client):
+    in_app_db(app_client, lambda db: create_account(db, "Mike", "correct horse battery", email="mike@example.com", confirmed=True))
+    return app_client
 
 
 def log_in(client) -> str:
@@ -46,13 +29,6 @@ def log_in(client) -> str:
 
 def test_health(client):
     assert client.get("/api/health").json() == {"ok": True, "database": True}
-
-
-def test_login(client):
-    assert client.get("/api/me").status_code == 401
-    assert client.post("/api/login", json={"username": "Mike", "password": "wrong horse battery"}).status_code == 401
-    log_in(client)
-    assert client.get("/api/me").json() == {"username": "Mike"}
 
 
 def test_a_call_that_changes_something_needs_the_csrf_token(client):
@@ -125,8 +101,13 @@ def test_the_fight_socket_refuses_other_sites(client):
 
 
 def test_about_names_the_game():
+    from starlette.testclient import TestClient
+
+    from terraforma.app import create_app
+    from terraforma.mail import MemoryMailer
+    from terraforma.settings import Settings
     from vanguard_tavern import GAME
 
     settings = Settings(database_url="sqlite+aiosqlite://", session_secret="x" * 32, secure_cookies=False)
-    with TestClient(create_app(settings, GAME)) as client:
+    with TestClient(create_app(settings, GAME, mailer=MemoryMailer())) as client:
         assert client.get("/api/about").json()["game"] == "Vanguard Tavern"

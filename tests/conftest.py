@@ -60,3 +60,52 @@ async def db(engine):
 def run(coroutine):
     """Runs async setup from a plain (sync) test, such as one using TestClient."""
     return asyncio.run(coroutine)
+
+
+# --- the web app, on each database ----------------------------------------
+
+SECRET = "x" * 32
+
+
+@pytest.fixture
+def mailbox():
+    from terraforma.mail import MemoryMailer
+
+    return MemoryMailer()
+
+
+@pytest.fixture
+def app_client(database_url, mailbox):
+    """A TestClient for the engine app on a freshly migrated database (each database under test)."""
+    from starlette.testclient import TestClient
+
+    from terraforma.app import create_app
+    from terraforma.settings import Settings
+
+    async def prepare():
+        engine = make_engine(database_url)
+        await drop_everything(engine)
+        await upgrade(engine)
+        await engine.dispose()
+
+    async def clean_up():
+        engine = make_engine(database_url)
+        await drop_everything(engine)
+        await engine.dispose()
+
+    run(prepare())
+    settings = Settings(database_url=database_url, session_secret=SECRET, secure_cookies=False, public_url="http://game.test")
+    with TestClient(create_app(settings, mailer=mailbox)) as client:
+        yield client
+    run(clean_up())
+
+
+def in_app_db(client, work):
+    """Runs async $work(session) against the app's own database, committed."""
+
+    async def go():
+        async with client.app.state.sessionmaker() as session:
+            async with session.begin():
+                return await work(session)
+
+    return client.portal.call(go)

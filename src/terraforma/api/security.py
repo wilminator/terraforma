@@ -1,9 +1,11 @@
 """Who is asking: the login in the session cookie, and the CSRF token.
 
-Logging in puts the account id and a fresh CSRF token in the signed
-session cookie, and hands the token to the page. Every call that changes
-something sends it back in the X-CSRF-Token header; another site can
-make the browser send the cookie, but it can't read the token.
+Logging in puts the account id, its session version and a fresh CSRF
+token in the signed session cookie, and hands the token to the page.
+Every call that changes something sends it back in the X-CSRF-Token
+header; another site can make the browser send the cookie, but it can't
+read the token. A login only counts while its session version matches the
+account's: bumping that (a password reset does) ends every login at once.
 
 WebSockets carry no such header, so the fight socket checks the Origin
 instead: only pages from this site may open one.
@@ -12,37 +14,27 @@ instead: only pages from this site may open one.
 import hmac
 import secrets
 
-from fastapi import HTTPException, Request, WebSocket, status
+from fastapi import Request, WebSocket
 
 SESSION_ACCOUNT = "account_id"
+SESSION_VERSION = "version"
 SESSION_CSRF = "csrf"
 CSRF_HEADER = "X-CSRF-Token"
 
 
-def start_session(request: Request, account_id: int) -> str:
+def start_session(request: Request, account_id: int, version: int) -> str:
     request.session.clear()
     request.session[SESSION_ACCOUNT] = account_id
+    request.session[SESSION_VERSION] = version
     token = secrets.token_urlsafe(32)
     request.session[SESSION_CSRF] = token
     return token
 
 
-def current_account_id(request: Request) -> int:
-    """For calls that only read: the logged-in account, or 401."""
-    account_id = request.session.get(SESSION_ACCOUNT)
-    if account_id is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "not logged in")
-    return account_id
-
-
-def acting_account_id(request: Request) -> int:
-    """For calls that change something: logged in, and the CSRF token matches."""
-    account_id = current_account_id(request)
+def csrf_matches(request: Request) -> bool:
     expected = request.session.get(SESSION_CSRF, "")
     sent = request.headers.get(CSRF_HEADER, "")
-    if not expected or not hmac.compare_digest(expected, sent):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "missing or wrong CSRF token")
-    return account_id
+    return bool(expected) and hmac.compare_digest(expected, sent)
 
 
 def same_origin(socket: WebSocket) -> bool:

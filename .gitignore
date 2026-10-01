@@ -9,3 +9,4 @@ settings.toml
 *.db
 keys/
 secrets/
+outbox/

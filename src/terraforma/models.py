@@ -1,8 +1,9 @@
 """Every engine model, imported here so their tables register together."""
 
 import secrets
+from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, ForeignKey, Integer, String, UniqueConstraint, update
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -59,7 +60,7 @@ class Map(Timestamps, Base):
 
 
 class Account(Timestamps, Base):
-    """A player's login. Their heroes, teams and handle come in the accounts phase."""
+    """A player's login. Their heroes, teams and handle come later."""
 
     __tablename__ = "accounts"
 
@@ -68,6 +69,24 @@ class Account(Timestamps, Base):
     username: Mapped[str] = mapped_column(String(32))
     username_key: Mapped[str] = mapped_column(String(32), unique=True)
     password_hash: Mapped[str] = mapped_column(String(255))
+    # Required for new accounts; NULL only for rows made before email existed.
+    email: Mapped[str | None] = mapped_column(String(254))
+    email_key: Mapped[str | None] = mapped_column(String(254), unique=True)
+    # No login until the address is confirmed by the emailed link.
+    email_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Every login carries this number; bumping it ends them all (a password reset does).
+    session_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+
+class RateLimitHit(Base):
+    """Attempts counted for one rate limit, one subject (hashed), one window of time."""
+
+    __tablename__ = "rate_limit_hits"
+
+    bucket: Mapped[str] = mapped_column(String(32), primary_key=True)
+    subject: Mapped[str] = mapped_column(String(64), primary_key=True)
+    window_start: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    hits: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class Fighter(Located, Timestamps, Base):
