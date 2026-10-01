@@ -1,6 +1,6 @@
-# TerraFroma
+# TerraForma
 
-TerraFroma is an RPG engine, and **Vanguard Tavern** is the first game built on it. It's the Python successor to DragonStar.
+TerraForma is an RPG engine, and **Vanguard Tavern** is the first game built on it. It's the Python successor to DragonStar.
 
 - `src/terraforma`: the engine (accounts, fights, AI, the server calls, the admin, the world).
 - `src/vanguard_tavern`: the game (seed data, assets, settings). The game plugs into the engine; the engine never imports the game.

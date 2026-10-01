@@ -1,4 +1,6 @@
-# Working on TerraFroma
+# Working on TerraForma
+
+- The engine's name is TerraForma (the TerraForma RPG Engine). "TerraFroma" is a common typo for it: always correct it.
 
 - Mike runs the tests for validation. Write tests with every change, run them where you can, and say which ones you ran. The full suite runs with `docker compose run --rm test`.
 - The app is built to run in Docker (on a QNAP NAS in production). Settings come from `settings.toml`, never from environment variables. The only exception is `TERRAFORMA_TEST_DATABASES` for the test runner.
@@ -18,4 +20,4 @@
   - Admins earn tokens only when fighting as a player.
 - Assets (art, sound, music, fonts) must be legally usable. Many of DragonStar's assets are copyrighted and can't come across: they need replacements. Use only assets Mike made, commissioned, or that carry a license allowing use in the game (for example CC0, or CC-BY with credit given). Record each asset's source and license beside it, and never add one whose license is unknown.
 - The browser code ported from DragonStar gets no feature work until DragonStar's features are ported. Fixes needed for the new server are fine.
-- The plan lives in the TerraFroma plan doc. Work goes on branches with pull requests.
+- The plan lives in the TerraForma plan doc. Work goes on branches with pull requests.

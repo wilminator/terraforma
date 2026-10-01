@@ -70,7 +70,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
         yield
         await engine.dispose()
 
-    app = FastAPI(title=game.name if game else "TerraFroma", lifespan=lifespan)
+    app = FastAPI(title=game.name if game else "TerraForma", lifespan=lifespan)
     app.state.settings = settings
     app.state.game = game
     app.state.fights = FightChannels()

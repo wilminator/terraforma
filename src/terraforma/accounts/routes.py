@@ -69,7 +69,7 @@ async def send(request: Request, mail: Mail) -> None:
 
 def game_name(request: Request) -> str:
     game = request.app.state.game
-    return game.name if game else "TerraFroma"
+    return game.name if game else "TerraForma"
 
 
 @router.post("/register", status_code=status.HTTP_202_ACCEPTED)

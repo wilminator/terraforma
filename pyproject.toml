@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "terraforma"
 version = "0.1.0"
-description = "TerraFroma RPG engine, and Vanguard Tavern, the first game on it"
+description = "TerraForma RPG engine, and Vanguard Tavern, the first game on it"
 requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.115",

@@ -1,1 +1,1 @@
-"""TerraFroma: the RPG engine."""
+"""TerraForma: the RPG engine."""

@@ -1,4 +1,4 @@
-# TerraFroma / Vanguard Tavern. One image for the game and its tests.
+# TerraForma / Vanguard Tavern. One image for the game and its tests.
 FROM python:3.14-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

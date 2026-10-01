@@ -57,7 +57,7 @@ class SmtpMailer:
 class OutboxMailer:
     """Development: each message becomes a file in $folder."""
 
-    def __init__(self, folder: Path, sender: str = "TerraFroma <noreply@localhost>"):
+    def __init__(self, folder: Path, sender: str = "TerraForma <noreply@localhost>"):
         self.folder = folder
         self.sender = sender
 
