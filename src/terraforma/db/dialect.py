@@ -7,9 +7,10 @@ that runs the same on Postgres, MySQL and SQLite.
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from sqlalchemy import Table, func
+from sqlalchemy import Table, func, text
 from sqlalchemy.dialects import mysql, postgresql, sqlite
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.engine import make_url
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.sql.elements import ColumnElement
 
 
@@ -65,3 +66,34 @@ async def increment(session: AsyncSession, table: Table, key: Mapping[str, Any],
 def same_text(column: ColumnElement[str], value: str) -> ColumnElement[bool]:
     """Case-insensitive equality: MySQL's default collation already ignores case, Postgres and SQLite don't."""
     return func.lower(column) == value.lower()
+
+
+async def ensure_database(url: str) -> None:
+    """Makes the database $url names, if the server doesn't have it yet (tests: one database per parallel worker).
+
+    SQLite makes its file on first use, so there is nothing to do for it.
+    """
+    parsed = make_url(url)
+    name = parsed.database
+    backend = parsed.get_backend_name()
+    if backend == "sqlite":
+        return
+    if not name or not name.replace("_", "").isalnum():
+        raise ValueError(f"won't make a database called {name!r}")
+    # The database being made can't be the one connected to: MySQL connects to
+    # none, Postgres to its always-present maintenance database.
+    # (URL.set(database=None) would leave the name in place, so _replace it.)
+    server = parsed._replace(database="postgres" if backend == "postgresql" else None)
+    engine = create_async_engine(server, isolation_level="AUTOCOMMIT")
+    try:
+        async with engine.connect() as connection:
+            if backend == "postgresql":
+                exists = await connection.scalar(text("SELECT 1 FROM pg_database WHERE datname = :name"), {"name": name})
+                if not exists:
+                    await connection.execute(text(f'CREATE DATABASE "{name}"'))
+            elif backend in ("mysql", "mariadb"):
+                await connection.execute(text(f"CREATE DATABASE IF NOT EXISTS `{name}`"))
+            else:
+                raise NotImplementedError(f"ensure_database() doesn't know the {backend} database yet")
+    finally:
+        await engine.dispose()
