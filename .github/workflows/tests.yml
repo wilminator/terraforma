@@ -37,8 +37,8 @@ jobs:
         postgresql+asyncpg://terraforma:terraforma@127.0.0.1:5432/terraforma_test,
         mysql+aiomysql://terraforma:terraforma@127.0.0.1:3306/terraforma_test
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
           cache: pip
