@@ -28,6 +28,7 @@ CMD ["python", "-m", "terraforma", "serve"]
 # --- the tests ------------------------------------------------------------
 FROM base AS test
 RUN pip install -e ".[dev]"
+COPY settings.example.toml ./
 COPY tests ./tests
 # The tests run as terraforma and need to write pytest's cache in /app.
 RUN chown terraforma:terraforma /app
