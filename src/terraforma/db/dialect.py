@@ -80,7 +80,11 @@ async def ensure_database(url: str) -> None:
         return
     if not name or not name.replace("_", "").isalnum():
         raise ValueError(f"won't make a database called {name!r}")
-    engine = create_async_engine(url, isolation_level="AUTOCOMMIT")
+    # The database being made can't be the one connected to: MySQL connects to
+    # none, Postgres to its always-present maintenance database.
+    # (URL.set(database=None) would leave the name in place, so _replace it.)
+    server = parsed._replace(database="postgres" if backend == "postgresql" else None)
+    engine = create_async_engine(server, isolation_level="AUTOCOMMIT")
     try:
         async with engine.connect() as connection:
             if backend == "postgresql":
