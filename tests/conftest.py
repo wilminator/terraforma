@@ -15,7 +15,8 @@ import os
 
 import pytest
 
-from terraforma.db.session import create_tables, drop_tables, make_engine, make_sessionmaker
+from terraforma.db.migrate import drop_everything, upgrade
+from terraforma.db.session import make_engine, make_sessionmaker
 
 DEFAULT_DATABASES = "sqlite+aiosqlite:///{tmp}/test.db"
 
@@ -40,17 +41,18 @@ def database_url(request, tmp_path) -> str:
 
 @pytest.fixture
 async def engine(database_url):
+    """A database with every migration applied (and nothing else: it starts empty)."""
     engine = make_engine(database_url)
-    await drop_tables(engine)
-    await create_tables(engine)
+    await drop_everything(engine)
+    await upgrade(engine)
     yield engine
-    await drop_tables(engine)
+    await drop_everything(engine)
     await engine.dispose()
 
 
 @pytest.fixture
 async def db(engine):
-    """A session in a transaction that's rolled back afterwards... except that tables are dropped anyway."""
+    """A session on that database."""
     async with make_sessionmaker(engine)() as session:
         yield session
 

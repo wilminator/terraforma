@@ -15,7 +15,25 @@ docker compose up app                       # http://localhost:8000 (Postgres)
 docker compose run --rm test                # every test, on SQLite, Postgres and MySQL
 ```
 
-Settings come from `settings.toml`, not environment variables. The NAS the game runs on may not pass environment variables or Docker secrets into the container.
+Settings come from `settings.toml`, not environment variables. The NAS the game runs on may not pass environment variables or Docker secrets into the container. `python -m terraforma check-settings` says what's wrong with the file, if anything.
+
+On start, the container checks the settings, brings the database up to date (`python -m terraforma migrate`), then serves. `GET /api/health` answers the container's health check.
+
+For production on the NAS, see `compose.nas.yml`. Settings, keys and the database password are all files beside it.
+
+## Changing the tables
+
+Change the models, then make a migration and read it over, since autogenerate misses renames:
+
+```sh
+alembic revision --autogenerate -m "what changed"
+```
+
+A test fails whenever the models and the migrations disagree.
+
+## Seed data
+
+A game's starting content is JSON in its `seed/` folder. `utils/convert_dragonstar_cache.py` makes the first version from DragonStar's content: see `src/vanguard_tavern/seed/README.md`.
 
 ## Databases
 

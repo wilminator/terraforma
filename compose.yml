@@ -21,6 +21,7 @@ services:
     volumes:
       - ./src:/app/src
       - ./tests:/app/tests
+      - ./utils:/app/utils
     environment:
       TERRAFORMA_TEST_DATABASES: >-
         sqlite+aiosqlite:///{tmp}/test.db,

@@ -9,3 +9,16 @@ session_secret = "change me to a long random string, 32 characters or more"
 
 # HTTPS only. Set to false only for local development over plain http.
 secure_cookies = false
+
+# Where the encryption key files are (mounted into the container).
+key_dir = "keys"
+
+# Outgoing mail. Leave this section out and the game sends none (fine for development).
+# Cloudflare: port 465 with implicit TLS; the API key is both username and password.
+# [mail]
+# host = "smtp.example.com"
+# port = 465
+# implicit_tls = true
+# username = "your API key"
+# password = "your API key"
+# from_address = "Vanguard Tavern <noreply@example.com>"
