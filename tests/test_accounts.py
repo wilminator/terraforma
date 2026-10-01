@@ -25,20 +25,6 @@ def log_in(client, password=MIKE["password"]):
     return client.post("/api/login", json={"username": "mike", "password": password})
 
 
-@pytest.fixture
-def later(monkeypatch):
-    """Moves the wall clock forward from the real now: later(seconds)."""
-    real_now = wallclock.now
-
-    def move(seconds: int) -> None:
-        from datetime import timedelta
-
-        moved = real_now() + timedelta(seconds=seconds)
-        monkeypatch.setattr(wallclock, "now", lambda: moved)
-
-    return move
-
-
 # --- registering and confirming --------------------------------------------
 
 def test_registering_sends_a_confirmation_link_and_login_waits_for_it(app_client, mailbox):
@@ -283,8 +269,8 @@ def test_a_bad_address_is_refused_and_the_handle_is_checked_against_the_new_one(
 
 def test_changing_email_is_rate_limited(member):
     client, headers = member
-    codes = [ask_to_change(client, headers, f"m{n}@example.com").status_code for n in range(6)]
-    assert codes == [202] * 5 + [429]
+    answers = [ask_to_change(client, headers, f"m{n}@example.com") for n in range(6)]
+    assert [a.status_code for a in answers] == [202] * 5 + [429], [(a.status_code, a.text) for a in answers]
 
 
 def turn_on_2fa(client):
