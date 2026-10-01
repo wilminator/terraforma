@@ -2,7 +2,8 @@
 #
 #   docker compose up app                   the game on http://localhost:8000 (Postgres)
 #   docker compose run --rm test            every test, on SQLite, Postgres and MySQL
-#   docker compose run --rm test pytest -k clock    some of them
+#                                           (the test databases run in RAM: postgres-test, mysql-test)
+#   docker compose run --rm test pytest -k clock    some of them (add -n auto to run them in parallel)
 #
 # The game reads settings.toml from the project folder (copy
 # settings.example.toml to start).
@@ -27,11 +28,11 @@ services:
     environment:
       TERRAFORMA_TEST_DATABASES: >-
         sqlite+aiosqlite:///{tmp}/test.db,
-        postgresql+asyncpg://terraforma:terraforma@postgres/terraforma_test,
-        mysql+aiomysql://terraforma:terraforma@mysql/terraforma_test
+        postgresql+asyncpg://terraforma:terraforma@postgres-test/terraforma_test,
+        mysql+aiomysql://terraforma:terraforma@mysql-test/terraforma_test
     depends_on:
-      postgres: { condition: service_healthy }
-      mysql: { condition: service_healthy }
+      postgres-test: { condition: service_healthy }
+      mysql-test: { condition: service_healthy }
     profiles: [test]
 
   postgres:
@@ -48,13 +49,34 @@ services:
       interval: 2s
       retries: 30
 
-  mysql:
+  # The test databases live in RAM and skip every disk-safety step: their data is
+  # thrown away anyway, and the tests drop and rebuild every table for each test,
+  # which disk and fsync made slow. Never use these settings for real data.
+  postgres-test:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: terraforma
+      POSTGRES_PASSWORD: terraforma
+      POSTGRES_DB: terraforma_test
+    command: [postgres, -c, fsync=off, -c, synchronous_commit=off, -c, full_page_writes=off, -c, max_connections=300]
+    tmpfs: [/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "terraforma", "-d", "terraforma_test"]
+      interval: 2s
+      retries: 30
+    profiles: [test]
+
+  mysql-test:
     image: mysql:8.4
     environment:
       MYSQL_ROOT_PASSWORD: terraforma-root
       MYSQL_USER: terraforma
       MYSQL_PASSWORD: terraforma
       MYSQL_DATABASE: terraforma_test
+    command: [--innodb-flush-log-at-trx-commit=0, --innodb-doublewrite=OFF, --sync-binlog=0, --skip-log-bin, --performance-schema=OFF, --innodb-buffer-pool-size=256M, --max-connections=300]
+    tmpfs: [/var/lib/mysql]
+    volumes:
+      - ./docker/mysql-test-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uterraforma", "-pterraforma"]
       interval: 2s
