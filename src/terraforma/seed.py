@@ -2,8 +2,8 @@
 
 One file per kind of content (``abilities.json``, ``items.json``,
 ``jobs.json``, ``monsters.json``, ``personalities.json``), each a list of
-objects. The content phase gives these their models and loads them into
-the database; for now this reads and checks the files.
+objects. This only reads the files; content.schema checks them against the
+formats in the README and content.loader loads them into the database.
 """
 
 import json

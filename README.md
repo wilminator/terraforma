@@ -72,7 +72,24 @@ A test fails whenever the models and the migrations disagree.
 
 ## Seed data
 
-A game's starting content is JSON in its `seed/` folder: one file per kind of content, each a list of objects. `terraforma.seed.load_seed` reads and checks it.
+A game's starting content is JSON in its `seed/` folder (`Game(seed_dir=...)`): one file per kind of content, each a list of objects. These formats are a public interface, so changing one is deliberate and noted here.
+
+| File | A row has |
+|---|---|
+| `abilities.json` | `key`, `name`, `kind` (`spell` or `skill`), `mp_cost`, `description`, `icon`, `effect`, `presentation` |
+| `items.json` | `key`, `name`, `price`, `one_use`, `description`, `icon`, `use_effect`, `equip_slots`, `stat_bonus`, `stat_percent`, `attack`, `use_presentation`, `fight_presentation` |
+| `jobs.json` | `key`, `name`, `xp_needed`, `stat_growth` (stats per level), `abilities` (keys) |
+| `personalities.json` | `key`, `name`, an animation for each of `base equip flee hit die attack_close attack_throw attack_shoot skill spell item`, and `overworld` (`stand` and `move`, each facing `up down left right`) |
+| `monsters.json` | `key`, `name`, `personality` (key), `xp_reward`, `gold_reward`, `stats`, `abilities`, `items`, `equipment` (keys), `ai` |
+
+- **Keys.** Every row has a `key` (1-64 lowercase letters, digits, `_` or `-`) that the game picks and never reuses. Rows name each other by key. Only `key` and `name` are required; the rest have defaults.
+- **Stats** are `HP MP Speed Accuracy Strength Dodge Block Power Resistance Focus`; a stat left out is 0, and any other name is refused.
+- **An effect** is `{"effect", "targets", "base", "added", "attribute"}`: `effect` is one of `none heal hurt revive slay increase_stats decrease_stats steal_stats cause_good_status remove_good_status cause_bad_status remove_bad_status restore_mp`, `targets` one of `individual group party all_parties all_enemies all_allies`, and `attribute` is the game's own kind of damage.
+- **An animation** is `{"animation", "images", "sounds", "times"}`; pictures and sounds are plain file names under the game's assets folder (no absolute paths, no `..`).
+- **Checking.** Anything unknown, mistyped or out of range is refused with the file, row and field named, and so is a repeated key or a reference to a key that doesn't exist. All problems are listed at once, and the server won't start on a bad seed.
+- **Loading.** On every start the engine makes the database match the seed: new keys are added and known keys updated in place. A key the seed no longer lists is kept but marked inactive, never deleted, because heroes and fight history may still point at it. A file the seed doesn't have leaves its table alone.
+
+`terraforma.seed.load_seed` reads the files; `terraforma.content.schema.check_seed` checks them; `terraforma.content.loader.load_content` loads them.
 
 ## Databases
 
