@@ -100,14 +100,31 @@ def test_the_fight_socket_refuses_other_sites(client):
                 socket.receive_json()
 
 
-def test_about_names_the_game():
+def test_about_names_the_game(tmp_path):
     from starlette.testclient import TestClient
 
     from terraforma.app import create_app
     from terraforma.mail import MemoryMailer
     from terraforma.game import Game
+    from terraforma.keys import new_key
     from terraforma.settings import Settings
 
-    settings = Settings(database_url="sqlite+aiosqlite://", session_secret="x" * 32, secure_cookies=False)
+    new_key(tmp_path / "keys")
+    settings = Settings(database_url="sqlite+aiosqlite://", session_secret="x" * 32, secure_cookies=False,
+                        key_dir=tmp_path / "keys")
     with TestClient(create_app(settings, Game(name="Some Game"), mailer=MemoryMailer())) as client:
         assert client.get("/api/about").json()["game"] == "Some Game"
+
+
+def test_the_app_will_not_start_without_an_encryption_key(tmp_path):
+    from starlette.testclient import TestClient
+
+    from terraforma.app import create_app
+    from terraforma.keys import KeysMissing
+    from terraforma.mail import MemoryMailer
+    from terraforma.settings import Settings
+
+    settings = Settings(database_url="sqlite+aiosqlite://", session_secret="x" * 32, key_dir=tmp_path / "keys")
+    with pytest.raises(KeysMissing):
+        with TestClient(create_app(settings, mailer=MemoryMailer())):
+            pass

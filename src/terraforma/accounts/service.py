@@ -14,6 +14,8 @@ USERNAME = re.compile(r"^[A-Za-z0-9_.-]{3,32}$")
 # Deliberately simple: one @, something on each side, a dot in the domain.
 # The confirmation link is the real check.
 EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]+\.[^@\s]+$")
+# 3-24 letters, digits, spaces and _ . ' -, starting and ending with a letter or digit.
+HANDLE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9 _.'-]{1,22})[A-Za-z0-9]$")
 PASSWORD_MIN = 12
 PASSWORD_MAX = 1024
 
@@ -36,6 +38,10 @@ class EmailTaken(AccountError):
     pass
 
 
+class HandleTaken(AccountError):
+    pass
+
+
 def username_key(username: str) -> str:
     """The form usernames are compared in: "Mike" and "mike" are the same account."""
     return username.casefold()
@@ -43,6 +49,41 @@ def username_key(username: str) -> str:
 
 def email_key(email: str) -> str:
     return email.strip().casefold()
+
+
+def handle_key(handle: str) -> str:
+    """The form handles are compared in: case and runs of spaces don't make a new handle."""
+    return " ".join(handle.split()).casefold()
+
+
+def _skeleton(text: str) -> str:
+    """Just the letters and digits: "Mike_W", "mike.w" and "MikeW" all look alike to another player."""
+    return "".join(character for character in text.casefold() if character.isalnum())
+
+
+def check_handle(handle: str, *, username: str, email: str | None) -> None:
+    """A handle must not give away the login: not the username, the email address, or the address's name part."""
+    if not HANDLE.fullmatch(handle) or "  " in handle:
+        raise AccountError("a handle is 3-24 letters, digits, single spaces and _ . ' -, starting and ending with a letter or digit")
+    private = [username]
+    if email:
+        private += [email, email.split("@", 1)[0]]
+    if _skeleton(handle) in {_skeleton(text) for text in private}:
+        raise AccountError("your handle is public, so it can't match your username or email address")
+
+
+async def set_handle(session: AsyncSession, account: Account, handle: str) -> Account:
+    """Sets the player's public handle. An email change must check the handle again (check_handle)."""
+    handle = handle.strip()
+    check_handle(handle, username=account.username, email=account.email)
+    key = handle_key(handle)
+    taken = await session.scalar(select(Account.id).where(Account.handle_key == key, Account.id != account.id))
+    if taken:
+        raise HandleTaken("another player has that handle")
+    account.handle = handle
+    account.handle_key = key
+    await session.flush()
+    return account
 
 
 def check_password(password: str) -> None:

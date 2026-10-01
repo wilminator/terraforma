@@ -44,10 +44,18 @@ def test_the_migrate_command_builds_the_tables(tmp_path, monkeypatch, capsys):
     database = tmp_path / "game.db"
     path = write(tmp_path, f'database_url = "sqlite+aiosqlite:///{database}"\nsession_secret = "' + "x" * 32 + '"\n')
     monkeypatch.setenv("TERRAFORMA_SETTINGS", str(path))
+    monkeypatch.chdir(tmp_path)
+    assert main(["terraforma", "check-settings"]) == 1, "no encryption key yet"
+    assert main(["terraforma", "keys", "new"]) == 0
+    assert (tmp_path / "keys" / "current.key").exists(), "key_dir is relative to where the server runs"
     assert main(["terraforma", "check-settings"]) == 0
     assert main(["terraforma", "migrate"]) == 0
     assert main(["terraforma", "migrate"]) == 0, "running it again changes nothing"
-    tables = {row[0] for row in sqlite3.connect(database).execute("select name from sqlite_master where type = 'table'")}
+    connection = sqlite3.connect(database)
+    try:
+        tables = {row[0] for row in connection.execute("select name from sqlite_master where type = 'table'")}
+    finally:
+        connection.close()
     assert {"accounts", "worlds", "maps", "fighters", "alembic_version"} <= tables
     assert main(["terraforma", "nonsense"]) == 2
 

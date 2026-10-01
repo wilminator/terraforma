@@ -39,6 +39,8 @@ Everything runs in Docker.
 
 ```sh
 cp settings.example.toml settings.toml      # then set session_secret
+mkdir -m 700 keys
+docker compose run --rm app python -m terraforma keys new   # the encryption key (once)
 docker compose up app                       # the engine alone, http://localhost:8000 (Postgres)
 docker compose run --rm test                # every test, on SQLite, Postgres and MySQL
 ```
@@ -46,6 +48,17 @@ docker compose run --rm test                # every test, on SQLite, Postgres an
 Settings come from `settings.toml`, not environment variables. The NAS the game runs on may not pass environment variables or Docker secrets into the container. `python -m terraforma check-settings` says what's wrong with the file, if anything.
 
 On start, the container checks the settings, brings the database up to date (`python -m terraforma serve`), then serves. `GET /api/health` answers the container's health check.
+
+## Encryption keys
+
+Secrets the engine must read back, such as 2FA secrets, are stored encrypted with a key kept in files beside `settings.toml` (the `key_dir` setting), never in the database. There are two slots: `current.key` encrypts, and `previous.key` still decrypts what the last key made, so a rotation never locks anyone out.
+
+```sh
+python -m terraforma keys new       # the first key; refuses to replace one
+python -m terraforma keys rotate    # a new key, and everything stored is re-encrypted with it
+```
+
+The server won't start without a current key. Back the keys up apart from the database: a database backup is unreadable without them, and both together give everything away. A column that holds encrypted values is registered with `terraforma.keys.encrypted_column`, so rotating finds it.
 
 ## Changing the tables
 

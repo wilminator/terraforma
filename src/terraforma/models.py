@@ -60,7 +60,7 @@ class Map(Timestamps, Base):
 
 
 class Account(Timestamps, Base):
-    """A player's login. Their heroes, teams and handle come later."""
+    """A player's login and public handle. Their heroes and teams come later."""
 
     __tablename__ = "accounts"
 
@@ -74,6 +74,10 @@ class Account(Timestamps, Base):
     email_key: Mapped[str | None] = mapped_column(String(254), unique=True)
     # No login until the address is confirmed by the emailed link.
     email_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The name other players see. Never the same as the username or email
+    # (see accounts.service.check_handle); unique ignoring case and spacing.
+    handle: Mapped[str | None] = mapped_column(String(24))
+    handle_key: Mapped[str | None] = mapped_column(String(24), unique=True)
     # Every login carries this number; bumping it ends them all (a password reset does).
     session_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
