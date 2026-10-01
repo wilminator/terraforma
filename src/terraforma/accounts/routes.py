@@ -50,6 +50,8 @@ class HandleRequest(Strict):
 
 class EmailChangeRequest(Strict):
     email: str = Field(min_length=3, max_length=254)
+    # An app code or a recovery code; required when 2FA is on.
+    code: str | None = Field(default=None, min_length=1, max_length=32)
 
 
 class ResetRequest(Strict):
@@ -212,9 +214,13 @@ async def email_change(body: EmailChangeRequest, request: Request, account: Acti
 
     The old address is told too, so a hijacked login can't change it silently.
     An address another account has gets a warning instead, and the caller
-    sees the same answer either way.
+    sees the same answer either way. With 2FA on, a live code is needed as well.
     """
     await limited(request, ratelimit.EMAIL_CHANGE_BY_ACCOUNT, str(account.id))
+    if twofa.enabled(account):
+        await limited(request, ratelimit.TWOFA_CODE_BY_ACCOUNT, str(account.id))
+        if body.code is None or not twofa.check_code(request.app.state.keys, account, body.code):
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "a current two-factor code is needed to change your email")
     try:
         new_email = service.check_email(body.email)
         if account.handle:

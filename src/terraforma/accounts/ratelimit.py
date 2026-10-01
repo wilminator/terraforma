@@ -31,7 +31,7 @@ RESET_BY_EMAIL = Limit("reset-email", 3, 60 * 60)
 # Every guess at a 2FA code, at login or in the 2FA calls, counts against the account.
 TWOFA_CODE_BY_ACCOUNT = Limit("2fa-code", 10, 15 * 60)
 TWOFA_CHANGE_BY_ACCOUNT = Limit("2fa-change", 5, 60 * 60)
-EMAIL_CHANGE_BY_ACCOUNT = Limit("email-change", 3, 60 * 60)
+EMAIL_CHANGE_BY_ACCOUNT = Limit("email-change", 5, 60 * 60)
 
 
 class RateLimited(Exception):
