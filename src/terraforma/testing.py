@@ -89,11 +89,12 @@ def game():
 
 
 @pytest.fixture
-def app_client(database_url, mailbox, game):
-    """A TestClient for the engine app on a freshly migrated database (each database under test)."""
+def app_client(database_url, mailbox, game, tmp_path):
+    """A TestClient for the engine app on a freshly migrated database (each database under test), with its own key."""
     from starlette.testclient import TestClient
 
     from terraforma.app import create_app
+    from terraforma.keys import new_key
     from terraforma.settings import Settings
 
     async def prepare():
@@ -108,7 +109,14 @@ def app_client(database_url, mailbox, game):
         await engine.dispose()
 
     run(prepare())
-    settings = Settings(database_url=database_url, session_secret=SECRET, secure_cookies=False, public_url="http://game.test")
+    new_key(tmp_path / "keys")
+    settings = Settings(
+        database_url=database_url,
+        session_secret=SECRET,
+        secure_cookies=False,
+        public_url="http://game.test",
+        key_dir=tmp_path / "keys",
+    )
     with TestClient(create_app(settings, game, mailer=mailbox)) as client:
         yield client
     run(clean_up())

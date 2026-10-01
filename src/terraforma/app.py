@@ -24,6 +24,7 @@ from .api.security import SESSION_ACCOUNT, SESSION_VERSION, same_origin
 from .db.session import make_engine, make_sessionmaker
 from .fights.channels import FightChannels
 from .game import Game
+from .keys import KeyRing
 from .mail import Mailer, OutboxMailer, SmtpMailer
 from .models import Account
 from .settings import Settings
@@ -65,6 +66,8 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        # No key, no start: better than running on and failing at the first 2FA setup.
+        app.state.keys = KeyRing.load(settings.key_dir)
         engine = make_engine(settings.database_url)
         app.state.sessionmaker = make_sessionmaker(engine)
         yield

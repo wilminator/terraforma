@@ -13,6 +13,9 @@ services:
     ports: ["8000:8000"]
     volumes:
       - ./settings.toml:/app/settings.toml:ro
+      # The encryption keys: make the first with
+      #   docker compose run --rm app python -m terraforma keys new
+      - ./keys:/app/keys
     depends_on:
       postgres: { condition: service_healthy }
 

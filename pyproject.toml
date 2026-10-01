@@ -24,13 +24,14 @@ dependencies = [
     "pydantic>=2.9",
     "alembic>=1.14",
     "aiosmtplib>=3.0",
+    "cryptography>=43",
 ]
 
 [project.optional-dependencies]
 # One driver per database the engine supports.
 sqlite = ["aiosqlite>=0.20"]
 postgres = ["asyncpg>=0.30"]
-mysql = ["aiomysql>=0.2", "cryptography>=43"]
+mysql = ["aiomysql>=0.2"]
 all-databases = ["terraforma[sqlite,postgres,mysql]"]
 # For tests, the engine's and a game's (terraforma.testing).
 testing = ["pytest>=8.3", "httpx2"]

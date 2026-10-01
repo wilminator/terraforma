@@ -50,7 +50,7 @@ def test_registering_sends_a_confirmation_link_and_login_waits_for_it(app_client
     answer = app_client.post("/api/confirm-email", json={"token": token_in(mail)})
     assert answer.json() == {"confirmed": True, "username": "Mike"}
     assert log_in(app_client).status_code == 200
-    assert app_client.get("/api/me").json() == {"username": "Mike"}
+    assert app_client.get("/api/me").json() == {"username": "Mike", "handle": None}
 
 
 def test_an_unconfirmed_login_says_so_only_with_the_right_password(app_client):

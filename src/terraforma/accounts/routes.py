@@ -1,4 +1,4 @@
-"""The account calls: register, confirm email, log in and out, reset a password.
+"""The account calls: register, confirm email, log in and out, reset a password, set a handle.
 
 Calls made before logging in can't carry the CSRF token, but they only
 accept a JSON body, which another site's page can't send cross-origin
@@ -39,6 +39,10 @@ class TokenRequest(Strict):
 class LoginRequest(Strict):
     username: str = Field(min_length=1, max_length=32)
     password: str = Field(min_length=1, max_length=service.PASSWORD_MAX)
+
+
+class HandleRequest(Strict):
+    handle: str = Field(min_length=1, max_length=24)
 
 
 class ResetRequest(Strict):
@@ -139,7 +143,19 @@ async def logout(request: Request, account: ActingAccount) -> dict:
 
 @router.get("/me")
 async def me(account: CurrentAccount) -> dict:
-    return {"username": account.username}
+    return {"username": account.username, "handle": account.handle}
+
+
+@router.post("/handle")
+async def set_handle(body: HandleRequest, account: ActingAccount, db: Db) -> dict:
+    """Sets the name other players see: never the username or email address."""
+    try:
+        await service.set_handle(db, account, body.handle)
+    except service.HandleTaken as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
+    except service.AccountError as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
+    return {"handle": account.handle}
 
 
 @router.post("/password-reset", status_code=status.HTTP_202_ACCEPTED)
