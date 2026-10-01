@@ -45,11 +45,17 @@ Status is one of: done, next, waiting (names what it waits for), idea (not yet s
    - New migration 0004. Every table and call works on SQLite, Postgres and MySQL.
 3. **Email change**: done (engine #6). With 2FA on, a live code is needed as well as the link mailed to the new address. With 2FA on, only an OTP changes the email. Without it, an emailed link does. Never the password. Re-check the handle against the new address (`check_handle`), end other logins (`session_version`), and tell the old address.
 4. **Release v0.2.0**: next, once both pull requests are merged and Mike has run the full suite. Mike creates the tag (Claude's sessions can't create tags). Then the games' dependency changes from `@main` to the tag only if Mike says the API is stable enough; until then they follow `main`.
-5. **Other work from the TerraForma plan doc** (fights engine, maps, seed loading and the rest): idea. Independent of accounts, so it can run alongside slices 2 to 4. Scope it with Mike first.
+5. **Content and fights**: proposed, waiting for Mike to confirm the order and depth of each piece (the pieces below replace the old "other work" idea; they follow the plan doc's phases as the code's comments name them). They share the models module and the migration chain, so they run in order, one pull request each. Each takes the next free migration number when its branch is cut.
+   - **5a. Content models and seed loading**: models for abilities, items, jobs, monsters and personalities; strict Pydantic checks of each seed file (`seed.py`); an idempotent load into the database at startup (`db.dialect.upsert`), so a game's seed is data the engine understands. The seed file formats are a public interface (the license exception covers them): document them in the README. Unblocks the game module loading real content.
+   - **5b. Heroes and teams**: a hero belongs to an account (a job, stats, a location), a team groups heroes; calls to create, list and rename them, with limits per account.
+   - **5c. Fight engine core**: fight, participant and round models; turn order and ability resolution as plain functions driven by a `WorldRng` stream per fight, so a fight replays from its seed. No routes yet, so it is heavily unit-tested on every database.
+   - **5d. Fights live**: the command call stops being a stub and feeds the engine; the WebSocket pushes real events; the round timer runs on the clock. Admins earn tokens only when fighting as a player.
+   - **5e. Maps and movement**: map tiles, a move call (wrapping maps included), heroes and monsters placed on maps. Independent of 5c and 5d except for the migration number, so it can run beside them.
+   The game module can start on its seed files, assets and rules settings right after the v0.2.0 release; loading and playing them waits for 5a and 5c to 5d.
 
 ## Parallel runs
 
-Slices 2 and 3 must be in order. Slice 5 work can run beside them in its own session, as long as it doesn't change accounts files or add a migration in the same release window; if it needs a migration, take the next free number when the branch is cut and rebase before the pull request.
+Slices 2 and 3 must be in order. Slice 5's pieces can run beside slices 2 to 4 in their own sessions, as long as they don't change accounts files; each takes the next free migration number when its branch is cut and rebases before the pull request.
 
 ## Log
 
