@@ -10,10 +10,14 @@ session_secret = "change me to a long random string, 32 characters or more"
 # HTTPS only. Set to false only for local development over plain http.
 secure_cookies = false
 
+# The address players reach the game at: links in emails start with it.
+public_url = "http://localhost:8000"
+
 # Where the encryption key files are (mounted into the container).
 key_dir = "keys"
 
-# Outgoing mail. Leave this section out and the game sends none (fine for development).
+# Outgoing mail. Leave this section out for development: messages are then
+# written as .eml files to outbox_dir (default "outbox") instead of sent.
 # Cloudflare: port 465 with implicit TLS; the API key is both username and password.
 # [mail]
 # host = "smtp.example.com"

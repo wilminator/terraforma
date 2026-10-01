@@ -51,6 +51,10 @@ class Settings(BaseModel):
     secure_cookies: bool = True
     # How long a login lasts, in seconds.
     session_max_age: int = 60 * 60 * 24 * 14
+    # The address players reach the game at, for links in emails.
+    public_url: str = "http://localhost:8000"
+    # Development without [mail]: messages are written here as .eml files.
+    outbox_dir: Path = Path("outbox")
     # Where the encryption key files live (two slots: current and previous).
     key_dir: Path = Path("keys")
     # No [mail] section: the game sends no mail (fine for development).

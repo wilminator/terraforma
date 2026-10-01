@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from terraforma.accounts.service import authenticate, create_account
+from terraforma.accounts.service import AccountError, EmailTaken, UsernameTaken, authenticate, create_account
 from terraforma.db.dialect import same_text, upsert
 from terraforma.models import Account, Fighter, Map, World, advance_clock
 
@@ -85,7 +85,7 @@ async def test_text_matches_ignoring_case_on_every_database(db):
 
 
 async def test_accounts_log_in_with_any_case_of_their_name(db):
-    await create_account(db, "Mike", "correct horse battery")
+    await create_account(db, "Mike", "correct horse battery", email="mike@example.com")
     await db.commit()
     assert (await authenticate(db, "mike", "correct horse battery")).username == "Mike"
     assert await authenticate(db, "Mike", "wrong horse battery") is None
@@ -93,20 +93,38 @@ async def test_accounts_log_in_with_any_case_of_their_name(db):
 
 
 async def test_one_account_per_name_whatever_the_case(db):
-    await create_account(db, "Mike", "correct horse battery")
+    await create_account(db, "Mike", "correct horse battery", email="mike@example.com")
     await db.commit()
+    with pytest.raises(UsernameTaken):
+        await create_account(db, "MIKE", "another long password", email="other@example.com")
+    with pytest.raises(EmailTaken):
+        await create_account(db, "Other", "another long password", email="MIKE@Example.com")
+
+
+async def test_the_database_itself_refuses_a_second_account_with_the_same_name(db):
+    db.add(Account(username="Mike", username_key="mike", password_hash="x"))
+    db.add(Account(username="MIKE", username_key="mike", password_hash="x"))
     with pytest.raises(IntegrityError):
-        await create_account(db, "MIKE", "another long password")
+        await db.flush()
 
 
 async def test_passwords_are_stored_as_argon2id(db):
-    account = await create_account(db, "Mike", "correct horse battery")
+    account = await create_account(db, "Mike", "correct horse battery", email="mike@example.com")
     assert account.password_hash.startswith("$argon2id$")
     assert "correct horse battery" not in account.password_hash
 
 
-@pytest.mark.parametrize(("username", "password"), [("ab", "long enough password"), ("bad name", "long enough password"), ("Mike", "short")])
-async def test_account_rules(db, username, password):
-    with pytest.raises(ValueError):
-        await create_account(db, username, password)
+@pytest.mark.parametrize(
+    ("username", "password", "email"),
+    [
+        ("ab", "long enough password", "a@b.cd"),
+        ("bad name", "long enough password", "a@b.cd"),
+        ("Mike", "short", "a@b.cd"),
+        ("Mike", "long enough password", "not an email"),
+        ("Mike", "long enough password", "a@nodot"),
+    ],
+)
+async def test_account_rules(db, username, password, email):
+    with pytest.raises(AccountError):
+        await create_account(db, username, password, email=email)
     assert (await db.scalar(select(Account))) is None
