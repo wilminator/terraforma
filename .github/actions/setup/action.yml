@@ -1,11 +1,44 @@
 name: Set up TerraForma tests
-description: Install Python 3.14 and the engine with its test tools. Check the code out first, or a local action cannot be found.
+description: Install Python 3.14 and the engine with its test tools from a cached virtual environment. Check the code out first, or a local action cannot be found.
+inputs:
+  build:
+    description: Build and save the virtual environment when pyproject.toml has changed (the one "environment" job does this); every other job only restores it.
+    default: "false"
 runs:
   using: composite
   steps:
     - uses: actions/setup-python@v7
+      id: python
       with:
         python-version: "3.14"
         cache: pip
-    - run: pip install -e ".[dev]"
+        cache-dependency-path: pyproject.toml
+    # The key changes with the Python version or pyproject.toml (the requirements).
+    - name: Build the virtual environment if the requirements changed
+      if: inputs.build == 'true'
+      uses: actions/cache@v5
+      id: built
+      with:
+        path: ~/.venv
+        key: venv-${{ runner.os }}-${{ steps.python.outputs.python-version }}-${{ hashFiles('pyproject.toml') }}
+    - name: Install the dependencies
+      if: inputs.build == 'true' && steps.built.outputs.cache-hit != 'true'
+      run: |
+        python -m venv ~/.venv
+        ~/.venv/bin/pip install -e ".[dev]"
+      shell: bash
+    - name: Restore the virtual environment
+      if: inputs.build != 'true'
+      uses: actions/cache/restore@v5
+      with:
+        path: ~/.venv
+        key: venv-${{ runner.os }}-${{ steps.python.outputs.python-version }}-${{ hashFiles('pyproject.toml') }}
+        fail-on-cache-miss: true
+    # The engine itself is always linked from this checkout; its dependencies are already there.
+    - name: Link the engine
+      if: inputs.build != 'true'
+      run: ~/.venv/bin/pip install --no-deps -e .
+      shell: bash
+    - name: Use the virtual environment
+      run: echo "$HOME/.venv/bin" >> "$GITHUB_PATH"
       shell: bash
