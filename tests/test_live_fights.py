@@ -218,3 +218,35 @@ async def test_a_view_shows_what_a_page_needs(db):
     stranger = await live.view(db, record, RULES)
     assert not any(each["yours"] for each in stranger["fighters"])
     assert await live.watchers(db, record) == {mike.id}
+
+
+# --- finding fights --------------------------------------------------------------------------------------------------------------
+
+async def test_an_account_finds_its_fights_running_first_and_with_the_heroes_in_them(db):
+    hero, mike, team, record = await started(db, "ogre")
+    zed = await create_account(db, "Zed", PASSWORD, email="zed@example.com", confirmed=True)
+    assert await live.mine(db, zed.id) == [], "someone with no hero in it sees nothing"
+    [found] = await live.mine(db, mike.id)
+    assert found["id"] == record.id and found["guid"] == record.guid and found["over"] is False and found["round"] == 1
+    assert found["heroes"] == [{"hero_id": hero.id, "name": "Aria"}] and found["deadline"].endswith("+00:00")
+    await live.resolve_round(db, record, RULES)
+    assert (await live.mine(db, mike.id))[0]["round"] == 2
+
+
+async def test_running_fights_come_first_then_the_latest_and_a_limit_applies(db):
+    hero, mike, team, first = await started(db, "rat")
+    await play_to_the_end_live(db, first, mike)
+    second = await live.start_team_fight(db, team, ["ogre"], RULES)
+    found = await live.mine(db, mike.id)
+    assert [each["id"] for each in found] == [second.id, first.id] and [each["over"] for each in found] == [False, True]
+    assert [each["id"] for each in await live.mine(db, mike.id, running_only=True)] == [second.id]
+    assert [each["id"] for each in await live.mine(db, mike.id, limit=1)] == [second.id]
+
+
+async def play_to_the_end_live(db, record, mike):
+    for _ in range(30):
+        if record.finished:
+            return
+        await attack(db, record, mike)
+        await live.resolve_round(db, record, RULES)
+    raise AssertionError("the fight went on too long")
