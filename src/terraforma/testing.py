@@ -155,6 +155,7 @@ def app_client(database_url, mailbox, game, tmp_path):
         public_url="http://game.test",
         key_dir=tmp_path / "keys",
         fight_timer_seconds=0,  # tests resolve overdue rounds themselves, on the clock they move
+        housekeeping_seconds=0,  # tests run the housekeeping pass themselves
     )
     with TestClient(create_app(settings, game, mailer=mailbox)) as client:
         yield client

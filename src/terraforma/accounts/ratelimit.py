@@ -39,6 +39,8 @@ ALLIANCE_BY_ACCOUNT = Limit("alliance", 120, 60 * 60)
 PROFILE_BY_ACCOUNT = Limit("profile", 60, 60 * 60)
 # Public pages need no login: this keeps anyone from hunting for tokens.
 PUBLIC_PROFILE_BY_ADDRESS = Limit("profile-public", 120, 15 * 60)
+# Every limit above, for housekeeping: new limits go in here too (a test checks that none is missing).
+ALL_LIMITS = [value for value in list(globals().values()) if isinstance(value, Limit)]
 
 
 class RateLimited(Exception):
