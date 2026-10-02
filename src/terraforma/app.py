@@ -31,8 +31,10 @@ from .heroes.inventory_routes import router as inventory_router
 from .heroes.routes import router as heroes_router
 from .alliances.ballot_routes import router as ballots_router
 from .alliances.routes import router as alliances_router
+from .profiles.routes import router as profiles_router
 from .relations.rating_routes import router as ratings_router
 from .relations.routes import router as relations_router
+from .towns.routes import router as towns_router
 from .trading.routes import router as trading_router
 from . import housekeeping
 from .keys import KeyRing
@@ -107,9 +109,11 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(inventory_router)
     app.include_router(trading_router)
     app.include_router(relations_router)
+    app.include_router(towns_router)
     app.include_router(alliances_router)
     app.include_router(ratings_router)
     app.include_router(ballots_router)
+    app.include_router(profiles_router)
 
     @app.get("/api/about")
     async def about(request: Request) -> dict:

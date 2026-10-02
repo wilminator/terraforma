@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..economy import Economy, TeamGold
 from ..alliances.hooks import Alliances
 from ..relations.hooks import Relations
+from ..towns.hooks import Towns
 from ..fights.rules import Rules
 from ..models import Account
 from .security import SESSION_ACCOUNT, SESSION_VERSION, csrf_matches
@@ -49,6 +50,15 @@ def get_relations(request: Request) -> Relations:
 
 
 GameRelations = Annotated[Relations, Depends(get_relations)]
+
+
+def get_towns(request: Request) -> Towns:
+    """The game's town rules (the engine's defaults, when the app runs without a game)."""
+    game = request.app.state.game
+    return game.towns if game else Towns()
+
+
+GameTowns = Annotated[Towns, Depends(get_towns)]
 
 
 def get_alliances(request: Request) -> Alliances:
