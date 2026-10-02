@@ -32,7 +32,7 @@ class EventType(StrEnum):
     RESTORE = "Restore"  # [party, group, character, resource, amount]
     REVIVED = "Revived"  # [party, group, character]
     DIED = "Died"  # [party, group, character, amount, overkill]
-    ALTER_STAT = "AlterStat"  # [party, group, character, stat, amount]
+    ALTER_STAT = "AlterStat"  # [party, group, character, stat, amount]: the current value of a stat moves
     USE_ITEM = "UseItem"  # [inventory index]: one of a stack used up
     EXPEND_AMMO = "ExpendAmmo"  # [inventory index]
     EQUIP_SLOT = "EquipSlot"  # [inventory index, slot]
@@ -42,6 +42,11 @@ class EventType(StrEnum):
     GOLD = "Gold"  # [party, team, amount]: a team's share of the gold dropped
     FIGHT_OVER = "FightOver"  # []: the fight has ended and been paid out; nothing more is played
     LEVEL_UP = "LevelUp"  # [party, group, character, level, {stat: gain}]
+    STATUS_APPLIED = "StatusApplied"  # [party, group, character, status key, source party, group, character, duration or None]
+    STATUS_TICK = "StatusTick"  # [party, group, character, status key, source party, group, character, intensity, when]
+    STATUS_REMOVED = "StatusRemoved"  # [party, group, character, status key, source party, group, character, reason]
+    TURN_SKIPPED = "TurnSkipped"  # [party, group, character, status key]
+    ROUND_END = "RoundEnd"  # []: every status token's round counter goes up by one
 
 
 @dataclass(frozen=True)

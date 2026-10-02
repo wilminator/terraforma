@@ -6,12 +6,13 @@ A hero starts a fight at full HP and MP for now: heroes do not carry damage betw
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..content.models import Ability, Item, Job, Monster
+from ..content.models import Ability, Item, Job, Monster, Status
 from ..heroes import inventory
 from ..heroes.models import Hero, Team, TeamMember
 from .combatant import Combatant
-from .content import ability_spec, item_spec, monster_combatant
+from .content import ability_spec, item_spec, monster_combatant, status_spec
 from .rules import Rules
+from .status import StatusSpec
 
 
 async def hero_fighter(session: AsyncSession, hero: Hero) -> Combatant:
@@ -49,3 +50,9 @@ async def team_party(session: AsyncSession, team: Team) -> tuple[list[Combatant]
     )
     heroes = list(rows.scalars().all())
     return [await hero_fighter(session, hero) for hero in heroes], {team.id: [hero.id for hero in heroes]}
+
+
+async def known_statuses(session: AsyncSession) -> dict[str, StatusSpec]:
+    """Every active status in the content, by key: what a new fight is built with (``build_fight(layout, statuses)``)."""
+    rows = await session.scalars(select(Status).where(Status.active.is_(True)))
+    return {row.key: status_spec(row) for row in rows.all()}
