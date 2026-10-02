@@ -146,6 +146,17 @@ A fight is DragonStar's process: every fighter has chosen a command (attack with
 - **Storing a fight** (`terraforma.fights.store`): a fight is its *initial state*, written once when it starts (`fights.state.dehydrate` turns a `Fight` into plain JSON and `hydrate` back), plus an append-only log of rounds. Each round records the commands that led to it, the events it produced, and a hash of the round before (the first chains from a hash of the initial state), so a changed or missing round shows. `load_state` rebuilds the fight now by replaying the log; `verify` checks the chain, and with `deep=True` plays every round again from its commands and its own dice (`fight_stream(world_rng, map, fight_id, round)`) and expects the same events. Anyone not given a command in a round defends. Heroes and monsters become fighters with `fights.build.hero_fighter` and `monster_fighter` (a hero starts a fight at full HP and MP for now).
 - **Pure.** `terraforma.fights` (apart from `store` and `build`) has no database or web code. Heroes and monsters become fighters through `terraforma.fights.content`.
 
+## Live fights
+
+A fight waits for its round (`terraforma.fights.live`). **Starting** one is the server's business, not a player's call: `live.start_team_fight(session, team, monster_keys, rules)` puts a team against monsters where the team stands (the map's encounters will call it), so nobody picks their own opponents. A hero can be in one unfinished fight at a time.
+
+- **Commands.** `POST /api/fights/{id}/commands` (login and CSRF token; a strict body: the fighter, the command, what is used, the target) commits a command for one of the *caller's own* heroes' living fighters; sending another replaces it. Nothing else can command a fighter: the monsters are on the AI.
+- **Rounds.** The round plays as soon as every player's living fighter has committed, or when `Rules.round_seconds` (30 by default) run out, whichever comes first; a fighter that has not committed defends. The monsters choose with the AI (`fights.ai`) from a stream of their own under the round's, and the commands that were used are stored with the round, so replays never run the AI again. Time here is the wall clock (players are waiting); everything else is the fight's own dice.
+- **The timer.** The server looks for overdue rounds every `fight_timer_seconds` (settings, 1 by default; `live.resolve_overdue` does one pass).
+- **The end.** The round that ends a fight saves its result to the heroes and pays its gold through the game's economy, once (`store.apply_results`), and the fight is finished.
+- **Looking.** `GET /api/fights/{id}` shows a fight to its players (who is standing with how much, which fighters are theirs and have committed, when the round plays); `GET /api/fights/watch/{guid}` shows it to anyone logged in who knows its public name.
+- **The socket.** `/ws/fights/{id}` (the Origin header must be the site's own, and a login) pushes `committed` (who has committed, never what), then `round` (the round's events, whether the fight is over, and the next deadline). Only the fight's players may listen by its number; anyone logged in may with `?guid=`. The page only listens: commands go through the call.
+
 ## Databases
 
 The engine is database-agnostic. Postgres is the primary database, MySQL is supported, and SQLite serves tests and development. To keep it that way:

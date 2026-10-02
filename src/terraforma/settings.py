@@ -59,6 +59,8 @@ class Settings(BaseModel):
     key_dir: Path = Path("keys")
     # No [mail] section: the game sends no mail (fine for development).
     mail: MailSettings | None = None
+    # How often the server looks for fights whose round time has run out, in seconds (0: never, for tests).
+    fight_timer_seconds: float = Field(default=1.0, ge=0)
 
 
 def load_settings(path: str | os.PathLike | None = None) -> Settings:

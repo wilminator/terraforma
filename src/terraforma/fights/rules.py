@@ -51,6 +51,9 @@ class Rules:
     #: four groups of five. A party is a collection of whole teams (see ``terraforma.parties``).
     party_size: int = 20
     group_size: int = 5
+    #: How long a round waits for the players' commands, in seconds, before it plays with what it has (anyone who
+    #: has not committed defends). A round also plays at once when every player's fighter has committed.
+    round_seconds: int = 30
     #: What an empty hand attacks with.
     unarmed: ItemSpec = ItemSpec(key="", name="Fists")
 
