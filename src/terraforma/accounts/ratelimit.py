@@ -34,6 +34,7 @@ TWOFA_CHANGE_BY_ACCOUNT = Limit("2fa-change", 5, 60 * 60)
 EMAIL_CHANGE_BY_ACCOUNT = Limit("email-change", 5, 60 * 60)
 TRADE_BY_ACCOUNT = Limit("trade", 120, 60 * 60)
 RELATION_BY_ACCOUNT = Limit("relation", 120, 60 * 60)
+ALLIANCE_BY_ACCOUNT = Limit("alliance", 120, 60 * 60)
 
 
 class RateLimited(Exception):

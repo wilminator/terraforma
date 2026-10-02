@@ -244,7 +244,7 @@ def test_the_calls_take_only_what_they_define(pair):
     url = f"/api/teams/{vanguard}/relationships/set"
     for body in (
         {"id": rivals}, {"id": rivals, "score": 101}, {"id": rivals, "score": -101}, {"id": 0, "score": 5},
-        {"id": rivals, "score": 5, "kind": "alliance"}, {"id": rivals, "score": 5, "why": "no"}, {"id": rivals, "note": "x" * (NOTE_MAX + 1)},
+        {"id": rivals, "score": 5, "kind": "guild"}, {"id": rivals, "score": 5, "why": "no"}, {"id": rivals, "note": "x" * (NOTE_MAX + 1)},
     ):
         expect(client.post(url, json=body, headers=headers), 422)
 

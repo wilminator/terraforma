@@ -9,12 +9,13 @@ from sqlalchemy import delete, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..alliances.models import Alliance
 from ..heroes.models import Team
 from .hooks import Change, Ref, Relations
 from .models import NOTE_MAX, Relationship
 
-#: The kinds of side there are. Alliances arrive with their own piece.
-KINDS = ("team",)
+#: The kinds of side there are.
+KINDS = ("team", "alliance")
 
 
 class RelationError(ValueError):
@@ -30,14 +31,17 @@ async def name_of(session: AsyncSession, ref: Ref) -> str | None:
     if ref.kind == "team":
         team = await session.get(Team, ref.id)
         return team.name if team else None
+    if ref.kind == "alliance":
+        alliance = await session.get(Alliance, ref.id)
+        return alliance.name if alliance else None
     return None
 
 
 async def check_sides(session: AsyncSession, subject: Ref, object: Ref) -> None:
     if subject == object:
-        raise RelationError("a team has no relationship with itself")
+        raise RelationError(f"a {subject.kind} has no relationship with itself")
     if await name_of(session, subject) is None:
-        raise NotFound("there's no such team")
+        raise NotFound(f"there's no such {subject.kind}")
     if await name_of(session, object) is None:
         raise NotFound(f"there's no such {object.kind}")
 

@@ -141,11 +141,21 @@ The calls, each its own route, for the hero's owner and with the CSRF token: `PO
 
 ## Relationships
 
-A team has a relationship with another team: how it feels about it, as a score from -100 to 100 and a short private note. It is *directed* (Aria's view of Bram and Bram's view of Aria are separate rows) and private: only the team's owner reads it, and the other side never sees a score or a note. Scores have named *bands* (`enemy`, `wary`, `neutral`, `friendly`, `close` by default). Alliances will be the same kind of side with their own piece.
+A team has a relationship with another team: how it feels about it, as a score from -100 to 100 and a short private note. It is *directed* (Aria's view of Bram and Bram's view of Aria are separate rows) and private: only the team's owner reads it, and the other side never sees a score or a note. Scores have named *bands* (`enemy`, `wary`, `neutral`, `friendly`, `close` by default). Alliances are the same kind of side (see Alliances).
 
 The game has the say, through `Game(relations=...)` (`terraforma.relations.hooks.Relations`). The engine never changes a score on its own; every change goes through `Relations.resolve(session, subject, object, current, change)`, which by default gives what was asked, within the scale. A game also sets `bands`, says where a new relationship starts (`initial`) and who may form one at all (`may_form`), and moves scores from its own rules by calling `terraforma.relations.service.apply(session, relations, Change(subject, object, delta=-5, by="game", reason=...))`. A `Change` says who asked (`by` is `"player"` for the owner in a call, `"game"` for the rules). These are public interfaces (the license exception covers them).
 
 The calls, each its own route, for the team's owner (the ones that change something with the CSRF token, limited to 120 an hour per account): `GET /api/teams/{id}/relationships` (the bands, and this team's own views by name), `POST .../relationships/set` (`id` of the other team, and a `score`, a `note`, or both) and `POST .../relationships/forget` (`id`). A team's relationships go when it is deleted.
+
+## Alliances
+
+An alliance is a formal power structure of teams: a name, member teams in roles, and invitations. The game defines the roles and what each may do through `Game(alliances=...)` (`terraforma.alliances.hooks.Alliances`): `roles` (highest rank first; `leader`, `officer`, `member` by default), `founder_role` and `default_role`, `permissions` (which of `invite`, `withdraw`, `remove`, `set_role`, `hand_over`, `disband` and `speak` each role may do), `max_members` (counting invited teams) and `max_per_team`, and the hooks `may_found`, `may_join` and `allowed`, the one place to say otherwise (by default a team acts only on a team of a lower rank and gives only a role below its own). These are public interfaces (the license exception covers them). Voting and how an alliance is run beyond roles are the game's, on top of this.
+
+A team's owner acts for it. A team founds an alliance and holds its founder role; a role that may invite invites a team, whose owner accepts or declines (it joins in the default role); a team leaves, or is removed; the only holder of the founder role can't leave while others remain and hands the role over first; the last team out, or a disband by a role that may, takes the alliance with it. A team that is deleted leaves its alliances, and an alliance left without a founder gives the role to its best-ranked, longest-standing team. Someone with no team in an alliance cannot tell that it exists (404).
+
+The calls, each its own route (the ones that change something with the CSRF token, limited to 120 an hour per account): `GET /api/alliances` (your teams' alliances and the invitations waiting), `POST /api/alliances` (`team_id`, `name`), `GET /api/alliances/{id}`, `POST /api/alliances/{id}/invite|withdraw|remove|hand-over` (`team_id` of the acting team and `target_team_id`), `.../role` (also `role`), `.../leave` and `.../disband` (`team_id`), `GET /api/teams/{id}/invitations` and `POST /api/teams/{id}/invitations/accept|decline` (`alliance_id`).
+
+Alliances are sides in relationships too (see Relationships): a team can have a view of an alliance (`kind: "alliance"`), and an alliance has views of teams and of other alliances, read by its members and set by a role that may `speak` (`GET`/`POST /api/alliances/{id}/relationships`, `.../set`, `.../forget`).
 
 ## Fight rules
 
