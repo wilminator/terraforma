@@ -18,6 +18,8 @@ from ..models import Account, Map
 from ..world.start import ensure_start
 from ..fights.rules import Rules
 from ..parties import service as parties
+from ..relations.hooks import Ref
+from ..relations.service import forget
 from . import inventory
 from .models import Hero, HeroAbility, HeroEquipment, HeroItem, Team, TeamMember
 
@@ -176,6 +178,7 @@ async def rename_team(session: AsyncSession, account: Account, team_id: int, nam
 async def delete_team(session: AsyncSession, account: Account, team_id: int) -> None:
     team = await own_team(session, account, team_id)
     await parties.leave_party(session, team.id)
+    await forget(session, Ref("team", team.id))
     await session.execute(delete(TeamMember).where(TeamMember.team_id == team.id))
     await session.delete(team)
     await session.flush()

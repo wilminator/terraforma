@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .economy import Economy, TeamGold
 from .fights.rules import Rules
+from .relations.hooks import Relations
 
 
 @dataclass(frozen=True)
@@ -24,3 +25,5 @@ class Game:
     rules: Rules = field(default_factory=Rules)
     # Where gold lives and how it moves (on the team, DragonStar's way, unless the game says otherwise).
     economy: Economy = field(default_factory=TeamGold)
+    # How teams feel about each other: the scale's bands, who may form a relationship, and every change to one.
+    relations: Relations = field(default_factory=Relations)

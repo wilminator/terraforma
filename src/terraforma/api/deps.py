@@ -7,6 +7,7 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..economy import Economy, TeamGold
+from ..relations.hooks import Relations
 from ..fights.rules import Rules
 from ..models import Account
 from .security import SESSION_ACCOUNT, SESSION_VERSION, csrf_matches
@@ -38,6 +39,15 @@ def get_economy(request: Request) -> Economy:
 
 
 GameEconomy = Annotated[Economy, Depends(get_economy)]
+
+
+def get_relations(request: Request) -> Relations:
+    """The game's relationships rules (the engine's defaults, when the app runs without a game)."""
+    game = request.app.state.game
+    return game.relations if game else Relations()
+
+
+GameRelations = Annotated[Relations, Depends(get_relations)]
 
 
 async def current_account(request: Request, db: Db) -> Account:
