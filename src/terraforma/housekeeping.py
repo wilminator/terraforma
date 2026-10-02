@@ -1,7 +1,7 @@
 """Housekeeping: small jobs that tidy up what has gone stale, run on a timer (``Settings.housekeeping_seconds``).
 
-A job is an async function ``(session, now, settings)`` registered with ``@job``; ``run`` gives each its own transaction, so one
-failing job is logged and does not stop the others. ``now`` is the wall clock's timestamp (``wallclock``). A job deletes
+A job is an async function ``(session, now, settings)`` registered with ``@job``; ``run`` gives each its own transaction, so
+one failing job is logged and does not stop the others. ``now`` is the wall clock's timestamp (``wallclock``). A job deletes
 only what nothing reads any more, so running one twice, or concurrently on two servers, is harmless.
 """
 
@@ -14,12 +14,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from . import wallclock
 from .accounts.ratelimit import ALL_LIMITS
+from .alliances.models import Ballot, BallotVote, BallotVoter
 from .fights.models import PendingDrop
 from .fights.pending import OPEN, expire
 from .models import RateLimitHit
+from .relations.models import ANSWERED, DISMISSED, RatingPrompt
 from .settings import Settings
 
 log = logging.getLogger(__name__)
+
+DAY = 24 * 60 * 60
 
 Job = Callable[[AsyncSession, int, Settings], Awaitable[int]]
 
@@ -53,6 +57,25 @@ async def stale_pending_drops(session: AsyncSession, now: int, settings: Setting
         await expire(session, pending)
         count += 1
     return count
+async def old_closed_ballots(session: AsyncSession, now: int, settings: Settings) -> int:
+    """Ballots closed longer ago than ``ballot_retention_days``, with their votes (0 days: kept for good)."""
+    if not settings.ballot_retention_days:
+        return 0
+    old = select(Ballot.id).where(Ballot.closed_at.is_not(None), Ballot.closed_at <= now - settings.ballot_retention_days * DAY)
+    await session.execute(delete(BallotVote).where(BallotVote.ballot_id.in_(old)))
+    await session.execute(delete(BallotVoter).where(BallotVoter.ballot_id.in_(old)))
+    return (await session.execute(delete(Ballot).where(Ballot.id.in_(old)))).rowcount
+
+
+@job
+async def old_settled_rating_prompts(session: AsyncSession, now: int, settings: Settings) -> int:
+    """Rating prompts answered or dismissed longer ago than ``rating_prompt_retention_days``; a pending one waits for its
+    player however old it is (0 days: kept for good)."""
+    if not settings.rating_prompt_retention_days:
+        return 0
+    before = wallclock.now() - timedelta(days=settings.rating_prompt_retention_days)
+    settled = RatingPrompt.state.in_([ANSWERED, DISMISSED]) & (RatingPrompt.updated_at <= before)
+    return (await session.execute(delete(RatingPrompt).where(settled))).rowcount
 
 
 async def run(sessionmaker: async_sessionmaker[AsyncSession], settings: Settings) -> dict[str, int]:
