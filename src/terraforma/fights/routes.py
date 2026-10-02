@@ -1,4 +1,4 @@
-"""The live fight calls: command a fighter, look at a fight, watch it by its public name, and the fight socket.
+"""The live fight calls: find your fights, command a fighter, look at a fight, watch it by its public name, and the fight socket.
 
 Each call is its own route with a strict model for its arguments. A call that changes something needs a login and
 the CSRF token (``ActingAccount``); one that only reads needs a login (``CurrentAccount``). The fight socket checks
@@ -92,6 +92,13 @@ async def fight_command(fight_id: FightId, body: FightCommand, request: Request,
     if result is not None:
         await channels.push(fight_id, result.message(fight_id))
     return {"accepted": True, "round": number, "played": result is not None}
+
+
+@router.get("")
+async def my_fights(request: Request, account: CurrentAccount, limit: Annotated[int, Query(ge=1, le=50)] = 20, running: bool = False) -> list[dict]:
+    """The caller's fights, running ones first then the most recent, so a page can find its way to one."""
+    async with request.app.state.sessionmaker() as session:
+        return await live.mine(session, account.id, limit, running)
 
 
 @router.get("/watch/{guid}")

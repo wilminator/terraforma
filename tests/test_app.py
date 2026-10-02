@@ -246,3 +246,17 @@ def test_the_timer_is_on_by_default_and_the_tests_turn_it_off(client):
     assert Settings(session_secret="x" * 32).fight_timer_seconds == 1.0
     assert client.app.state.settings.fight_timer_seconds == 0
     assert in_app_db(client, lambda db: db.get(FightRecord, client.fight_id)) is not None
+
+
+# --- finding fights ---------------------------------------------------------------------------------------------------------------
+
+def test_the_list_shows_the_callers_fights_and_nobody_elses(client):
+    assert client.get("/api/fights").status_code == 401
+    log_in(client)
+    [found] = client.get("/api/fights").json()
+    assert found["id"] == client.fight_id and found["round"] == 1 and found["over"] is False and found["heroes"][0]["name"] == "Aria"
+    assert client.get("/api/fights?running=true&limit=5").json() == [found]
+    for bad in ("limit=0", "limit=51", "limit=x", "running=maybe"):
+        assert client.get(f"/api/fights?{bad}").status_code == 422
+    stranger(client)
+    assert client.get("/api/fights").json() == []
