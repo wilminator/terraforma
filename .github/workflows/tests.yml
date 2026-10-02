@@ -95,3 +95,18 @@ jobs:
           connection.close()
           PY
       - run: pytest -n auto -m "db and ${{ matrix.category }}"
+
+  # The one check to require in branch protection: it passes only when every job above did.
+  # (A skipped or cancelled job counts as a failure, so nothing slips through.)
+  test:
+    name: test
+    if: always()
+    needs: [no-database, sqlite, postgres, mysql]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every test job must have passed
+        run: |
+          test "${{ needs.no-database.result }}" = success
+          test "${{ needs.sqlite.result }}" = success
+          test "${{ needs.postgres.result }}" = success
+          test "${{ needs.mysql.result }}" = success
