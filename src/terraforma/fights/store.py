@@ -32,6 +32,7 @@ from ..world.rng import WorldRng
 from .combatant import Address, Command
 from .events import Event, EventType
 from .fight import Fight
+from . import pending
 from .models import FightActionRecord, FightParticipant, FightRecord
 from .replay import apply_events
 from .resolve import do_combat, fight_stream
@@ -256,7 +257,9 @@ async def save_drops(session: AsyncSession, record: FightRecord, fight: Fight) -
     claimed = await session.execute(update(FightRecord).where(FightRecord.id == record.id, FightRecord.drops_saved.is_(False)).values(drops_saved=True))
     if claimed.rowcount == 0:
         return False
-    for action in await actions(session, record):
+    logged = await actions(session, record)
+    await pending.hold(session, record, [raw for action in logged for raw in action.events])
+    for action in logged:
         for raw in action.events:
             each = Event.from_list(raw)
             if each.type is EventType.DROP:

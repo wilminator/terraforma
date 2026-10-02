@@ -45,6 +45,7 @@ class EventType(StrEnum):
     RELATION_PROMPT = "RelationPrompt"  # [team, other team, suggested change, reason]: the first team's owner is to be asked
     DROP = "Drop"  # [party, group, character, item key, quantity]: an item the hero was given
     DROP_LOST = "DropLost"  # [party, group, character, item key, quantity]: it did not fit the hero's inventory
+    DROP_HELD = "DropHeld"  # [party, item key, quantity, mode]: a drop kept for the party's players to settle (a pending drop)
     LEVEL_UP = "LevelUp"  # [party, group, character, level, {stat: gain}]
     STATUS_APPLIED = "StatusApplied"  # [party, group, character, status key, source party, group, character, duration or None]
     STATUS_TICK = "StatusTick"  # [party, group, character, status key, source party, group, character, intensity, when]

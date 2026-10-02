@@ -263,6 +263,19 @@ class Rules:
 
         return default_recipients(fight, party, monsters, share, rng)
 
+    def drop_mode(self, fight, party: int, monsters, share: str, rng) -> str:
+        """How one drop is given out in $party: ``"auto"`` (the default: ``drop_recipients`` picks at once), ``"need_want"``
+        (held until every hero has said need, want or pass; the highest roll wins, need before want) or ``"assign"`` (held
+        until someone ``may_assign_drop`` chooses who gets it). Held drops become pending drops (``fights.pending``)."""
+        from .drops import AUTO
+
+        return AUTO
+
+    def may_assign_drop(self, hero_ids, hero_id: int) -> bool:
+        """Whether $hero_id may choose who gets a held ``"assign"`` drop of a party whose heroes are $hero_ids. The engine has
+        no party leader, so by default nobody may: a game that has one says so here."""
+        return False
+
     def status_worth(self, statuses: dict, target, effect) -> float | None:
         """What a status or stat effect is worth to the monster AI aiming it at $target, in hit points (zero or more);
         None for any other effect. See ``fights.ai_status`` for how it is reckoned, and override this for your own way."""
