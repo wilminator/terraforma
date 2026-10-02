@@ -38,6 +38,7 @@ from .relations.rating_routes import router as ratings_router
 from .relations.routes import router as relations_router
 from .towns.routes import router as towns_router
 from .trading.routes import router as trading_router
+from . import housekeeping
 from .keys import KeyRing
 from .mail import Mailer, OutboxMailer, SmtpMailer
 from .seed import load_seed
@@ -60,6 +61,13 @@ async def fight_timer(app: FastAPI, seconds: float) -> None:
             logging.getLogger(__name__).exception("playing the overdue fight rounds failed")
 
 
+async def housekeeping_timer(app: FastAPI, seconds: float) -> None:
+    """Runs the housekeeping jobs every $seconds, for as long as the app runs."""
+    while True:
+        await asyncio.sleep(seconds)
+        await housekeeping.run(app.state.sessionmaker)
+
+
 def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer | None = None) -> FastAPI:
     logscrub.install()
 
@@ -74,11 +82,13 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
             async with app.state.sessionmaker() as session, session.begin():
                 await load_content(session, load_seed(game.seed_dir), game.rules.stats, game.rules.resource_names, game.rules.drop_chance_scale)
         timer = asyncio.create_task(fight_timer(app, settings.fight_timer_seconds)) if settings.fight_timer_seconds else None
+        tidier = asyncio.create_task(housekeeping_timer(app, settings.housekeeping_seconds)) if settings.housekeeping_seconds else None
         yield
-        if timer is not None:
-            timer.cancel()
-            with suppress(asyncio.CancelledError):
-                await timer
+        for task in (timer, tidier):
+            if task is not None:
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
         await engine.dispose()
 
     app = FastAPI(title=game.name if game else "TerraForma", lifespan=lifespan)

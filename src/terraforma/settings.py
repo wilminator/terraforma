@@ -61,6 +61,8 @@ class Settings(BaseModel):
     mail: MailSettings | None = None
     # How often the server looks for fights whose round time has run out, in seconds (0: never, for tests).
     fight_timer_seconds: float = Field(default=1.0, ge=0)
+    # How often the server tidies up what has gone stale (housekeeping jobs), in seconds (0: never, for tests).
+    housekeeping_seconds: float = Field(default=3600.0, ge=0)
 
 
 def load_settings(path: str | os.PathLike | None = None) -> Settings:
