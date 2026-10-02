@@ -8,8 +8,9 @@ How it works:
 * Every time a fighter's HP or MP moves, the fighter that moved it earns a
   *debt* from the fighter it happened to: ``ratio`` is the share of the
   gauge that moved (positive: harm, negative: healing), and ``pxp`` is the
-  actor's power at that moment. The debt belongs to the one who *owes*
-  experience (the target of the effect); ``creditor`` is the one who earns.
+  debtor's own power (``Rules.pxp``), so beating something strong pays more.
+  The debt belongs to the one who *owes* experience (the target of the effect);
+  ``creditor`` is the one who earns.
 * A debtor can owe at most 1.0 in total: if its debts add up to more, they
   are all scaled down, so a fighter that is hit a lot is not worth more than
   one that is hit once for its whole HP.
@@ -30,17 +31,13 @@ import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
-Address = tuple[int, int, int]
-
-
-def round_half_up(value: float) -> int:
-    """PHP's ``round()``: halves go away from zero (Python's ``round`` goes to even)."""
-    return int(math.copysign(math.floor(abs(value) + 0.5), value))
+from .combatant import Address
+from .gear import round_half_up
 
 
 @dataclass(frozen=True)
 class Debt:
-    """What a fighter owes the one who affected it: ``ratio`` of a gauge, at the actor's ``pxp``."""
+    """What a fighter owes the one who affected it: ``ratio`` of a gauge, at the debtor's own ``pxp``."""
 
     creditor: Address
     ratio: float

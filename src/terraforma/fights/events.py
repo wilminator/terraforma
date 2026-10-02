@@ -37,6 +37,10 @@ class EventType(StrEnum):
     EXPEND_AMMO = "ExpendAmmo"  # [inventory index]
     EQUIP_SLOT = "EquipSlot"  # [inventory index, slot]
     UNEQUIP_SLOT = "UnequipSlot"  # [slot]
+    XP_DEBT = "XpDebt"  # [party, group, character, creditor party, group, character, ratio, pxp]: what it now owes
+    XP_EARNED = "XpEarned"  # [party, group, character, amount]
+    GOLD = "Gold"  # [party, team, amount]: a team's share of the gold dropped
+    LEVEL_UP = "LevelUp"  # [party, group, character, level, {stat: gain}]
 
 
 @dataclass(frozen=True)

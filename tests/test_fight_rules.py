@@ -204,6 +204,7 @@ def test_a_blow_that_lands_is_a_turn_an_attack_a_target_and_damage():
     # A 50% chance and a roll of 10: hit_damage(10, 10, 50, 10) is 4, halved by defending.
     assert listing(events) == [
         ("Turn", 0, 0, 0), ("Attack", None, "left", 0), ("Target", 1, 0, 0, 0), ("Damage", 1, 0, 0, 2, False),
+        ("XpDebt", 1, 0, 0, 0, 0, 0, 0.1, RULES.pxp(defender)),  # 2 of 20 life: it owes the attacker for it
     ]
     assert defender.current["HP"] == 18
 

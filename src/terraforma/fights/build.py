@@ -6,7 +6,7 @@ A hero starts a fight at full HP and MP for now: heroes do not carry damage betw
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..content.models import Ability, Item, Monster
+from ..content.models import Ability, Item, Job, Monster
 from ..heroes import inventory
 from ..heroes.models import Hero
 from .combatant import Combatant
@@ -19,12 +19,13 @@ async def hero_fighter(session: AsyncSession, hero: Hero) -> Combatant:
     stacks = await inventory.stacks(session, hero)
     position_of = {stack.id: stack.position for stack, _item in stacks}
     worn = await inventory.equipment(session, hero)
+    job = await session.get(Job, hero.job_id)
     return Combatant(
         name=hero.name, base=dict(hero.stats), current=dict(hero.stats),
         abilities=[ability_spec(ability) for ability in await inventory.known_abilities(session, hero)],
         inventory=[[item_spec(item), stack.qty] for stack, item in stacks],
         equipment={slot: position_of[stack_id] for slot, stack_id in worn.items()},
-        charid=hero.id,
+        charid=hero.id, level=hero.level, exp=hero.xp, job_need=job.xp_needed, growth=dict(job.stat_growth),
     )
 
 

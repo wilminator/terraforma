@@ -91,6 +91,8 @@ def do_combat(fight: Fight, rules: Rules, rng: random.Random) -> list[Event]:
         if not fighter.alive(rules):
             continue
         perform_action(fight, rules, rng, address, fighter, log)
+    if rules.fight_is_over(fight):
+        log.extend(rules.on_fight_end(fight, rng))
     return log.events
 
 

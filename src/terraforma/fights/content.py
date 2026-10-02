@@ -28,7 +28,7 @@ def monster_combatant(monster, items: dict, abilities: dict, rules: Rules | None
         abilities=[ability_spec(abilities[key]) for key in monster.abilities],
         inventory=[[item_spec(items[key]), 1] for key in monster.items],
         ai_action=monster.ai.get("action", 0), ai_goal=monster.ai.get("goal", 0),
-        ai_target=monster.ai.get("target", 0), ai_experience=monster.ai.get("experience", 0),
+        ai_target=monster.ai.get("target", 0), ai_experience=monster.ai.get("experience", 0), gold=monster.gold_reward,
     )
     for key in monster.equipment:
         fighter.inventory.append([item_spec(items[key]), 1])

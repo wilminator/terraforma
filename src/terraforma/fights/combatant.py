@@ -52,6 +52,15 @@ class Combatant:
     ai_goal: int = 0
     ai_target: int = 0
     ai_experience: int = 0
+    # Experience and advancement (``fights.rewards``). ``job_need`` is the job's ``xp_needed`` and ``growth`` its
+    # stat growth per level; ``gold`` is what a monster drops, and ``xp_debts`` what it owes others for what they did
+    # to it: ``[party, group, character, ratio, pxp]``, the one owed, the share of the gauge moved, and its own PXP.
+    level: int = 1
+    exp: int = 0
+    job_need: int = 0
+    growth: dict[str, float] = field(default_factory=dict)
+    gold: int = 0
+    xp_debts: list[list] = field(default_factory=list)
 
     # --- stats ----------------------------------------------------------------------------
     def alive(self, rules: Rules) -> bool:

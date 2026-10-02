@@ -27,6 +27,7 @@ import math
 import random
 from dataclasses import dataclass
 
+from .events import EventType, event
 from .gear import round_half_up
 from .specs import AbilitySpec, EffectSpec, ItemSpec
 
@@ -154,8 +155,62 @@ class Rules:
     # --- hooks ---------------------------------------------------------------------------------
     def gauge_moved(self, fight, actor: tuple, target: tuple, resource: str, before: int, after: int, maximum: int) -> list:
         """Called whenever one fighter moves another's resource (damage, healing, restoring): the place for
-        experience debts and the like. Returns events to add after the one that moved it. Nothing by default."""
-        return []
+        experience debts and the like. Returns events to add after the one that moved it.
+
+        By default the target now owes the actor experience for what it did to its life or mana: the share of the
+        gauge that moved (positive for harm, negative for help) at the target's own PXP. ``fights.experience`` pays
+        the debts out when the fight ends. Like the other changes of a round it changes the fight as well as saying so."""
+        if resource not in (self.vital, self.mana) or before == after or maximum <= 0:
+            return []
+        owed = [*actor, (before - after) / maximum, self.pxp(fight.get(target))]
+        fight.get(target).xp_debts.append(list(owed))
+        return [event(EventType.XP_DEBT, *target, *owed)]
+
+    # --- the end of a fight: experience, gold and advancement ---------------------------------------
+    #: The highest level; a fighter there needs no more experience.
+    max_level: int = 100
+
+    def fight_is_over(self, fight) -> bool:
+        """Whether the fight has ended: one party or none is left standing, or those left are all allies."""
+        live = [index for index, party in fight.parties.items() if not party.dead(self)]
+        return len(live) < 2 or all(set(live) <= self.alignment(fight, index)[0] for index in live)
+
+    def on_fight_end(self, fight, rng) -> list:
+        """Called when ``fight_is_over`` first holds: pays out experience and gold and advances whoever earned
+        enough (``fights.rewards``). Returns the events and has already applied them to the fight. A game overrides
+        this to reward differently (stat bonuses for performance, an experience currency, ...)."""
+        from .rewards import settle  # here, since rewards reads Rules
+
+        return settle(self, fight, rng)
+
+    def experience_needed(self, level: int, job_need: int) -> int:
+        """The experience that takes a fighter of ``level`` up to the next: the job's ``xp_needed`` at level 1, and
+        each level after that adds half of it times (level + 3) * (level + 2) / 2 - 1."""
+        need = job_need
+        for each in range(1, level):
+            need += round_half_up(job_need / 2.0 * (((each + 3) * (each + 2) / 2) - 1))
+        return need
+
+    def advance(self, fight, address: tuple, rng) -> list:
+        """Level-ups for the fighter at ``address`` after it earned experience: one ``LevelUp`` event, with the
+        stat gains, for each level it has the experience for. A job's growth per level is ``growth``; each stat grows
+        by 75 to 100 percent of it (rounded down), drawn from the fight's stream. Does nothing for a fighter with
+        no job (``job_need`` 0). The fight is changed by the caller, as for every event."""
+        fighter = fight.get(address)
+        events = []
+        if fighter.job_need <= 0:
+            return events
+        level = fighter.level
+        while level < self.max_level and fighter.exp >= self.experience_needed(level, fighter.job_need):
+            gains = {}
+            for stat in self.stats:
+                if stat in fighter.growth:
+                    gain = math.floor(fighter.growth[stat] * (75 + rng.randint(0, 25)) / 100.0)
+                    if gain:
+                        gains[stat] = gain
+            level += 1
+            events.append(event(EventType.LEVEL_UP, *address, level, gains))
+        return events
 
     def after_event(self, fight, event) -> list:
         """Called for every event a fight produces, to let a game react (fill a rage meter, grant experience);

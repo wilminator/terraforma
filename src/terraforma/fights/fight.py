@@ -26,6 +26,9 @@ class Party:
     #: None means "not set": see ``Rules.alignment`` for what that comes to.
     allies: set[int] | None = None
     enemies: set[int] | None = None
+    #: The players' teams in this party: team id -> the ids of its heroes (``Combatant.charid``). Only fighters on
+    #: a team earn experience; monsters and NPCs, which are on none, do not (but still count in the shares).
+    teams: dict[int, list[int]] = field(default_factory=dict)
 
     def dead(self, rules: Rules) -> bool:
         return all(group.dead(rules) for group in self.groups.values())
