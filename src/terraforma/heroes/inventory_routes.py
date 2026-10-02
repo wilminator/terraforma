@@ -5,8 +5,8 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 
 from ..accounts.routes import Strict
-from ..api.deps import ActingAccount, CurrentAccount, Db, GameEconomy
-from . import inventory, service
+from ..api.deps import ActingAccount, CurrentAccount, Db, GameEconomy, GameRules
+from . import field, inventory, service
 from .routes import Id, refuse
 
 router = APIRouter(prefix="/api/heroes/{hero_id}")
@@ -26,6 +26,12 @@ class Equip(Strict):
     position: int = Field(ge=0, le=inventory.MAX_ITEMS)
     # Which hand, arm or ammunition slot for the sided slots: 0 left, 1 right.
     side: int = Field(default=0, ge=0, le=1)
+
+
+class UseItem(Strict):
+    position: int = Field(ge=0, le=inventory.MAX_ITEMS)
+    # Who it is used on: one of the caller's own heroes (the user, when left out).
+    target_hero_id: int | None = Field(default=None, ge=1)
 
 
 class Unequip(Strict):
@@ -93,3 +99,14 @@ async def unequip(hero_id: Id, body: Unequip, account: ActingAccount, db: Db):
     except service.HeroError as error:
         raise refuse(error) from error
     return outcome(await inventory.unequip(db, hero, body.position))
+
+
+@router.post("/use-item")
+async def use_item(hero_id: Id, body: UseItem, account: ActingAccount, db: Db, rules: GameRules) -> dict:
+    """Spends one of the item at a position on the hero or another of the caller's (healing, mana, a revive), outside a fight."""
+    try:
+        hero = await service.own_hero(db, account, hero_id)
+        target = hero if body.target_hero_id is None else await service.own_hero(db, account, body.target_hero_id)
+        return await field.use_item(db, hero, body.position, target, rules)
+    except (service.HeroError, inventory.InventoryError) as error:
+        raise refuse(error) from error
