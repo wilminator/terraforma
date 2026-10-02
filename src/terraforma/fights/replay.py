@@ -10,6 +10,7 @@ from .combatant import Combatant
 from .events import Event, EventType
 from .fight import Fight
 from .rules import Rules
+from .status import age, count_turn, place, take_off
 
 
 def apply_events(fight: Fight, rules: Rules, events: list[Event]) -> None:
@@ -19,6 +20,7 @@ def apply_events(fight: Fight, rules: Rules, events: list[Event]) -> None:
         kind = each.type
         if kind is EventType.TURN:
             actor = fight.get(tuple(data[:3]))
+            count_turn(actor)
         elif kind is EventType.DAMAGE:
             fight.get(tuple(data[:3])).current[rules.vital] -= data[3]
         elif kind is EventType.RESTORE or kind is EventType.ALTER_STAT:
@@ -31,3 +33,10 @@ def apply_events(fight: Fight, rules: Rules, events: list[Event]) -> None:
             actor.equipment[data[1]] = data[0]
         elif kind is EventType.UNEQUIP_SLOT:
             actor.equipment[data[0]] = None
+        elif kind is EventType.STATUS_APPLIED:
+            place(fight.get(tuple(data[:3])), fight.statuses[data[3]], tuple(data[4:7]), data[7])
+        elif kind is EventType.STATUS_REMOVED:
+            take_off(fight.get(tuple(data[:3])), data[3], tuple(data[4:7]))
+        elif kind is EventType.ROUND_END:
+            for address in fight.addresses():
+                age(fight.get(address))

@@ -64,13 +64,20 @@ class EffectSpec:
     base: int = 0
     added: int = 0
     attribute: str = "none"
+    #: The stats a stat effect moves (increase_stats, decrease_stats, steal_stats).
+    stats: tuple[str, ...] = ()
+    #: The status a status effect places or removes. Empty on a remove: every status of that kind.
+    status: str = ""
+    #: Rounds a placed status lasts, overriding the status's own. None: the status's own.
+    duration: int | None = None
 
     @classmethod
     def from_dict(cls, data: dict | None) -> "EffectSpec":
         if not data:
             return cls()
         return cls(data.get("effect", NONE), scope_number(data.get("targets", INDIVIDUAL)),
-                   data.get("base", 0), data.get("added", 0), data.get("attribute", "none"))
+                   data.get("base", 0), data.get("added", 0), data.get("attribute", "none"),
+                   tuple(data.get("stats") or ()), data.get("status") or "", data.get("duration"))
 
     @property
     def detrimental(self) -> bool:

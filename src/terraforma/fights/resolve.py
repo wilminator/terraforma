@@ -16,7 +16,7 @@ import math
 import random
 
 from ..world.rng import WorldRng
-from . import specs
+from . import specs, status
 from .combatant import Address, Combatant, Command
 from .events import Event, EventType, event
 from .fight import Fight
@@ -39,6 +39,8 @@ class Log:
 
     def __init__(self, fight: Fight, rules: Rules):
         self.fight, self.rules, self.events = fight, rules, []
+        #: Above 0 while a status tick is playing: what it does doesn't set off other ticks (harmed, helped).
+        self.ticking = 0
 
     def add(self, kind: EventType, *data) -> None:
         self.put(event(kind, *data))
@@ -84,6 +86,8 @@ def participants(fight: Fight, rules: Rules, rng: random.Random) -> list[Address
 def do_combat(fight: Fight, rules: Rules, rng: random.Random) -> list[Event]:
     """Plays one round and returns its events. Stops early once only one party is left standing."""
     log = Log(fight, rules)
+    for address in fight.addresses():
+        fire(fight, rules, rng, address, status.ROUND_START, log)
     queue = participants(fight, rules, rng)
     while queue and fight.live_parties(rules) > 1:
         address = queue.pop(0)
@@ -91,6 +95,9 @@ def do_combat(fight: Fight, rules: Rules, rng: random.Random) -> list[Event]:
         if not fighter.alive(rules):
             continue
         perform_action(fight, rules, rng, address, fighter, log)
+    for address in fight.addresses():
+        fire(fight, rules, rng, address, status.ROUND_END, log)
+    end_round(fight, rules, log)
     return log.events
 
 
@@ -116,7 +123,17 @@ def valid_action(fighter: Combatant) -> bool:
 
 
 def perform_action(fight: Fight, rules: Rules, rng: random.Random, address: Address, fighter: Combatant, log: Log) -> None:
+    """One fighter's turn: it starts (and may be lost to a status), the fighter acts, and it ends."""
     log.add(EventType.TURN, *address)
+    status.count_turn(fighter)
+    if fire(fight, rules, rng, address, status.TURN_START, log) or not fighter.alive(rules):
+        return
+    act(fight, rules, rng, address, fighter, log)
+    if fighter.alive(rules):
+        fire(fight, rules, rng, address, status.TURN_END, log)
+
+
+def act(fight: Fight, rules: Rules, rng: random.Random, address: Address, fighter: Combatant, log: Log) -> None:
     if not valid_action(fighter):
         return
     command = fighter.command
@@ -245,6 +262,7 @@ def affected_by(fight, rules, rng, fighter, fighter_address, effect, target, tar
             fighter.get_current(rules, "Strength", command), target.get_current(rules, "Block"),
             rules.hit_chance(accuracy, dodge), roll, target.command == Command.DEFEND, impact, critical,
         )
+        damage = status.adjusted_damage(fighter, target, damage, effect.attribute)
         inflict_damage(fight, rules, fighter_address, target, target_address, damage, critical, log)
     elif command == Command.ITEM:
         do_effect(fight, rules, rng, effect, fighter_address, target, target_address, impact, 1, log)
@@ -263,6 +281,7 @@ def affected_by(fight, rules, rng, fighter, fighter_address, effect, target, tar
             if target.get_current(rules, vital) == 0:
                 return
             immunity = rules.saving_throw(rng, fighter.get_current(rules, "Power"), target.get_current(rules, "Resistance"))
+            fire(fight, rules, rng, target_address, status.SAVING_THROW, log)
             if immunity == 0:
                 log.add(EventType.NO_EFFECT, *target_address)
                 return
@@ -281,6 +300,7 @@ def do_effect(fight, rules, rng, effect, actor, target, target_address, impact, 
         if target.get_current(rules, vital) == 0:
             return False
         damage = math.floor(rules.roll_amount(rng, effect) * immunity * impact)
+        damage = status.adjusted_damage(fight.get(actor), target, damage, effect.attribute)
         inflict_damage(fight, rules, actor, target, target_address, damage, False, log)
     elif effect.effect == specs.REVIVE:
         maximum = target.get_base(rules, vital)
@@ -292,7 +312,38 @@ def do_effect(fight, rules, rng, effect, actor, target, target_address, impact, 
         if target.get_current(rules, vital) == 0:
             return False
         restore_pool(fight, rules, actor, target, target_address, rules.mana, rules.roll_amount(rng, effect), log)
-    # The rest (slay, stat changes, statuses) arrive with the statuses piece.
+    elif effect.effect == specs.SLAY:
+        if target.get_current(rules, vital) == 0:
+            return False
+        if rules.slay_chance(rng, effect):
+            inflict_damage(fight, rules, actor, target, target_address, target.current[vital], False, log)
+        else:
+            log.add(EventType.NO_EFFECT, *target_address)
+    elif effect.effect in (specs.INCREASE_STATS, specs.DECREASE_STATS, specs.STEAL_STATS):
+        if target.get_current(rules, vital) == 0:
+            return False
+        for stat in effect.stats:
+            if stat in rules.resource_names:
+                continue
+            amount = math.floor(rules.roll_amount(rng, effect) * immunity * impact)
+            if effect.effect == specs.INCREASE_STATS:
+                move_stat(rules, target, target_address, stat, amount, log)
+            elif effect.effect == specs.DECREASE_STATS:
+                move_stat(rules, target, target_address, stat, -amount, log)
+            else:
+                taken = move_stat(rules, target, target_address, stat, -amount, log)
+                move_stat(rules, fight.get(actor), actor, stat, -taken, log)
+    elif effect.effect in (specs.CAUSE_GOOD_STATUS, specs.CAUSE_BAD_STATUS):
+        if target.get_current(rules, vital) == 0:
+            return False
+        place_status(fight, effect, actor, target, target_address, log)
+    elif effect.effect in (specs.REMOVE_GOOD_STATUS, specs.REMOVE_BAD_STATUS):
+        if target.get_current(rules, vital) == 0:
+            return False
+        kind = status.GOOD if effect.effect == specs.REMOVE_GOOD_STATUS else status.BAD
+        for token in list(target.tokens):
+            if token.spec.kind == kind and effect.status in ("", token.spec.key):
+                remove_token(target, target_address, token, status.REMOVED, log)
     return True
 
 
@@ -312,6 +363,8 @@ def inflict_damage(fight, rules, actor, target, target_address, damage, critical
         log.add(EventType.DIED, *target_address, damage, -target.current[vital])
         target.current[vital] = 0
     log.extend(rules.gauge_moved(fight, actor, target_address, vital, before, target.current[vital], maximum))
+    if damage != 0 and not log.ticking:
+        fire(fight, rules, None, target_address, status.HARMED if damage > 0 else status.HELPED, log)
 
 
 def restore_vital(fight, rules, actor, target, target_address, amount, log) -> None:
@@ -332,6 +385,8 @@ def restore_vital(fight, rules, actor, target, target_address, amount, log) -> N
             log.add(EventType.REVIVED, *target_address)
         log.add(EventType.RESTORE, *target_address, vital, amount)
     log.extend(rules.gauge_moved(fight, actor, target_address, vital, before, target.current[vital], maximum))
+    if amount > 0 and not log.ticking:
+        fire(fight, rules, None, target_address, status.HELPED, log)
 
 
 def restore_pool(fight, rules, actor, target, target_address, resource, amount, log) -> None:
@@ -344,3 +399,119 @@ def restore_pool(fight, rules, actor, target, target_address, resource, amount, 
     log.add(EventType.RESTORE, *target_address, resource, amount)
     target.current[resource] += amount
     log.extend(rules.gauge_moved(fight, actor, target_address, resource, before, target.current[resource], maximum))
+    if amount > 0 and not log.ticking:
+        fire(fight, rules, None, target_address, status.HELPED, log)
+
+
+# --- statuses ------------------------------------------------------------------------------------------------------
+
+def move_stat(rules: Rules, fighter: Combatant, address: Address, stat: str, amount: int, log: Log) -> int:
+    """Pushes the current value of a stat by $amount, within ``Rules.stat_range``, and returns how far it really moved."""
+    low, high = rules.stat_range(stat, fighter.base[stat])
+    moved = min(max(fighter.current[stat] + amount, low), high) - fighter.current[stat]
+    if moved:
+        log.add(EventType.ALTER_STAT, *address, stat, moved)
+        fighter.current[stat] += moved
+    return moved
+
+
+def place_status(fight: Fight, effect: EffectSpec, source: Address, target: Combatant, target_address: Address, log: Log) -> None:
+    spec = fight.statuses.get(effect.status)
+    if spec is None:
+        raise ValueError(f"the fight does not know the status {effect.status!r}")
+    duration = effect.duration if effect.duration is not None else spec.duration
+    log.add(EventType.STATUS_APPLIED, *target_address, spec.key, *source, duration)
+    status.place(target, spec, source, duration)
+
+
+def remove_token(fighter: Combatant, address: Address, token: status.StatusToken, reason: str, log: Log) -> None:
+    log.add(EventType.STATUS_REMOVED, *address, token.spec.key, *token.source, reason)
+    status.take_off(fighter, token.spec.key, token.source)
+
+
+def fire(fight: Fight, rules: Rules, rng: random.Random | None, address: Address, when: str, log: Log) -> bool:
+    """Plays the ticks of every token on the fighter that are due at $when. True if one of them takes the turn."""
+    fighter = fight.get(address)
+    if not fighter.alive(rules):
+        return False
+    skipped = False
+    for token in list(fighter.tokens):
+        for tick in token.spec.ticks:
+            if token not in fighter.tokens or not fighter.alive(rules) or not status.due(token, tick, when):
+                continue
+            skipped |= tick_token(fight, rules, rng, address, fighter, token, tick, when, log)
+    return skipped
+
+
+def tick_token(fight, rules, rng, address, fighter, token, tick, when, log) -> bool:
+    """One tick of one token. The source is the actor behind whatever it does, so the experience rules credit it."""
+    intensity = token.intensity
+    log.add(EventType.STATUS_TICK, *address, token.spec.key, *token.source, round(intensity, 4), when)
+    log.ticking += 1
+    try:
+        moved = False
+        if tick.action == status.SKIP_TURN:
+            if when == status.TURN_START and rng is not None and status.skips_turn(token, tick, rng):
+                log.add(EventType.TURN_SKIPPED, *address, token.spec.key)
+                skipped = True
+            else:
+                skipped = False
+            if skipped:
+                log.extend(rules.status_acted(fight, token.source, address, token.spec, intensity, token.spec.xp_share * intensity))
+            return skipped
+        if tick.action == status.END:
+            remove_token(fighter, address, token, status.ENDED, log)
+        elif tick.action in (status.DAMAGE, status.HEAL):
+            resource = tick.resource or rules.vital
+            amount = status.tick_amount(tick, fighter.get_base(rules, resource), intensity)
+            source = fight.get(token.source) if token.source in fight.addresses() else None
+            if tick.action == status.DAMAGE:
+                amount = status.adjusted_damage(source, fighter, amount, tick.attribute)
+            if amount > 0:
+                moved = True
+                if resource == rules.vital:
+                    if tick.action == status.DAMAGE:
+                        inflict_damage(fight, rules, token.source, fighter, address, amount, False, log)
+                    else:
+                        restore_vital(fight, rules, token.source, fighter, address, amount, log)
+                else:
+                    before, maximum = fighter.current[resource], fighter.get_base(rules, resource)
+                    now = min(max(before + (-amount if tick.action == status.DAMAGE else amount), 0), maximum)
+                    if now != before:
+                        log.add(EventType.ALTER_STAT, *address, resource, now - before)
+                        fighter.current[resource] = now
+                        log.extend(rules.gauge_moved(fight, token.source, address, resource, before, now, maximum))
+        if not moved and token.spec.xp_share > 0:
+            log.extend(rules.status_acted(fight, token.source, address, token.spec, intensity, token.spec.xp_share * intensity))
+        return False
+    finally:
+        log.ticking -= 1
+
+
+def end_round(fight: Fight, rules: Rules, log: Log) -> None:
+    """Closes a round for the statuses: the dead lose theirs, the rest age and the ones that have run their course
+    end; stats that were pushed drift back towards their base."""
+    for address in fight.addresses():
+        fighter = fight.get(address)
+        if not fighter.alive(rules):
+            for token in list(fighter.tokens):
+                remove_token(fighter, address, token, status.DIED, log)
+    if any(fight.get(address).tokens for address in fight.addresses()):
+        log.add(EventType.ROUND_END)
+        for address in fight.addresses():
+            status.age(fight.get(address))
+        for address in fight.addresses():
+            fighter = fight.get(address)
+            for token in status.expired(fighter):
+                remove_token(fighter, address, token, status.EXPIRED, log)
+    for address in fight.addresses():
+        fighter = fight.get(address)
+        if not fighter.alive(rules):
+            continue
+        for stat, base in fighter.base.items():
+            if stat in rules.resource_names:
+                continue
+            drift = rules.stat_drift(stat, fighter.current[stat], base)
+            if drift:
+                log.add(EventType.ALTER_STAT, *address, stat, drift)
+                fighter.current[stat] += drift
