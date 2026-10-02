@@ -46,6 +46,10 @@ class Rules:
     hand_stats: tuple[str, ...] = ("Strength", "Accuracy", "Speed")
     #: The resource spells cost and RESTORE_MP refills.
     mana: str = "MP"
+    #: How many heroes a party holds, and how many stand in each group of a fight's side built from it: DragonStar's
+    #: four groups of five. A party is a collection of whole teams (see ``terraforma.parties``).
+    party_size: int = 20
+    group_size: int = 5
     #: What an empty hand attacks with.
     unarmed: ItemSpec = ItemSpec(key="", name="Fists")
 

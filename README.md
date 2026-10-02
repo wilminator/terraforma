@@ -108,6 +108,14 @@ A status is something a fighter can be under, and `statuses.json` is where a gam
 
 Events: `StatusApplied`, `StatusTick`, `StatusRemoved` (with the reason: `expired`, `removed`, `ended` or `died`), `TurnSkipped` and `RoundEnd` (a round has gone by for the tokens; logged only when some fighter carries one). `fights.replay.apply_events` follows them, so tokens survive replays and spectators see them. A fight starts with the statuses it knows (`build_fight(layout, statuses)`; `fights.content.status_spec` makes one from a content row), and its snapshot carries them with every fighter's tokens.
 
+## Parties
+
+A party is a collection of *whole teams* (`terraforma.parties.service`). A team joins whole and leaves whole, never split; a team is in at most one party; the smallest party is one team; and parties merge (all of the second party's teams join the first, in their order, only if they fit together). Teams from different accounts can share a party. A party stands on a map like everything else (where its first team's first hero stands; the hub for an empty team).
+
+How many heroes a party holds is the game's rule: `Rules.party_size`, 20 by default, and `Rules.group_size`, 5 by default, the size of the groups a fight's side is laid out in (four groups of five). A team joins only if there is a place for every one of its heroes, and a hero added to a team that is in a party needs a place too (the add-hero call follows the game's `party_size`). Deleting a team takes it out of its party, and an empty party goes with its last team.
+
+These are service functions, not server calls: the map drives them later (an interaction on the map forms and merges parties), so they take ids and whoever calls them decides who may. A party becomes one side of a fight with `fights.build.party_side(session, party_id, rules)`: its heroes team by team, in the order the teams joined, in groups of `group_size` (`build_fight({0: await party_side(...), 1: ...})`).
+
 ## Fight rules
 
 A fight is DragonStar's process: every fighter has chosen a command (attack with the left or right hand, use an item, change gear, use a skill, cast a spell, defend, run), then the round resolves in one pass and returns *events* (`Turn`, `Attack`, `Damage`, `Miss`, `Died`, ...) that say what happened. The fight's state after the round is what you get by applying its events in order (`terraforma.fights.replay.apply_events`), so a stored fight can be replayed and shown to spectators.
