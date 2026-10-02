@@ -16,8 +16,9 @@ exception covers it): the names and signatures are what games build on.
 """
 
 #: What a member can do for its alliance: ``invite`` teams, ``withdraw`` an invitation, ``remove`` a team, ``set_role``
-#: of a team, ``hand_over`` the founder role, ``disband`` the alliance, and ``speak`` for it in relationships.
-ACTIONS = ("invite", "withdraw", "remove", "set_role", "hand_over", "disband", "speak")
+#: of a team, ``hand_over`` the founder role, ``disband`` the alliance, ``speak`` for it in relationships, ``open_ballot``
+#: and ``close_ballot`` (put a question to a vote and close it early), and ``vote`` in ballots.
+ACTIONS = ("invite", "withdraw", "remove", "set_role", "hand_over", "disband", "speak", "open_ballot", "close_ballot", "vote")
 
 
 class Alliances:
@@ -28,12 +29,17 @@ class Alliances:
     #: What each role may do.
     permissions: dict[str, set[str]] = {
         "leader": set(ACTIONS),
-        "officer": {"invite", "withdraw", "speak"},
-        "member": set(),
+        "officer": {"invite", "withdraw", "speak", "open_ballot", "vote"},
+        "member": {"vote"},
     }
     #: How many teams an alliance holds, and how many alliances a team may be in.
     max_members: int = 20
     max_per_team: int = 3
+    #: Ballots (``alliances.ballots``): how many may be open at once, how many options one has, and whether a ballot
+    #: closes as soon as everyone who may vote has.
+    max_open_ballots: int = 5
+    option_limits: tuple[int, int] = (2, 10)
+    close_when_all_voted: bool = True
 
     def rank(self, role: str) -> int:
         """0 is the highest role."""
@@ -60,3 +66,22 @@ class Alliances:
         if role is not None and not self.rank(actor.role) < self.rank(role):
             return False
         return True
+
+    # --- ballots ---------------------------------------------------------------------------------------------------
+
+    async def vote_weight(self, session, alliance, member) -> int:
+        """How many votes a member team casts. One each by default; a game can weigh by role or size. 0 may not vote."""
+        return 1
+
+    async def decide(self, session, alliance, ballot, totals: list[int], eligible: int) -> int | None:
+        """The winning option (its index) of a ballot that has closed, or None for no decision. ``totals`` is the weight
+        each option got and ``eligible`` the total weight of those who could vote (the ballot's stored result counts the teams that could instead). By default the option with the most
+        weight wins (a tie, or no votes, decides nothing); a game can ask for a majority, a quorum or two thirds."""
+        top = max(totals, default=0)
+        if top == 0 or totals.count(top) > 1:
+            return None
+        return totals.index(top)
+
+    async def on_ballot_closed(self, session, alliance, ballot, result: dict) -> None:
+        """Called when a ballot closes, with its ``result`` (``winner``, ``totals``, ``turnout``, ``eligible``): the place for a game to
+        act on it (remove a team, change a role, start a war) from the ballot's ``kind`` and ``payload``. Nothing by default."""

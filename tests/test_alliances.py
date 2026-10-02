@@ -364,7 +364,7 @@ def test_an_alliance_is_founded_joined_and_run_over_the_calls(world):
     waiting = expect(client.get(f"/api/teams/{ids['rivals']}/invitations"), 200).json()
     assert [row["alliance"] for row in waiting] == ["Iron Pact"]
     joined = post(client, "Zed", f"/api/teams/{ids['rivals']}/invitations/accept", {"alliance_id": alliance})
-    assert [(row["team"], row["role"]) for row in joined["members"]] == [("Vanguard", "leader"), ("Rivals", "member")] and joined["can"] == []
+    assert [(row["team"], row["role"]) for row in joined["members"]] == [("Vanguard", "leader"), ("Rivals", "member")] and joined["can"] == ["vote"]
     post(client, "Zed", f"/api/alliances/{alliance}/invite", {"team_id": ids["rivals"], "target_team_id": ids["scouts"]}, 403)  # a member
     post(client, "Mike", f"/api/alliances/{alliance}/role", {"team_id": ids["vanguard"], "target_team_id": ids["rivals"], "role": "officer"})
     post(client, "Zed", f"/api/alliances/{alliance}/invite", {"team_id": ids["rivals"], "target_team_id": ids["scouts"]})  # now an officer
