@@ -41,6 +41,8 @@ class EventType(StrEnum):
     XP_EARNED = "XpEarned"  # [party, group, character, amount]
     GOLD = "Gold"  # [party, team, amount]: a team's share of the gold dropped
     FIGHT_OVER = "FightOver"  # []: the fight has ended and been paid out; nothing more is played
+    RELATION_CHANGE = "RelationChange"  # [team, other team, delta]: what a fight did to the first team's view of the second
+    RELATION_PROMPT = "RelationPrompt"  # [team, other team, suggested change, reason]: the first team's owner is to be asked
     DROP = "Drop"  # [party, group, character, item key, quantity]: an item the hero was given
     DROP_LOST = "DropLost"  # [party, group, character, item key, quantity]: it did not fit the hero's inventory
     LEVEL_UP = "LevelUp"  # [party, group, character, level, {stat: gain}]

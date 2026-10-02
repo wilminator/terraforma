@@ -21,7 +21,7 @@ from .combatant import Address, Combatant, Command
 from .events import Event, EventType, event
 from .fight import Fight
 from .gear import EquipOutcome
-from .rules import Rules
+from .rules import AskPlayer, Rules
 from .specs import EffectSpec
 from .targets import expand, lost_target
 
@@ -354,6 +354,25 @@ def do_effect(fight, rules, rng, effect, actor, target, target_address, impact, 
     return True
 
 
+def gauge_changed(fight, rules, actor, target_address, resource, before, after, maximum, log) -> None:
+    """One fighter moved another's gauge: the rules react (``Rules.gauge_moved``: experience), and, if the target is on
+    a party that is not its enemy (an ally, a neutral, or its own party on another team), may move the teams' relationship (``Rules.relation_moved``)."""
+    log.extend(rules.gauge_moved(fight, actor, target_address, resource, before, after, maximum))
+    if before == after:
+        return
+    allies, enemies = rules.alignment(fight, actor[0])
+    if target_address[0] in enemies and target_address[0] not in allies:
+        return
+    answer = rules.relation_moved(fight, actor, target_address, resource, before, after, maximum)
+    team, other = fight.team_of(actor), fight.team_of(target_address)
+    if not answer or team is None or other is None or team == other:
+        return
+    if isinstance(answer, AskPlayer):  # the owner of the actor's team is asked, after the fight
+        log.add(EventType.RELATION_PROMPT, team, other, answer.delta, answer.reason)
+    else:
+        log.add(EventType.RELATION_CHANGE, team, other, answer)
+
+
 def inflict_damage(fight, rules, actor, target, target_address, damage, critical, log) -> None:
     vital = rules.vital
     before = target.current[vital]
@@ -369,7 +388,7 @@ def inflict_damage(fight, rules, actor, target, target_address, damage, critical
     if target.current[vital] <= 0:
         log.add(EventType.DIED, *target_address, damage, -target.current[vital])
         target.current[vital] = 0
-    log.extend(rules.gauge_moved(fight, actor, target_address, vital, before, target.current[vital], maximum))
+    gauge_changed(fight, rules, actor, target_address, vital, before, target.current[vital], maximum, log)
     if damage != 0 and not log.ticking:
         fire(fight, rules, None, target_address, status.HARMED if damage > 0 else status.HELPED, log)
 
@@ -391,7 +410,7 @@ def restore_vital(fight, rules, actor, target, target_address, amount, log) -> N
         if target.current[vital] > 0 and before == 0:
             log.add(EventType.REVIVED, *target_address)
         log.add(EventType.RESTORE, *target_address, vital, amount)
-    log.extend(rules.gauge_moved(fight, actor, target_address, vital, before, target.current[vital], maximum))
+    gauge_changed(fight, rules, actor, target_address, vital, before, target.current[vital], maximum, log)
     if amount > 0 and not log.ticking:
         fire(fight, rules, None, target_address, status.HELPED, log)
 
@@ -405,7 +424,7 @@ def restore_pool(fight, rules, actor, target, target_address, resource, amount, 
         raise ValueError(f"restoring {resource} came to {amount} for {target.name}: a restore never takes away")
     log.add(EventType.RESTORE, *target_address, resource, amount)
     target.current[resource] += amount
-    log.extend(rules.gauge_moved(fight, actor, target_address, resource, before, target.current[resource], maximum))
+    gauge_changed(fight, rules, actor, target_address, resource, before, target.current[resource], maximum, log)
     if amount > 0 and not log.ticking:
         fire(fight, rules, None, target_address, status.HELPED, log)
 
@@ -487,7 +506,7 @@ def tick_token(fight, rules, rng, address, fighter, token, tick, when, log) -> b
                     if now != before:
                         log.add(EventType.ALTER_STAT, *address, resource, now - before)
                         fighter.current[resource] = now
-                        log.extend(rules.gauge_moved(fight, token.source, address, resource, before, now, maximum))
+                        gauge_changed(fight, rules, token.source, address, resource, before, now, maximum, log)
         if not moved and token.spec.xp_share > 0:
             log.extend(rules.status_acted(fight, token.source, address, token.spec, intensity, token.spec.xp_share * intensity))
         return False

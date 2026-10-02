@@ -56,6 +56,14 @@ class Fight:
                     return entry.item
         raise KeyError(f"no drop table of this fight names the item {key!r}")
 
+    def team_of(self, address: Address) -> int | None:
+        """The id of the player's team the fighter at $address is on, or None (a monster, or a fighter on no team)."""
+        charid = self.get(address).charid
+        for team, heroes in self.parties[address[0]].teams.items():
+            if charid is not None and charid in heroes:
+                return team
+        return None
+
     def get(self, address: Address) -> Combatant:
         party, group, character = address
         try:

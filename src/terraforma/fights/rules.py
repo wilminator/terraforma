@@ -33,6 +33,15 @@ from .specs import AbilitySpec, EffectSpec, ItemSpec
 
 
 @dataclass(frozen=True)
+class AskPlayer:
+    """What ``Rules.relation_moved`` returns to ask the owner of the actor's team, rather than change a relationship
+    itself: whether to change their team's view of the other by $delta (negative to sour it), and why ($reason)."""
+
+    delta: int
+    reason: str = ""
+
+
+@dataclass(frozen=True)
 class Resource:
     name: str
     #: Zero of this resource is death.
@@ -204,6 +213,21 @@ class Rules:
         owed = [*source, ratio if status.kind == "bad" else -ratio, self.pxp(fight.get(target))]
         fight.get(target).xp_debts.append(list(owed))
         return [event(EventType.XP_DEBT, *target, *owed)]
+
+    def relation_moved(self, fight, actor: tuple, target: tuple, resource: str, before: int, after: int, maximum: int) -> "int | AskPlayer":
+        """Called, beside ``gauge_moved``, when a fighter moves the gauge of one on another team whose party is not an
+        enemy of its own (an ally, a neutral, or a partymate): returns how much the actor's team's view of the target's team changes (0 for
+        none, negative to sour it: harm to a friend, a spell that caught a bystander; positive to warm it: help). The
+        change is a ``RelationChange`` event, applied to the teams' relationship (``Game(relations=...)``) once the fight
+        is saved (``fights.store.apply_results``). Or return ``AskPlayer(delta, reason)`` to let the owner of the actor's
+        team decide: a ``RelationPrompt`` event says the player is to be asked whether to change their view by $delta,
+        and nothing moves until they answer. Both teams must exist. The default changes nothing: relationships move
+        only when a game says so, for example
+
+            def relation_moved(self, fight, actor, target, resource, before, after, maximum):
+                return -max(1, (before - after) * 10 // maximum) if after < before else 0
+        """
+        return 0
 
     def alignment(self, fight, party: int) -> tuple[set[int], set[int]]:
         """How the fight's other parties stand to $party: (allies, enemies). A party in neither is neutral to it.

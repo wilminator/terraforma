@@ -25,6 +25,8 @@ from ..db.base import canonical_json
 from ..economy import Economy, TeamGold, credit_fight_gold
 from ..heroes import inventory
 from ..heroes.models import Hero
+from ..relations.hooks import Change, Ref, Relations
+from ..relations.service import RelationError, apply as apply_relation
 from ..models import Map, World
 from ..world.rng import WorldRng
 from .combatant import Address, Command
@@ -192,15 +194,16 @@ async def verify(session: AsyncSession, record: FightRecord, rules: Rules, *, de
 
 # --- the result -------------------------------------------------------------------------------------------------------
 
-async def apply_results(session: AsyncSession, record: FightRecord, rules: Rules, economy: Economy | None = None) -> list[Hero]:
+async def apply_results(session: AsyncSession, record: FightRecord, rules: Rules, economy: Economy | None = None, relations: Relations | None = None) -> list[Hero]:
     """Saves a finished fight's result: to its heroes, the experience, level and stats they ended with, what their
     resources (HP, MP) stand at, which they enter their next fight with, and the
     abilities their job grants at that level; and the gold its ``Gold`` events name, paid to the teams through the
-    game's $economy (``terraforma.economy``; the team's gold, DragonStar's way, if none is given). Returns the heroes
+    game's $economy (``terraforma.economy``; the team's gold, DragonStar's way, if none is given); and what the fight
+    did to the teams' relationships (its ``RelationChange`` events), through the game's $relations. Returns the heroes
     it updated.
 
-    Safe to call again: the heroes get what the fight says rather than more of it, and the gold is paid once (the
-    fight records that it has been). Raises FightNotOver if the fight is still going.
+    Safe to call again: the heroes get what the fight says rather than more of it, and the gold is paid and the
+    relationships moved once (the fight records that they have been). Raises FightNotOver if the fight is still going.
     """
     fight, _played = await load_state(session, record, rules)
     if not fight.over:
@@ -218,7 +221,33 @@ async def apply_results(session: AsyncSession, record: FightRecord, rules: Rules
         updated.append(hero)
     await credit_fight_gold(session, economy or TeamGold(), record, await gold_payments(session, record))
     await save_drops(session, record, fight)
+    await save_relations(session, record, relations or Relations())
     return updated
+
+
+async def save_relations(session: AsyncSession, record: FightRecord, relations: Relations) -> bool:
+    """Applies what the fight did to the teams' relationships (its ``RelationChange`` events, a team's changes to its view
+    of another added up), once (True if it did now). A change the game's rules refuse, or for a team that has gone, is
+    dropped."""
+    claimed = await session.execute(update(FightRecord).where(FightRecord.id == record.id, FightRecord.relations_applied.is_(False)).values(relations_applied=True))
+    if claimed.rowcount == 0:
+        return False
+    moved: dict[tuple[int, int], int] = {}
+    for action in await actions(session, record):
+        for raw in action.events:
+            each = Event.from_list(raw)
+            if each.type is EventType.RELATION_CHANGE:
+                team, other, delta = each.data
+                moved[(team, other)] = moved.get((team, other), 0) + delta
+    for (team, other), delta in sorted(moved.items()):
+        if delta:
+            try:
+                async with session.begin_nested():
+                    await apply_relation(session, relations, Change(Ref("team", team), Ref("team", other), delta=delta, by="game", reason="fight"))
+            except RelationError:
+                continue
+    await session.refresh(record, ["relations_applied"])
+    return True
 
 
 async def save_drops(session: AsyncSession, record: FightRecord, fight: Fight) -> bool:

@@ -33,6 +33,8 @@ class FightRecord(Located, Timestamps, Base):
     initial_state: Mapped[dict] = mapped_column(ExactJSON)
     # Whether the fight's gold has been paid out (it is paid once: see terraforma.economy).
     gold_paid: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Whether what the fight did to the teams' relationships (``RelationChange`` events) has been applied (once).
+    relations_applied: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # Live fights: when the round being waited for plays whether or not everyone has committed (None: not
     # running), and whether the fight has ended and been saved (see fights.live).
     round_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
