@@ -30,7 +30,7 @@ import pytest
 
 from sqlalchemy.engine import make_url
 
-from terraforma.db.dialect import ensure_database
+from terraforma.db.dialect import empty_tables, ensure_database
 from terraforma.db.migrate import drop_everything, upgrade
 from terraforma.db.session import make_engine, make_sessionmaker
 
@@ -70,14 +70,35 @@ def database_url(request, tmp_path) -> str:
     return url
 
 
+_migrated: set[str] = set()
+
+
+async def fresh_database(engine, url: str) -> None:
+    """Leaves $engine's database with every migration applied and no rows.
+
+    Building the tables is the slow part on Postgres and MySQL, so each shared database is built once per
+    run and then only emptied. A test that changes the tables must call forget_schema(url) when it is done.
+    """
+    if url in _migrated:
+        await empty_tables(engine)
+        return
+    await drop_everything(engine)
+    await upgrade(engine)
+    if make_url(url).get_backend_name() != "sqlite":  # a SQLite file is made new for every test
+        _migrated.add(url)
+
+
+def forget_schema(url: str) -> None:
+    """Says the database's tables are no longer the migrated ones, so the next test rebuilds them."""
+    _migrated.discard(url)
+
+
 @pytest.fixture
 async def engine(database_url):
     """A database with every migration applied (and nothing else: it starts empty)."""
     engine = make_engine(database_url)
-    await drop_everything(engine)
-    await upgrade(engine)
+    await fresh_database(engine, database_url)
     yield engine
-    await drop_everything(engine)
     await engine.dispose()
 
 
@@ -122,13 +143,7 @@ def app_client(database_url, mailbox, game, tmp_path):
 
     async def prepare():
         engine = make_engine(database_url)
-        await drop_everything(engine)
-        await upgrade(engine)
-        await engine.dispose()
-
-    async def clean_up():
-        engine = make_engine(database_url)
-        await drop_everything(engine)
+        await fresh_database(engine, database_url)
         await engine.dispose()
 
     run(prepare())
@@ -143,7 +158,6 @@ def app_client(database_url, mailbox, game, tmp_path):
     )
     with TestClient(create_app(settings, game, mailer=mailbox)) as client:
         yield client
-    run(clean_up())
 
 
 def in_app_db(client, work):

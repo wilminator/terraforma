@@ -186,16 +186,14 @@ def test_the_app_refuses_to_start_on_a_bad_seed(database_url, mailbox, tmp_path,
     from starlette.testclient import TestClient
 
     from terraforma.app import create_app
-    from terraforma.db.migrate import drop_everything, upgrade
     from terraforma.db.session import make_engine
     from terraforma.keys import new_key
     from terraforma.settings import Settings
-    from terraforma.testing import SECRET, run
+    from terraforma.testing import SECRET, fresh_database, run
 
     async def prepare():
         engine = make_engine(database_url)
-        await drop_everything(engine)
-        await upgrade(engine)
+        await fresh_database(engine, database_url)
         await engine.dispose()
 
     run(prepare())
@@ -206,9 +204,3 @@ def test_the_app_refuses_to_start_on_a_bad_seed(database_url, mailbox, tmp_path,
         with TestClient(create_app(settings, game, mailer=mailbox)):
             pass
 
-    async def clean_up():
-        engine = make_engine(database_url)
-        await drop_everything(engine)
-        await engine.dispose()
-
-    run(clean_up())
