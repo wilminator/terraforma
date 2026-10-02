@@ -255,6 +255,58 @@ async def test_a_hero_becomes_a_fighter_with_what_it_knows_carries_and_wields(db
     assert fighter_.equipment == {"rhand": 0} and fighter_.get_current(RULES, "Strength", Command.ATTACK_RIGHT) == 15
 
 
+async def test_a_hero_enters_a_fight_with_the_vitals_it_was_left_with(db):
+    hero = await a_hero(db)
+    assert hero.vitals is None and (await hero_fighter(db, hero)).current["HP"] == 40, "a new hero is full"
+    hero.vitals = {"HP": 12, "MP": 3, "Gizmo": 9}
+    fighter_ = await hero_fighter(db, hero)
+    assert (fighter_.current["HP"], fighter_.current["MP"]) == (12, 3) and "Gizmo" not in fighter_.current
+    assert fighter_.base["HP"] == 40, "the maximum is the stat"
+    hero.vitals = {"HP": 999, "MP": -5}
+    fighter_ = await hero_fighter(db, hero)
+    assert (fighter_.current["HP"], fighter_.current["MP"]) == (40, 0), "never above the maximum or below nothing"
+
+
+async def test_resting_fills_a_hero_up_by_default_the_dead_too(db):
+    hero = await a_hero(db)
+    hero.vitals = {"HP": 1, "MP": 0}
+    service.rest_hero(hero)
+    assert hero.vitals is None and (await hero_fighter(db, hero)).current["HP"] == 40
+    hero.vitals = {"HP": 0, "MP": 0}
+    service.rest_hero(hero)
+    assert hero.vitals is None, "a dead hero lives again, in full"
+
+
+class Gentle(Rules):
+    """A game that brings the dead back at half and heals the living a quarter of their maximum."""
+
+    def rest(self, vitals, maximums):
+        if vitals[self.vital] <= 0:
+            return {**vitals, self.vital: maximums[self.vital] // 2}
+        return {name: min(maximums[name], value + maximums[name] // 4) for name, value in vitals.items()}
+
+
+async def test_the_games_rules_decide_how_a_rest_revives_and_heals(db):
+    hero = await a_hero(db)
+    hero.vitals = {"HP": 0, "MP": 0}
+    service.rest_hero(hero, Gentle())
+    assert hero.vitals == {"HP": 20, "MP": 0}, "revived at half, and nothing more"
+    assert (await hero_fighter(db, hero)).current["HP"] == 20
+    service.rest_hero(hero, Gentle())
+    assert hero.vitals["HP"] == 30, "the living gain a quarter of the maximum"
+    for _ in range(3):
+        service.rest_hero(hero, Gentle())
+    assert hero.vitals["HP"] == 40 and hero.vitals["MP"] <= hero.stats["MP"], "never above the maximum"
+    hero.vitals = {"HP": 5, "MP": 0}
+
+    class Lazy(Rules):
+        def rest(self, vitals, maximums):
+            return {self.vital: 999, "Nonsense": 3}
+
+    service.rest_hero(hero, Lazy())
+    assert hero.vitals == {"HP": 40, "MP": 0}, "values are clamped to the maximum, strangers ignored, a resource left out stays as it was"
+
+
 async def test_a_monster_becomes_a_fighter_with_its_gear_on(db):
     await load_content(db, SEED)
     ogre = await monster_fighter(db, "ogre")
@@ -294,6 +346,7 @@ async def a_team_fights_a_rat(db):
     team = await service.create_team(db, account, "Alpha")
     await service.add_to_team(db, account, team.id, hero.id)
     hub = await ensure_start(db)
+    (await db.get(World, hub.world_id)).seed = 20261002  # fixed: the fight must not depend on luck
     heroes, teams = await team_party(db, team)
     fight = build_fight({0: {0: heroes}, 1: {0: [await monster_fighter(db, "rat")]}})
     fight.parties[0].teams = teams
@@ -347,6 +400,22 @@ async def test_the_result_is_saved_to_the_hero_with_the_abilities_its_new_level_
     assert sorted(ability.key for ability in await inventory.known_abilities(db, hero)) == ["rend", "slash"], "level 2 earns Rend"
     await store.apply_results(db, record, RULES)
     assert (hero.xp, hero.level) == (fighter_.exp, fighter_.level), "saving twice changes nothing"
+
+
+async def test_the_hero_keeps_its_hp_and_mp_into_the_next_fight(db):
+    hero, record = await a_team_fights_a_rat(db)
+    await play_to_the_end(db, record)
+    await store.apply_results(db, record, RULES)
+    state, _played = await store.load_state(db, record, RULES)
+    left = state.get((0, 0, 0)).current
+    assert hero.vitals == {"HP": left["HP"], "MP": left["MP"]}
+    assert 0 < hero.vitals["HP"] < hero.stats["HP"], "the rat hurt it, and it lives"
+    await db.commit()
+    await db.refresh(hero)
+    assert hero.vitals == {"HP": left["HP"], "MP": left["MP"]}, "stored, not just held in memory"
+    assert (await hero_fighter(db, hero)).current["HP"] == left["HP"]
+    await store.apply_results(db, record, RULES)
+    assert hero.vitals == {"HP": left["HP"], "MP": left["MP"]}, "saving twice changes nothing"
 
 
 async def test_the_fights_gold_is_paid_to_the_team_once(db):

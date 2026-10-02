@@ -193,7 +193,8 @@ async def verify(session: AsyncSession, record: FightRecord, rules: Rules, *, de
 # --- the result -------------------------------------------------------------------------------------------------------
 
 async def apply_results(session: AsyncSession, record: FightRecord, rules: Rules, economy: Economy | None = None) -> list[Hero]:
-    """Saves a finished fight's result: to its heroes, the experience, level and stats they ended with and the
+    """Saves a finished fight's result: to its heroes, the experience, level and stats they ended with, what their
+    resources (HP, MP) stand at, which they enter their next fight with, and the
     abilities their job grants at that level; and the gold its ``Gold`` events name, paid to the teams through the
     game's $economy (``terraforma.economy``; the team's gold, DragonStar's way, if none is given). Returns the heroes
     it updated.
@@ -211,6 +212,7 @@ async def apply_results(session: AsyncSession, record: FightRecord, rules: Rules
         if hero is None:  # a monster, or a hero deleted since the fight began
             continue
         hero.xp, hero.level, hero.stats = fighter.exp, fighter.level, dict(fighter.base)
+        hero.vitals = {name: fighter.current[name] for name in rules.resource_names if name in fighter.current}
         await session.flush()
         await inventory.grant_abilities(session, hero)
         updated.append(hero)
