@@ -12,6 +12,9 @@ else:
 
 This is a public interface (the license exception covers it): the names and signatures are what games build on.
 
+Who may trade is the economy's call too: ``can_trade`` asks its ``trade_policy`` (``trading.policy``), ``WithinTeam`` by
+default, and ``related`` is the hook for the relationship a game defines between heroes of different teams.
+
 Gold moves with single statements (``gold = gold + n``, and a debit only where enough is there), so two calls at the same
 instant never lose one. A fight's gold is paid once (``credit_fight_gold``).
 """
@@ -23,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .fights.models import FightRecord
 from .heroes.models import Hero, Team, TeamMember
+from .trading.policy import Trade, TradePolicy, WithinTeam
 
 
 class NotEnoughGold(ValueError):
@@ -30,6 +34,17 @@ class NotEnoughGold(ValueError):
 
 
 class Economy:
+    #: Who may give gold and items to whom (``trading.policy``).
+    trade_policy: TradePolicy = WithinTeam()
+
+    async def can_trade(self, session: AsyncSession, giver: Hero, receiver: Hero, what: Trade) -> bool:
+        """Whether $giver may give $receiver $what. Asks the ``trade_policy``; override it for more."""
+        return await self.trade_policy.allows(self, session, giver, receiver)
+
+    async def related(self, session: AsyncSession, giver: Hero, receiver: Hero) -> bool:
+        """Whether two heroes stand in the game's own relationship (the ``Related`` policy reads it). Nobody does by default."""
+        return False
+
     async def purse(self, session: AsyncSession, hero: Hero) -> Hero | Team:
         """The row whose ``gold`` is this hero's money."""
         raise NotImplementedError

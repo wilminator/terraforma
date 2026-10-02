@@ -3,13 +3,21 @@
 import pytest
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from sqlalchemy import inspect
 
 from terraforma import models  # noqa: F401
 from terraforma.db.base import Base
-from terraforma.db.migrate import downgrade
+from terraforma.db.migrate import alembic_config, downgrade
 
 pytestmark = pytest.mark.anyio
+
+
+def test_the_migrations_form_one_chain_with_one_head():
+    script = ScriptDirectory.from_config(alembic_config())
+    revisions = [revision.revision for revision in script.walk_revisions()]
+    assert len(revisions) == len(set(revisions)), "two migrations share a revision id"
+    assert len(script.get_heads()) == 1, "two branches both extend the chain: re-point one's down_revision"
 
 
 async def test_the_migrated_database_matches_the_models(engine):
