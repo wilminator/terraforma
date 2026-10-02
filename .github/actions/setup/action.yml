@@ -1,11 +1,32 @@
 name: Set up TerraForma tests
-description: Install Python 3.14 and the engine with its test tools. Check the code out first, or a local action cannot be found.
+description: Install Python 3.14 and the engine with its test tools, reusing a cached virtual environment. Check the code out first, or a local action cannot be found.
 runs:
   using: composite
   steps:
     - uses: actions/setup-python@v7
+      id: python
       with:
         python-version: "3.14"
         cache: pip
-    - run: pip install -e ".[dev]"
+        cache-dependency-path: pyproject.toml
+    # The virtual environment holds every dependency, built once per pyproject.toml (some
+    # packages may compile on a new Python). Jobs that find it skip downloading and installing.
+    - uses: actions/cache@v5
+      id: venv
+      with:
+        path: ~/.venv
+        key: venv-${{ runner.os }}-${{ steps.python.outputs.python-version }}-${{ hashFiles('pyproject.toml') }}
+    - name: Install the dependencies
+      if: steps.venv.outputs.cache-hit != 'true'
+      run: |
+        python -m venv ~/.venv
+        ~/.venv/bin/pip install -e ".[dev]"
+      shell: bash
+    # The engine itself is always linked from this checkout; its dependencies are already there.
+    - name: Link the engine
+      if: steps.venv.outputs.cache-hit == 'true'
+      run: ~/.venv/bin/pip install --no-deps -e .
+      shell: bash
+    - name: Use the virtual environment
+      run: echo "$HOME/.venv/bin" >> "$GITHUB_PATH"
       shell: bash
