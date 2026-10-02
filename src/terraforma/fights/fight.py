@@ -22,6 +22,10 @@ class Group:
 @dataclass
 class Party:
     groups: dict[int, Group] = field(default_factory=dict)
+    #: The parties (by number) this one counts as allies and as enemies. A party in neither list is neutral to it.
+    #: None means "not set": see ``Rules.alignment`` for what that comes to.
+    allies: set[int] | None = None
+    enemies: set[int] | None = None
 
     def dead(self, rules: Rules) -> bool:
         return all(group.dead(rules) for group in self.groups.values())

@@ -121,9 +121,17 @@ class Rules:
         (it reads like a mix-up with ``max * added / 100``; override this if your game wants the percentage)."""
         return round_half_up(maximum * 100.0 / max(effect.added, 1))
 
-    def is_ally(self, party: int, other: int) -> bool:
-        """Whether two parties are on the same side. By default only a party and itself are."""
-        return party == other
+    def alignment(self, fight, party: int) -> tuple[set[int], set[int]]:
+        """How the fight's other parties stand to $party: (allies, enemies). A party in neither is neutral to it.
+        A party is always its own ally. Reads each party's ``allies`` and ``enemies`` if the fight set them: with
+        only the allies set, everyone else is an enemy; with only the enemies set, only the party itself is an ally,
+        and the rest are neutral. With neither set, as in DragonStar's simple case, each party is for itself:
+        no allies, every other party an enemy. Override it for alliances, factions and neutrals of your own."""
+        mine = fight.parties[party]
+        everyone = set(fight.parties)
+        allies = {party} | (set(mine.allies) if mine.allies is not None else set())
+        enemies = set(mine.enemies) if mine.enemies is not None else everyone - allies
+        return allies, enemies - allies
 
     # --- hooks ---------------------------------------------------------------------------------
     def gauge_moved(self, fight, actor: tuple, target: tuple, resource: str, before: int, after: int, maximum: int) -> list:

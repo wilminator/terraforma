@@ -25,24 +25,28 @@ def _whole_party(fight: Fight, party: int, rules: Rules, effect: EffectSpec) -> 
         yield from _whole_group(party, group_index, group, rules, effect)
 
 
+def parties_reached(fight: Fight, rules: Rules, actor_party: int, scope: int) -> list[int]:
+    """The parties a scope like "all enemies" names, in the fight's order, as they stand to the actor's party."""
+    allies, enemies = rules.alignment(fight, actor_party)
+    everyone = list(fight.parties)
+    wanted = {
+        specs.ALL_PARTIES: set(everyone),
+        specs.ALL_ALLIES: allies,
+        specs.ALL_ENEMIES: enemies,
+        specs.ALL_NOT_ALLIES: set(everyone) - allies,
+        specs.ALL_NOT_ENEMIES: set(everyone) - enemies,
+    }[scope]
+    return [index for index in everyone if index in wanted]
+
+
 def expand(fight: Fight, rules: Rules, actor: Address, target: Address, effect: EffectSpec) -> Iterator[tuple]:
     """Every fighter the effect reaches, as (address, fighter, intensity, divisor): (0, 0) for an unscaled hit, or
     (distance, range) for one that falls off with distance from the centre of a ranged attack."""
     scope = effect.targets
     party, group_index, character_index = target
-    if scope == specs.ALL_PARTIES:
-        for each in fight.parties:
+    if scope in specs.BY_ALIGNMENT:
+        for each in parties_reached(fight, rules, actor[0], scope):
             yield from _whole_party(fight, each, rules, effect)
-        return
-    if scope == specs.ALL_ENEMIES:
-        for each in fight.parties:
-            if not rules.is_ally(actor[0], each):
-                yield from _whole_party(fight, each, rules, effect)
-        return
-    if scope == specs.ALL_ALLIES:
-        for each in fight.parties:
-            if rules.is_ally(actor[0], each):
-                yield from _whole_party(fight, each, rules, effect)
         return
     if party not in fight.parties:
         return
@@ -79,7 +83,7 @@ def lost_target(fight: Fight, rules: Rules, rng: random.Random, fighter: Combata
         return False
     scope = effect.targets
     party, group_index, character_index = fighter.target
-    if scope in (specs.ALL_PARTIES, specs.ALL_ENEMIES, specs.ALL_ALLIES):
+    if scope in specs.BY_ALIGNMENT:
         return False
     if scope == specs.PARTY:
         return party not in fight.parties or fight.parties[party].dead(rules)

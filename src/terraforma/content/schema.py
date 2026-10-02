@@ -52,7 +52,10 @@ Asset = Annotated[str, AfterValidator(_asset)]
 Stats = Annotated[dict[str, int], AfterValidator(_stats)]
 Growth = Annotated[dict[str, float], AfterValidator(_stats)]
 # A name for one target or a whole group, party and so on; or a number n for the target and n neighbours each way along its group.
-Targets = Literal["individual", "group", "party", "all_parties", "all_enemies", "all_allies"] | Annotated[int, Field(ge=0)]
+Targets = (
+    Literal["individual", "group", "party", "all_parties", "all_enemies", "all_allies", "all_not_enemies", "all_not_allies"]
+    | Annotated[int, Field(ge=0)]
+)
 Effect = Literal[
     "none", "heal", "hurt", "revive", "slay", "increase_stats", "decrease_stats", "steal_stats",
     "cause_good_status", "remove_good_status", "cause_bad_status", "remove_bad_status", "restore_mp",

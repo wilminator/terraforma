@@ -16,11 +16,17 @@ PARTY = -2
 ALL_PARTIES = -3
 ALL_ENEMIES = -4
 ALL_ALLIES = -5
+ALL_NOT_ENEMIES = -6
+ALL_NOT_ALLIES = -7
 
 SCOPES = {
     "individual": INDIVIDUAL, "group": GROUP, "party": PARTY,
     "all_parties": ALL_PARTIES, "all_enemies": ALL_ENEMIES, "all_allies": ALL_ALLIES,
+    "all_not_enemies": ALL_NOT_ENEMIES, "all_not_allies": ALL_NOT_ALLIES,
 }
+
+#: The scopes that name parties by how they stand to the actor's party, rather than by position.
+BY_ALIGNMENT = (ALL_PARTIES, ALL_ENEMIES, ALL_ALLIES, ALL_NOT_ENEMIES, ALL_NOT_ALLIES)
 
 # Effects (the seed's names, which are DragonStar's, in lower case).
 NONE = "none"

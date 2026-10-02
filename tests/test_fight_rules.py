@@ -599,3 +599,88 @@ def test_the_equip_outcomes_are_the_ones_heroes_use():
     assert hero.equip(0, 0).outcome is EquipOutcome.SUCCESS
     assert hero.equip(1, 0).outcome is EquipOutcome.NEEDS_UNEQUIPPING
     assert hero.equip(5, 0).outcome is EquipOutcome.NOT_FOUND
+
+
+# --- allies, enemies and neutrals ---------------------------------------------------------------------------------
+
+def four_parties(alignment=None):
+    """Parties 0 (the actor's), 1, 2 and 3, one fighter each."""
+    fight = build_fight({number: {0: [fighter(f"p{number}")]} for number in range(4)})
+    for number, (allies, enemies) in (alignment or {}).items():
+        fight.parties[number].allies, fight.parties[number].enemies = allies, enemies
+    return fight
+
+
+def reached(fight, scope, rules=RULES):
+    from terraforma.fights.targets import expand
+
+    effect = EffectSpec(specs.HURT, scope, base=1)
+    return sorted({address[0] for address, *_ in expand(fight, rules, (0, 0, 0), (1, 0, 0), effect)})
+
+
+def test_by_default_each_party_is_for_itself_and_every_other_party_is_an_enemy():
+    fight = four_parties()
+    assert RULES.alignment(fight, 0) == ({0}, {1, 2, 3})
+    assert reached(fight, specs.ALL_ALLIES) == [0]
+    assert reached(fight, specs.ALL_ENEMIES) == [1, 2, 3]
+    assert reached(fight, specs.ALL_PARTIES) == [0, 1, 2, 3]
+    assert reached(fight, specs.ALL_NOT_ALLIES) == [1, 2, 3]
+    assert reached(fight, specs.ALL_NOT_ENEMIES) == [0]
+
+
+def test_a_party_in_neither_list_is_neutral_and_the_not_scopes_include_it():
+    # Party 0 is allied with 1, hostile to 2, and has no opinion of 3.
+    fight = four_parties({0: ({1}, {2})})
+    assert RULES.alignment(fight, 0) == ({0, 1}, {2})
+    assert reached(fight, specs.ALL_ALLIES) == [0, 1]
+    assert reached(fight, specs.ALL_ENEMIES) == [2]
+    assert reached(fight, specs.ALL_NOT_ALLIES) == [2, 3], "enemies and neutrals"
+    assert reached(fight, specs.ALL_NOT_ENEMIES) == [0, 1, 3], "allies and neutrals"
+    assert reached(fight, specs.ALL_PARTIES) == [0, 1, 2, 3]
+
+
+def test_setting_only_the_allies_makes_everyone_else_an_enemy_and_only_the_enemies_leaves_the_rest_neutral():
+    only_allies = four_parties({0: ({1}, None)})
+    assert RULES.alignment(only_allies, 0) == ({0, 1}, {2, 3})
+    only_enemies = four_parties({0: (None, {2})})
+    assert RULES.alignment(only_enemies, 0) == ({0}, {2})
+    assert reached(only_enemies, specs.ALL_NOT_ALLIES) == [1, 2, 3]
+
+
+def test_a_party_is_always_its_own_ally_even_if_listed_as_an_enemy():
+    fight = four_parties({0: (set(), {0, 2})})
+    assert RULES.alignment(fight, 0) == ({0}, {2})
+
+
+def test_a_game_can_decide_alignment_its_own_way():
+    class Factions(Rules):
+        def alignment(self, fight, party):
+            side = {0: "red", 1: "red", 2: "blue", 3: "green"}
+            allies = {other for other in fight.parties if side[other] == side[party]}
+            enemies = {other for other in fight.parties if side[other] == "blue" and side[party] != "blue"}
+            return allies, enemies
+
+    fight = four_parties()
+    assert reached(fight, specs.ALL_ALLIES, Factions()) == [0, 1]
+    assert reached(fight, specs.ALL_ENEMIES, Factions()) == [2]
+    assert reached(fight, specs.ALL_NOT_ALLIES, Factions()) == [2, 3]
+
+
+def test_a_blast_at_everyone_who_is_not_an_ally_spares_allies_and_hits_neutrals():
+    blast = AbilitySpec("blast", "Blast", "skill", 0, EffectSpec(specs.HURT, specs.ALL_NOT_ALLIES, base=5))
+    fight = four_parties({0: ({1}, {2})})
+    caster = fight.get((0, 0, 0))
+    caster.abilities, caster.command, caster.using, caster.target = [blast], Command.SKILL, 0, (2, 0, 0)
+    for address in fight.addresses():
+        if address != (0, 0, 0):
+            fight.get(address).command = Command.DEFEND
+    # Skills can be dodged: a hit roll each for the two it reaches (the enemy and the neutral), then the amounts.
+    do_combat(fight, RULES, Scripted(100, 100, 1, 0, 1, 0))
+    assert [fight.get((party, 0, 0)).current["HP"] for party in range(4)] == [20, 20, 15, 15]
+
+
+def test_the_new_scopes_are_valid_in_a_seed():
+    for name in ("all_not_enemies", "all_not_allies", "all_allies", "all_enemies", "all_parties"):
+        checked = check_seed({"abilities": [{"key": "a", "name": "A", "kind": "skill", "effect": {"effect": "hurt", "targets": name}}]})
+        assert checked["abilities"][0].effect.targets == name
+        assert EffectSpec.from_dict({"effect": "hurt", "targets": name}).targets in specs.BY_ALIGNMENT
