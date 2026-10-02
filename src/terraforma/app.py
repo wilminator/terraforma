@@ -24,6 +24,7 @@ from .db.session import make_engine, make_sessionmaker
 from .fights import live
 from .fights.channels import FightChannels
 from .fights.routes import economy_of, fight_socket, relations_of, rules_of
+from .fights.pending_routes import router as pending_drops_router
 from .fights.routes import router as fights_router
 from .fights.timing_routes import router as timing_router
 from .content.loader import load_content
@@ -99,6 +100,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(heroes_router)
     app.include_router(inventory_router)
     app.include_router(trading_router)
+    app.include_router(pending_drops_router)
     app.include_router(relations_router)
     app.include_router(towns_router)
     app.include_router(alliances_router)
