@@ -63,16 +63,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    with op.batch_alter_table('alliance_ballot_votes', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_alliance_ballot_votes_ballot_id'))
-
+    # (Dropping a table drops its indexes with it: MySQL will not drop an index a foreign key needs.)
     op.drop_table('alliance_ballot_votes')
-    with op.batch_alter_table('alliance_ballot_voters', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_alliance_ballot_voters_team_id'))
-        batch_op.drop_index(batch_op.f('ix_alliance_ballot_voters_ballot_id'))
-
     op.drop_table('alliance_ballot_voters')
-    with op.batch_alter_table('alliance_ballots', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_alliance_ballots_alliance_id'))
-
     op.drop_table('alliance_ballots')
