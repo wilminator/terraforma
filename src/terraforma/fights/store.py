@@ -22,12 +22,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.base import canonical_json
+from ..economy import Economy, TeamGold, credit_fight_gold
 from ..heroes import inventory
 from ..heroes.models import Hero
 from ..models import Map, World
 from ..world.rng import WorldRng
 from .combatant import Address, Command
-from .events import Event
+from .events import Event, EventType
 from .fight import Fight
 from .models import FightActionRecord, FightParticipant, FightRecord
 from .replay import apply_events
@@ -191,13 +192,14 @@ async def verify(session: AsyncSession, record: FightRecord, rules: Rules, *, de
 
 # --- the result -------------------------------------------------------------------------------------------------------
 
-async def apply_results(session: AsyncSession, record: FightRecord, rules: Rules) -> list[Hero]:
-    """Saves a finished fight's result to its heroes: the experience, level and stats they ended with, and the
-    abilities their job grants at that level. Returns the heroes it updated.
+async def apply_results(session: AsyncSession, record: FightRecord, rules: Rules, economy: Economy | None = None) -> list[Hero]:
+    """Saves a finished fight's result: to its heroes, the experience, level and stats they ended with and the
+    abilities their job grants at that level; and the gold its ``Gold`` events name, paid to the teams through the
+    game's $economy (``terraforma.economy``; the team's gold, DragonStar's way, if none is given). Returns the heroes
+    it updated.
 
-    Safe to call again: it sets what the fight says rather than adding to it. (Gold is not saved here: the
-    ``Gold`` events name a team, and where a team's gold lives is decided separately.) Raises FightNotOver if
-    the fight is still going.
+    Safe to call again: the heroes get what the fight says rather than more of it, and the gold is paid once (the
+    fight records that it has been). Raises FightNotOver if the fight is still going.
     """
     fight, _played = await load_state(session, record, rules)
     if not fight.over:
@@ -212,4 +214,17 @@ async def apply_results(session: AsyncSession, record: FightRecord, rules: Rules
         await session.flush()
         await inventory.grant_abilities(session, hero)
         updated.append(hero)
+    await credit_fight_gold(session, economy or TeamGold(), record, await gold_payments(session, record))
     return updated
+
+
+async def gold_payments(session: AsyncSession, record: FightRecord) -> list[tuple[int, int]]:
+    """What the fight's ``Gold`` events pay, as ``(team id, amount)``, a team's shares added up."""
+    paid: dict[int, int] = {}
+    for action in await actions(session, record):
+        for raw in action.events:
+            each = Event.from_list(raw)
+            if each.type is EventType.GOLD:
+                _party, team, amount = each.data
+                paid[team] = paid.get(team, 0) + amount
+    return sorted(paid.items())

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..content.models import Ability, Item, Job, Monster, Status
 from ..heroes import inventory
 from ..heroes.models import Hero, Team, TeamMember
+from ..parties import service as parties
 from .combatant import Combatant
 from .content import ability_spec, item_spec, monster_combatant, status_spec
 from .rules import Rules
@@ -56,3 +57,12 @@ async def known_statuses(session: AsyncSession) -> dict[str, StatusSpec]:
     """Every active status in the content, by key: what a new fight is built with (``build_fight(layout, statuses)``)."""
     rows = await session.scalars(select(Status).where(Status.active.is_(True)))
     return {row.key: status_spec(row) for row in rows.all()}
+
+
+async def party_side(session: AsyncSession, party_id: int, rules: Rules) -> dict[int, list[Combatant]]:
+    """A party's heroes as one side of a fight: groups of ``Rules.group_size``, filled team by team in the order the
+    teams joined the party (``{group: [combatants...]}``, ready for ``build_fight({side: ...})``). A team can span groups:
+    a party keeps its teams whole, a fight's groups are only where they stand."""
+    heroes = [await session.get(Hero, hero_id) for hero_id in await parties.hero_ids(session, party_id)]
+    fighters = [await hero_fighter(session, hero) for hero in heroes]
+    return {number: fighters[start:start + rules.group_size] for number, start in enumerate(range(0, len(fighters), rules.group_size))}

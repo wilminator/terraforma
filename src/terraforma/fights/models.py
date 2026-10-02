@@ -12,7 +12,7 @@ stored as exact text (``ExactJSON``), because a database's own JSON type may re-
 a hash covers every digit.
 """
 
-from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Integer, String, UniqueConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db.base import Base, Timestamps
@@ -29,6 +29,8 @@ class FightRecord(Located, Timestamps, Base):
     guid: Mapped[str] = mapped_column(String(32), unique=True)
     # The fight as it began, as fights.state.dehydrate writes it. Written once, never changed.
     initial_state: Mapped[dict] = mapped_column(ExactJSON)
+    # Whether the fight's gold has been paid out (it is paid once: see terraforma.economy).
+    gold_paid: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
 
 class FightParticipant(Base):

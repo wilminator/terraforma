@@ -17,6 +17,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..content.models import Ability, Item, Job
+from ..economy import Economy, TeamGold
 from ..fights.gear import AMMO_SLOTS, SIDED, EquipOutcome, EquipResult, equipment_bonus, find_slot, round_half_up
 from .models import Hero, HeroAbility, HeroEquipment, HeroItem
 
@@ -211,7 +212,8 @@ async def known_abilities(session: AsyncSession, hero: Hero) -> list[Ability]:
 
 # --- what the player sees ---------------------------------------------------------------------------
 
-async def view(session: AsyncSession, hero: Hero) -> dict:
+async def view(session: AsyncSession, hero: Hero, economy: Economy | None = None) -> dict:
+    """What the player sees of a hero's belongings. Gold is the hero's purse in the game's $economy (the team's, by default)."""
     current = await stacks(session, hero)
     worn = await equipment(session, hero)
     slots_of: dict[int, list[str]] = {}
@@ -219,7 +221,7 @@ async def view(session: AsyncSession, hero: Hero) -> dict:
         slots_of.setdefault(stack_id, []).append(slot)
     position_of = {stack.id: stack.position for stack, _item in current}
     return {
-        "gold": hero.gold,
+        "gold": await (economy or TeamGold()).balance(session, hero),
         "items": [
             {"position": stack.position, "item": item.key, "name": item.name, "qty": stack.qty,
              "equipped_in": sorted(slots_of.get(stack.id, []))}

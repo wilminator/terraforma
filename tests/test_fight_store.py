@@ -348,6 +348,20 @@ async def test_the_result_is_saved_to_the_hero_with_the_abilities_its_new_level_
     assert (hero.xp, hero.level) == (fighter_.exp, fighter_.level), "saving twice changes nothing"
 
 
+async def test_the_fights_gold_is_paid_to_the_team_once(db):
+    from terraforma.heroes.models import Team, TeamMember
+
+    hero, record = await a_team_fights_a_rat(db)
+    await play_to_the_end(db, record)
+    team_id = await db.scalar(select(TeamMember.team_id).where(TeamMember.hero_id == hero.id))
+    payments = await store.gold_payments(db, record)
+    assert [team for team, _amount in payments] == [team_id] and payments[0][1] > 0, "the rat's gold, to the team that won it"
+    await store.apply_results(db, record, RULES)
+    assert (await db.get(Team, team_id)).gold == payments[0][1] and record.gold_paid is True
+    await store.apply_results(db, record, RULES)
+    assert (await db.get(Team, team_id)).gold == payments[0][1], "paid once, however often the result is saved"
+
+
 # --- exact storage --------------------------------------------------------------------------------------------------------------
 
 async def test_the_log_reads_back_exactly_what_was_written_floats_included(db):

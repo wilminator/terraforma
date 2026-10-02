@@ -17,7 +17,7 @@ from terraforma.db.dialect import ExactJSON
 
 
 revision: str = '0012'
-down_revision: str | None = '0008'  # re-point it at whichever migration merges before this one
+down_revision: str | None = '0011'  # the last migration before it: team gold (#25)
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

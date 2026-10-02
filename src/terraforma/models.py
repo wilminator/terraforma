@@ -120,3 +120,4 @@ class Fighter(Located, Timestamps, Base):
 from .content import models as _content  # noqa: E402,F401
 from .heroes import models as _heroes  # noqa: E402,F401
 from .fights import models as _fights  # noqa: E402,F401
+from .parties import models as _parties  # noqa: E402,F401

@@ -55,6 +55,15 @@ def play(fight, rolls=(), rules=RULES):
     return do_combat(fight, rules, Scripted(*rolls))
 
 
+#: What the experience rules add around a round (debts, and the payout when the fight ends): not what these tests are about.
+PAYOUT = {EventType.XP_DEBT, EventType.XP_EARNED, EventType.GOLD, EventType.LEVEL_UP, EventType.FIGHT_OVER}
+
+
+def played(fight, rolls=(), rules=RULES):
+    """A round's events without the experience bookkeeping."""
+    return [each for each in play(fight, rolls, rules) if each.type not in PAYOUT]
+
+
 # --- intensity ------------------------------------------------------------------------------------------------
 
 def test_intensity_follows_the_time_left_flat_falling_or_rising():
@@ -148,11 +157,11 @@ def test_a_status_ticks_at_the_end_of_each_round_ages_and_ends_after_its_duratio
     fight, _a, b = duel_with(poison())
     bear(b, fight.statuses["poison"])
     tick = ("StatusTick", 1, 0, 0, "poison", 0, 0, 0, 1.0, "round_end")
-    assert listing(play(fight)) == [tick, ("Damage", 1, 0, 0, 4, False), ("RoundEnd",)]
-    assert listing(play(fight)) == [tick, ("Damage", 1, 0, 0, 4, False), ("RoundEnd",)]
-    assert listing(play(fight)) == [tick, ("Damage", 1, 0, 0, 4, False), ("RoundEnd",), ("StatusRemoved", 1, 0, 0, "poison", 0, 0, 0, "expired")]
+    assert listing(played(fight)) == [tick, ("Damage", 1, 0, 0, 4, False), ("RoundEnd",)]
+    assert listing(played(fight)) == [tick, ("Damage", 1, 0, 0, 4, False), ("RoundEnd",)]
+    assert listing(played(fight)) == [tick, ("Damage", 1, 0, 0, 4, False), ("RoundEnd",), ("StatusRemoved", 1, 0, 0, "poison", 0, 0, 0, "expired")]
     assert b.current["HP"] == 8 and b.tokens == []
-    assert play(fight) == [], "nothing left: nothing happens, and no RoundEnd is logged for a fight with no tokens"
+    assert played(fight) == [], "nothing left: nothing happens, and no RoundEnd is logged for a fight with no tokens"
 
 
 def test_a_falling_status_hurts_less_each_round_until_it_is_gone():
@@ -238,7 +247,7 @@ def test_a_tick_set_off_by_harm_is_not_itself_a_harm_that_sets_off_more():
     thorns = StatusSpec("thorns", "Thorns", BAD, 2, ticks=(Tick(status.HARMED, status.DAMAGE, amount=1), Tick(status.ROUND_END, status.DAMAGE, amount=2)))
     fight, _a, b = duel_with(thorns)
     bear(b, thorns)
-    assert types(play(fight)) == [EventType.STATUS_TICK, EventType.DAMAGE, EventType.ROUND_END]
+    assert types(played(fight)) == [EventType.STATUS_TICK, EventType.DAMAGE, EventType.ROUND_END]
     assert b.current["HP"] == 18
 
 
@@ -260,7 +269,7 @@ def test_a_saving_throw_sets_off_the_ticks_of_the_one_who_made_it():
 def test_a_status_on_the_dead_does_nothing_and_goes_at_the_end_of_the_round():
     fight, _a, b = duel_with(poison(), bearer_hp=2)
     bear(b, fight.statuses["poison"])
-    kinds = listing(play(fight))
+    kinds = listing(played(fight))
     assert kinds == [("StatusTick", 1, 0, 0, "poison", 0, 0, 0, 1.0, "round_end"), ("Damage", 1, 0, 0, 4, False), ("Died", 1, 0, 0, 4, 2),
                      ("StatusRemoved", 1, 0, 0, "poison", 0, 0, 0, "died")]
     assert b.tokens == []
@@ -388,7 +397,7 @@ def test_slay_kills_on_a_roll_within_its_chance_and_otherwise_has_no_effect():
         a, b = fighter("A"), fighter("B")
         a.inventory = [[item("noose", EffectSpec(specs.SLAY, base=30)), 1]]
         use(a, 0, B)
-        return listing(play(build_fight({0: {0: [a]}, 1: {0: [b]}}), [100, roll]))
+        return listing(played(build_fight({0: {0: [a]}, 1: {0: [b]}}), [100, roll]))
 
     assert slay(30)[-2:] == [("Damage", 1, 0, 0, 20, False), ("Died", 1, 0, 0, 20, 0)]
     assert slay(31)[-1] == ("NoEffect", 1, 0, 0)
