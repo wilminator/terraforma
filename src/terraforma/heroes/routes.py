@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Path, status
 from pydantic import Field
 
 from ..accounts.routes import Strict
-from ..api.deps import ActingAccount, CurrentAccount, Db, GameRules
+from ..api.deps import ActingAccount, CurrentAccount, Db, GameAlliances, GameRules
 from . import service
 
 router = APIRouter(prefix="/api")
@@ -92,9 +92,9 @@ async def rename_team(team_id: Id, body: NameOnly, account: ActingAccount, db: D
 
 
 @router.post("/teams/{team_id}/delete")
-async def delete_team(team_id: Id, account: ActingAccount, db: Db) -> dict:
+async def delete_team(team_id: Id, account: ActingAccount, db: Db, alliances: GameAlliances) -> dict:
     try:
-        await service.delete_team(db, account, team_id)
+        await service.delete_team(db, account, team_id, alliances)
     except service.HeroError as error:
         raise refuse(error) from error
     return {"ok": True}
