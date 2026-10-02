@@ -14,7 +14,7 @@ a hash covers every digit.
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, false
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db.base import Base, Timestamps
@@ -41,6 +41,18 @@ class FightRecord(Located, Timestamps, Base):
     finished: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # Whether the items the fight dropped have been put in the heroes' inventories (once: see fights.store).
     drops_saved: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # The longest round time any player in the fight asked for (``Rules.time_multipliers``): rounds wait this many times
+    # ``Rules.round_seconds``. Fixed when the fight starts.
+    time_multiplier: Mapped[float] = mapped_column(Float, default=1.0, server_default="1.0")
+
+
+class PlayerSettings(Base):
+    """What a player chose for themselves. For now: how much longer rounds wait for them (``Rules.time_multipliers``)."""
+
+    __tablename__ = "player_settings"
+
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), primary_key=True)
+    time_multiplier: Mapped[float] = mapped_column(Float, default=1.0, server_default="1.0")
 
 
 class FightParticipant(Base):

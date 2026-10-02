@@ -25,6 +25,7 @@ from .fights import live
 from .fights.channels import FightChannels
 from .fights.routes import economy_of, fight_socket, relations_of, rules_of
 from .fights.routes import router as fights_router
+from .fights.timing_routes import router as timing_router
 from .content.loader import load_content
 from .game import Game
 from .heroes.inventory_routes import router as inventory_router
@@ -100,6 +101,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(alliances_router)
     app.include_router(ratings_router)
     app.include_router(ballots_router)
+    app.include_router(timing_router)
 
     @app.get("/api/about")
     async def about(request: Request) -> dict:

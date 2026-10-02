@@ -63,6 +63,10 @@ class Rules:
     #: How long a round waits for the players' commands, in seconds, before it plays with what it has (anyone who
     #: has not committed defends). A round also plays at once when every player's fighter has committed.
     round_seconds: int = 30
+    #: The longer rounds a player may choose (an accessibility setting) and what each costs: ``(multiplier, bonus)``,
+    #: where $bonus is the share of extra max HP the monsters a player faces get (0.05 is 5%, and they are worth
+    #: more experience for it). DragonStar offered 1, 1.5 and 2 for 0, 5 and 10 percent.
+    time_multipliers: tuple[tuple[float, float], ...] = ((1.0, 0.0), (1.5, 0.05), (2.0, 0.10))
     #: A drop's chance is out of this (10000: one in ten thousand is the rarest, 10000 is a sure thing).
     drop_chance_scale: int = 10000
     #: Whether the area's drop tables (the map's) roll once for the fight (the default) or for every monster that dies.
@@ -73,6 +77,14 @@ class Rules:
     stack_size: int = 250
     #: What an empty hand attacks with.
     unarmed: ItemSpec = ItemSpec(key="", name="Fists")
+
+    def round_length(self, multiplier: float = 1.0) -> int:
+        """How long a round waits, in seconds, for a fight whose longest-asked multiplier is $multiplier."""
+        return math.ceil(self.round_seconds * max(1.0, multiplier))
+
+    def time_bonus(self, multiplier: float) -> float:
+        """The share of extra max HP monsters get against a player who chose $multiplier (0 for one that is not offered)."""
+        return dict(self.time_multipliers).get(multiplier, 0.0)
 
     @property
     def vital(self) -> str:
