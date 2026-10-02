@@ -14,6 +14,7 @@ from .economy import Economy, TeamGold
 from .fights.rules import Rules
 from .alliances.hooks import Alliances
 from .relations.hooks import Relations
+from .towns.hooks import Towns
 
 
 @dataclass(frozen=True)
@@ -30,3 +31,5 @@ class Game:
     relations: Relations = field(default_factory=Relations)
     # What roles an alliance of teams has, what each may do, and who may found or join one.
     alliances: Alliances = field(default_factory=Alliances)
+    # Which places are towns (where a party comes apart into its teams and is put back together), and how its teams group.
+    towns: Towns = field(default_factory=Towns)

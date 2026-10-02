@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..content.models import Job
 from ..models import Account, Map
+from ..profiles.models import TeamProfile
 from ..world.start import ensure_start
 from ..fights.rules import Rules
 from ..parties import service as parties
@@ -185,6 +186,7 @@ async def delete_team(session: AsyncSession, account: Account, team_id: int, all
     await remove_team(session, alliances or Alliances(), team.id)
     await forget(session, Ref("team", team.id))
     await session.execute(delete(TeamMember).where(TeamMember.team_id == team.id))
+    await session.execute(delete(TeamProfile).where(TeamProfile.team_id == team.id))
     await session.delete(team)
     await session.flush()
 

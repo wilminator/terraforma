@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..heroes.models import Team
 from ..models import Account
+from ..profiles.models import AllianceProfile
 from ..relations import service as relations
 from ..relations.hooks import Ref
 from .hooks import Alliances
@@ -177,6 +178,7 @@ async def _delete_alliance(session: AsyncSession, alliance: Alliance) -> None:
     await session.execute(delete(Ballot).where(Ballot.alliance_id == alliance.id))
     await session.execute(delete(AllianceMember).where(AllianceMember.alliance_id == alliance.id))
     await session.execute(delete(AllianceInvite).where(AllianceInvite.alliance_id == alliance.id))
+    await session.execute(delete(AllianceProfile).where(AllianceProfile.alliance_id == alliance.id))
     await relations.forget(session, Ref("alliance", alliance.id))
     await session.delete(alliance)
     await session.flush()
