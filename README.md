@@ -117,6 +117,12 @@ How many heroes a party holds is the game's rule: `Rules.party_size`, 20 by defa
 
 These are service functions, not server calls: the map drives them later (an interaction on the map forms and merges parties), so they take ids and whoever calls them decides who may. A party becomes one side of a fight with `fights.build.party_side(session, party_id, rules)`: its heroes team by team, in the order the teams joined, in groups of `group_size` (`build_fight({0: await party_side(...), 1: ...})`).
 
+## Towns
+
+In a *town* a party comes apart. The game says which places are towns (`Game(towns=...)`, `terraforma.towns.hooks.Towns`: `is_town(session, map_id, x, y)`, nowhere by default; the map will ask it as a party moves), and `terraforma.towns.service.enter_town` suspends a party there: it is split into groups of its teams (`Towns.groups`: by default one team each; a game can keep a player's own teams together, for example because the player paid for it), and each team shops and rests on its own. The party can't be joined, merged or have a team leave while it is apart (`parties.service` refuses).
+
+To leave, a team (with the teams in its group) says it is ready (`ready`; `Towns.may_wait` can refuse, for a team in a fight) and waits in a holding queue. Every other team of the party is *told* (a notice: `view` lists who is ready) and can follow, which is the same call. A waiting team can `come_back` into the town, or `leave_party` for good (it is not waited for any more). When every team left is waiting, the party is put back as one unit, in the formation it had (its teams' order), and every hero of it is placed at the party's spot on the map (`reform`). Entering a town and putting a party back are service functions the map drives; a team's own owner calls `GET /api/teams/{id}/town` and `POST .../town/ready`, `.../town/come-back` and `.../town/leave-party` (login and CSRF token; each its own route). These are public interfaces (the license exception covers them).
+
 ## Item drops
 
 A drop table (`drop_tables.json`) says what a monster, or an area, leaves behind. A monster names the tables it rolls when it dies (`drops`); a fight may carry *area* tables of its own (`live.start_team_fight(..., area_drops=[keys])`; the map's, once there are maps).
