@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..heroes.models import Hero, Team, TeamMember
 from ..world.start import ensure_start
+from ..towns.models import TownTeam, TownVisit
 from .models import Party, PartyTeam
 
 
@@ -102,6 +103,12 @@ async def create_party(session: AsyncSession, team_id: int, party_size: int) -> 
     return party
 
 
+async def _check_whole(session: AsyncSession, party_id: int) -> None:
+    """A party in a town (suspended, its teams apart) can't change until it is whole again."""
+    if await session.scalar(select(TownVisit.id).where(TownVisit.party_id == party_id)) is not None:
+        raise PartyError("that party is in a town: it can change when its teams are ready to leave and it is whole again")
+
+
 async def _flush(session: AsyncSession) -> None:
     try:
         async with session.begin_nested():
@@ -113,6 +120,7 @@ async def _flush(session: AsyncSession) -> None:
 async def join_party(session: AsyncSession, party_id: int, team_id: int, party_size: int) -> Party:
     """The team joins the party whole, if there is a place for every one of its heroes."""
     party = await get_party(session, party_id)
+    await _check_whole(session, party.id)
     team = await _team(session, team_id)
     if await party_of(session, team.id) is not None:
         raise PartyError("that team is already in a party: it must leave it first")
@@ -130,9 +138,14 @@ async def leave_party(session: AsyncSession, team_id: int) -> int | None:
     if row is None:
         return None
     party_id = row.party_id
+    if await session.scalar(select(TownTeam.id).where(TownTeam.team_id == team_id)) is not None:
+        raise PartyError("that team is in a town with its party: it leaves with the town's own call")
     await session.delete(row)
     await session.flush()
     if not await session.scalar(select(func.count()).select_from(PartyTeam).where(PartyTeam.party_id == party_id)):
+        visits = select(TownVisit.id).where(TownVisit.party_id == party_id)  # (a party apart in a town goes with its visit)
+        await session.execute(delete(TownTeam).where(TownTeam.visit_id.in_(visits)))
+        await session.execute(delete(TownVisit).where(TownVisit.party_id == party_id))
         await session.execute(delete(Party).where(Party.id == party_id))
     return party_id
 
@@ -143,6 +156,8 @@ async def merge_parties(session: AsyncSession, keep_id: int, absorb_id: int, par
     if keep_id == absorb_id:
         raise PartyError("a party can't merge with itself")
     keep, absorb = await get_party(session, keep_id), await get_party(session, absorb_id)
+    await _check_whole(session, keep.id)
+    await _check_whole(session, absorb.id)
     have, coming = await size(session, keep.id), await size(session, absorb.id)
     if have + coming > party_size:
         raise PartyError(f"a party has room for {party_size} heroes: they have {have} and {coming} between them")
