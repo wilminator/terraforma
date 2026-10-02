@@ -1,30 +1,18 @@
 """Two-factor login: setup, codes that work once, recovery codes, and changes confirmed by emailed link."""
 
 import re
-from datetime import timedelta
 
 import pytest
 
-from terraforma import wallclock
 from terraforma.accounts import twofa
 from terraforma.accounts.service import create_account
 from terraforma.keys import KeyRing
 from terraforma.testing import in_app_db
 
+from .helpers import expect
+
 PASSWORD = "correct horse battery"
 EMAIL = "mike@example.com"
-
-
-@pytest.fixture
-def later(monkeypatch):
-    """Moves the wall clock forward from the real now: later(seconds)."""
-    real_now = wallclock.now
-
-    def move(seconds: int) -> None:
-        moved = real_now() + timedelta(seconds=seconds)
-        monkeypatch.setattr(wallclock, "now", lambda: moved)
-
-    return move
 
 
 def token_in(mail) -> str:
@@ -44,10 +32,9 @@ def mike(app_client):
 
 def turn_on(client, headers, mailbox, later):
     """Sets 2FA up and confirms it. Returns (secret, recovery codes)."""
-    secret = client.post("/api/2fa/setup", headers=headers).json()["secret"]
-    assert client.post("/api/2fa/enable", json={"code": code_now(secret)}, headers=headers).status_code == 202
-    answer = client.post("/api/2fa/confirm", json={"token": token_in(mailbox.last_to(EMAIL))}, headers=headers)
-    assert answer.status_code == 200, answer.text
+    secret = expect(client.post("/api/2fa/setup", headers=headers), 200).json()["secret"]
+    expect(client.post("/api/2fa/enable", json={"code": code_now(secret)}, headers=headers), 202)
+    answer = expect(client.post("/api/2fa/confirm", json={"token": token_in(mailbox.last_to(EMAIL))}, headers=headers), 200)
     later(30)  # the code used to enable is spent; the next login needs a fresh step
     return secret, answer.json()["recovery_codes"]
 
@@ -78,7 +65,7 @@ def test_a_code_works_once_and_a_neighbouring_step_is_forgiven():
 
 def test_setup_does_nothing_until_a_code_and_the_emailed_link_confirm_it(mike, mailbox):
     client, headers = mike
-    setup = client.post("/api/2fa/setup", headers=headers).json()
+    setup = expect(client.post("/api/2fa/setup", headers=headers), 200).json()
     assert setup["uri"].startswith("otpauth://totp/") and setup["secret"] in setup["uri"]
     assert client.get("/api/2fa").json() == {"enabled": False, "recovery_codes_left": 0}
     assert client.post("/api/2fa/enable", json={"code": "000000"}, headers=headers).status_code == 401
@@ -176,9 +163,9 @@ def test_guessing_codes_is_rate_limited(mike, mailbox, later):
     client, headers = mike
     turn_on(client, headers, mailbox, later)
     client.post("/api/logout", headers=headers)
-    codes = [log_in(client, code=f"{n:06d}").status_code for n in range(12)]
+    answers = [log_in(client, code=f"{n:06d}") for n in range(12)]
     # Ten guesses are allowed in the window; turning 2FA on used one.
-    assert codes[:9] == [401] * 9 and codes[9:] == [429, 429, 429]
+    assert [a.status_code for a in answers] == [401] * 9 + [429] * 3, [(a.status_code, a.text) for a in answers]
 
 
 # --- turning it off and new recovery codes ---------------------------------------
