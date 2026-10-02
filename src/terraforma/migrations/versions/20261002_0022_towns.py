@@ -57,12 +57,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    with op.batch_alter_table('town_notices', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_town_notices_team_id'))
-
     op.drop_table('town_notices')
-    with op.batch_alter_table('town_teams', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_town_teams_visit_id'))
-
     op.drop_table('town_teams')
     op.drop_table('town_visits')

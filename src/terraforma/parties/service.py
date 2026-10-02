@@ -143,6 +143,9 @@ async def leave_party(session: AsyncSession, team_id: int) -> int | None:
     await session.delete(row)
     await session.flush()
     if not await session.scalar(select(func.count()).select_from(PartyTeam).where(PartyTeam.party_id == party_id)):
+        visits = select(TownVisit.id).where(TownVisit.party_id == party_id)  # (a party apart in a town goes with its visit)
+        await session.execute(delete(TownTeam).where(TownTeam.visit_id.in_(visits)))
+        await session.execute(delete(TownVisit).where(TownVisit.party_id == party_id))
         await session.execute(delete(Party).where(Party.id == party_id))
     return party_id
 
