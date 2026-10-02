@@ -6,7 +6,7 @@ list of objects; the file name says the kind (abilities.json, items.json,
 jobs.json, personalities.json, monsters.json). Unknown fields, wrong types
 and bad names are refused with the file, the row and the field named.
 
-Stats are the engine's ten (STATS). A row names others by ``key``.
+Stats are the game's (``Rules.stats``; the engine's ten, STATS, unless it overrides them). A row names others by ``key``.
 Pictures and sounds are file names under the game's assets folder: plain
 names and folders, never absolute paths or "..".
 """
@@ -14,7 +14,7 @@ names and folders, never absolute paths or "..".
 import re
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, ValidationError
+from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, ValidationError, ValidationInfo
 
 STATS = ("HP", "MP", "Speed", "Accuracy", "Strength", "Dodge", "Block", "Power", "Resistance", "Focus")
 
@@ -38,18 +38,21 @@ def _asset(value: str) -> str:
     return value
 
 
-def _stats(value: dict) -> dict:
-    unknown = set(value) - set(STATS)
+def _stats(value: dict, info: ValidationInfo) -> dict:
+    """The stats are the game's own (``Rules.stats``, handed in as the validation context), the engine's ten by default."""
+    names = (info.context or {}).get("stats", STATS)
+    unknown = set(value) - set(names)
     if unknown:
-        raise ValueError(f"unknown stats {sorted(unknown)}: the stats are {', '.join(STATS)}")
-    return {stat: value.get(stat, 0) for stat in STATS}
+        raise ValueError(f"unknown stats {sorted(unknown)}: the stats are {', '.join(names)}")
+    return {stat: value.get(stat, 0) for stat in names}
 
 
 Key = Annotated[str, AfterValidator(_key)]
 Asset = Annotated[str, AfterValidator(_asset)]
 Stats = Annotated[dict[str, int], AfterValidator(_stats)]
 Growth = Annotated[dict[str, float], AfterValidator(_stats)]
-Targets = Literal["individual", "group", "party", "all_parties", "all_enemies", "all_allies"]
+# A name for one target or a whole group, party and so on; or a number n for the target and n neighbours each way along its group.
+Targets = Literal["individual", "group", "party", "all_parties", "all_enemies", "all_allies"] | Annotated[int, Field(ge=0)]
 Effect = Literal[
     "none", "heal", "hurt", "revive", "slay", "increase_stats", "decrease_stats", "steal_stats",
     "cause_good_status", "remove_good_status", "cause_bad_status", "remove_bad_status", "restore_mp",
@@ -203,7 +206,7 @@ KINDS: dict[str, type[Strict]] = {
 }
 
 
-def check_seed(seed: dict[str, list[dict]]) -> dict[str, list[Strict]]:
+def check_seed(seed: dict[str, list[dict]], stats: tuple[str, ...] = STATS) -> dict[str, list[Strict]]:
     """Every content file in $seed (as load_seed returns it) turned into checked rows.
 
     Other files in the seed are none of the content's business and are left alone.
@@ -216,7 +219,7 @@ def check_seed(seed: dict[str, list[dict]]) -> dict[str, list[Strict]]:
         rows = []
         for number, raw in enumerate(seed.get(kind, []), start=1):
             try:
-                rows.append(model.model_validate(raw))
+                rows.append(model.model_validate(raw, context={"stats": stats}))
             except ValidationError as error:
                 for detail in error.errors():
                     where = ".".join(str(part) for part in detail["loc"])

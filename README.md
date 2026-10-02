@@ -84,13 +84,32 @@ A game's starting content is JSON in its `seed/` folder (`Game(seed_dir=...)`): 
 
 - **Keys.** Every row has a `key` (1-64 lowercase letters, digits, `_` or `-`) that the game picks and never reuses. Rows name each other by key. Only `key` and `name` are required; the rest have defaults.
 - **Equipment slots.** An item's `equip_slots` lists the slots it takes. The engine's slots are `rhand rammo rarm lhand lammo larm body head back feet`; `hand`, `ammo` and `arm` are *sided* (the player picks left or right when equipping), and a two-handed weapon lists `lhand` and `rhand`. A weapon's `attack.ammo_type` has to match its ammunition's. Gear never stacks; ammunition and non-equipment stack to 250, in at most 12 stacks (for now these limits are constants in `heroes/inventory.py`).
-- **Stats** are `HP MP Speed Accuracy Strength Dodge Block Power Resistance Focus`; a stat left out is 0, and any other name is refused.
-- **An effect** is `{"effect", "targets", "base", "added", "attribute"}`: `effect` is one of `none heal hurt revive slay increase_stats decrease_stats steal_stats cause_good_status remove_good_status cause_bad_status remove_bad_status restore_mp`, `targets` one of `individual group party all_parties all_enemies all_allies`, and `attribute` is the game's own kind of damage.
+- **Stats** are the game's `Rules.stats` (see Fight rules below), by default `HP MP Speed Accuracy Strength Dodge Block Power Resistance Focus`; a stat left out is 0, and any other name is refused.
+- **An effect** is `{"effect", "targets", "base", "added", "attribute"}`: `effect` is one of `none heal hurt revive slay increase_stats decrease_stats steal_stats cause_good_status remove_good_status cause_bad_status remove_bad_status restore_mp`, `targets` is `individual`, `group`, `party`, `all_parties`, `all_enemies`, `all_allies`, or a number *n* (the target and *n* neighbours each way along its group, hit less the further they are), and `attribute` is the game's own kind of damage. (Until the statuses piece lands, `slay`, the stat changes and the statuses do nothing in a fight.)
 - **An animation** is `{"animation", "images", "sounds", "times"}`; pictures and sounds are plain file names under the game's assets folder (no absolute paths, no `..`).
 - **Checking.** Anything unknown, mistyped or out of range is refused with the file, row and field named, and so is a repeated key or a reference to a key that doesn't exist. All problems are listed at once, and the server won't start on a bad seed.
 - **Loading.** On every start the engine makes the database match the seed: new keys are added and known keys updated in place. A key the seed no longer lists is kept but marked inactive, never deleted, because heroes and fight history may still point at it. A file the seed doesn't have leaves its table alone.
 
 `terraforma.seed.load_seed` reads the files; `terraforma.content.schema.check_seed` checks them; `terraforma.content.loader.load_content` loads them.
+
+## Fight rules
+
+A fight is DragonStar's process: every fighter has chosen a command (attack with the left or right hand, use an item, change gear, use a skill, cast a spell, defend, run), then the round resolves in one pass and returns *events* (`Turn`, `Attack`, `Damage`, `Miss`, `Died`, ...) that say what happened. The fight's state after the round is what you get by applying its events in order (`terraforma.fights.replay.apply_events`), so a stored fight can be replayed and shown to spectators.
+
+- **The rules** are the class `terraforma.fights.rules.Rules`, and `Game(rules=...)` hands the engine yours. `Rules()` is DragonStar's, unchanged: speed (the fighter's Speed spread by 15%, a caster slowed by the spell's cost against their Focus, multi-strike weapons acting several times, ties shuffled), the hit roll (`1..Accuracy+Dodge`, a roll of 1 a critical that doubles Strength), damage (Strength against Block, scaled by the roll, halved when defending, never under 1), the saving throw (Power against Resistance: none, half or all of a harmful spell gets through), and what each effect does. A game overrides any of them:
+
+  ```python
+  class MyRules(Rules):
+      stats = (*Rules.stats, "Luck")
+
+      def chance_to_hit(self, rng, accuracy, dodge):
+          ...
+  ```
+
+  This is a public interface (the license exception covers it): the method names and signatures are what games build on.
+- **Stats and resources.** `Rules.stats` is the list seeds are checked against. A *resource* is a stat that is a pool: its base is the maximum and its current value what's left. `Rules.resources` lists them (HP, which is life, and MP by default); a game adds its own (rage, technique points) and fills and drains them from the hooks `ability_cost`, `gauge_moved` (called whenever one fighter moves another's resource) and `after_event` (called for every event, and may add more).
+- **Dice.** Never the `random` module: every roll comes from a `WorldRng` stream, one per fight under its map (`fight_stream(world_rng, map_name, fight_id)`), drawn in a fixed order, so the same fight replays exactly.
+- **Pure.** `terraforma.fights` has no database or web code. Heroes and monsters become fighters through `terraforma.fights.content`.
 
 ## Databases
 

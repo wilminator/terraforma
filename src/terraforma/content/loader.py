@@ -28,14 +28,14 @@ def _values(kind: str, row: Strict) -> dict:
     return {**values, "active": True}
 
 
-async def load_content(session: AsyncSession, seed: dict[str, list[dict]]) -> dict[str, int]:
+async def load_content(session: AsyncSession, seed: dict[str, list[dict]], stats: tuple[str, ...] | None = None) -> dict[str, int]:
     """Checks $seed (raising ContentError if it's wrong) and makes the database match it.
 
     New keys are added, known keys updated, and keys the seed no longer lists
     are marked inactive (never deleted). Returns how many rows of each kind
     the seed has. A seed with no content files leaves the database alone.
     """
-    checked = check_seed(seed)
+    checked = check_seed(seed, stats) if stats else check_seed(seed)
     counts = {}
     for kind, table in TABLES.items():
         if kind not in seed:

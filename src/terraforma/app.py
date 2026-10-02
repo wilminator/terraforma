@@ -77,7 +77,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
         if game and game.seed_dir:
             # A seed that doesn't check out stops the server here, naming what's wrong.
             async with app.state.sessionmaker() as session, session.begin():
-                await load_content(session, load_seed(game.seed_dir))
+                await load_content(session, load_seed(game.seed_dir), game.rules.stats)
         yield
         await engine.dispose()
 

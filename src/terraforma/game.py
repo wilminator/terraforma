@@ -7,8 +7,10 @@
     app = create_app(settings, game)
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+
+from .fights.rules import Rules
 
 
 @dataclass(frozen=True)
@@ -17,3 +19,5 @@ class Game:
     # The game's seed data (JSON) and assets, when it has them.
     seed_dir: Path | None = None
     assets_dir: Path | None = None
+    # How fights are played: the stats, the resources and every formula. Override Rules to change them.
+    rules: Rules = field(default_factory=Rules)
