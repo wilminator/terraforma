@@ -26,9 +26,12 @@ from .specs import EffectSpec
 from .targets import expand, lost_target
 
 
-def fight_stream(world: WorldRng, map_name: str, fight_id: int) -> random.Random:
-    """The random stream for one fight: its own, under its map's, so the fight replays exactly whatever else happens in the world."""
-    return world.stream("map", map_name, "fight", fight_id)
+def fight_stream(world: WorldRng, map_name: str, fight_id: int, round_number: int | None = None) -> random.Random:
+    """The random stream for one fight (or, with $round_number, one round of it): its own, under its map's, so the
+    fight replays exactly whatever else happens in the world. A round has its own stream so it can be played
+    again from the fight's state at the start of that round, without playing the rounds before it."""
+    parts = ("map", map_name, "fight", fight_id)
+    return world.stream(*parts) if round_number is None else world.stream(*parts, "round", round_number)
 
 
 class Log:
