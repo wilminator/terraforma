@@ -34,4 +34,5 @@ COPY tests ./tests
 RUN chown terraforma:terraforma /app
 USER terraforma
 # One worker per CPU, each with its own databases (terraforma.testing).
-CMD ["pytest", "-n", "auto"]
+ENTRYPOINT ["pytest"]
+CMD ["-n", "auto"]
