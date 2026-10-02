@@ -27,6 +27,11 @@ says it means:
   to ``ai_experience`` percent; that is what is done here.
 * A command that reaches ``n`` neighbours adds up the neighbours' values;
   DragonStar adds the target's own value once for each neighbour.
+* The Fighter and Mage actions keep "the better half" of their targets: DragonStar cuts the list in half before ranking
+  it, so it keeps the first half in party order, which can be a fighter's own side.
+
+Added by the engine, since DragonStar left them as notes ("until effects are in place"): what statuses and stat changes are
+worth (``fights.ai_status``, ``Rules.status_worth``), and the Protector, Hinderer, Smart and Omnipotent actions' own play.
 
 Kept as DragonStar has them (odd, but the numbers are the game's): ``revive`` is
 worth a negative number against a dead ally, and ``restore_mp`` is worth the
@@ -49,17 +54,24 @@ from .specs import (
     ALL_NOT_ALLIES,
     ALL_NOT_ENEMIES,
     ALL_PARTIES,
+    CAUSE_BAD_STATUS,
+    CAUSE_GOOD_STATUS,
+    DECREASE_STATS,
     DETRIMENTAL,
     GROUP,
     HEAL,
     HURT,
+    INCREASE_STATS,
     NONE,
     ONLY_LIVING,
     PARTY,
     RANDOM_PARTY,
     RESTORE_MP,
+    REMOVE_BAD_STATUS,
+    REMOVE_GOOD_STATUS,
     REVIVE,
     SLAY,
+    STEAL_STATS,
     AbilitySpec,
     EffectSpec,
 )
@@ -73,15 +85,15 @@ class Action(IntEnum):
     STUPID = 0
     NORMAL = 1
     HEALER = 2
-    PROTECTOR = 3  # plays as a healer until statuses exist
+    PROTECTOR = 3  # keeps its allies up: heals, cleanses, and buffs the weak and afflicted
     PUMMELER = 4
     FIGHTER = 5
-    HINDERER = 6  # plays as a fighter until statuses exist
+    HINDERER = 6  # wears its enemies down with bad statuses and lowered stats, else fights
     CASTER = 7
     MAGE = 8
     SHARP = 9
-    SMART = 10  # plays as sharp until statuses exist
-    OMNIPOTENT = 11  # plays as sharp until statuses exist
+    SMART = 10  # weighs every command it could use and takes the best, judging as well as its experience lets it
+    OMNIPOTENT = 11  # as smart, and sees every stat exactly
 
 
 class Goal(IntEnum):
@@ -257,7 +269,10 @@ def _cast_success(rules: Rules, fighter: Combatant, target: Combatant, rng: rand
     return power / total + min(power, resistance) / total / 2 if total else 0.0
 
 
-def _effect_damage(rules: Rules, target: Combatant, effect: EffectSpec) -> float:
+def _effect_damage(rules: Rules, statuses: dict, target: Combatant, effect: EffectSpec) -> float:
+    worth = rules.status_worth(statuses, target, effect)
+    if worth is not None:
+        return worth
     vital = rules.vital
     hp, maximum = target.current[vital], target.get_base(rules, vital)
     if effect.effect in (HEAL, HURT):
@@ -274,20 +289,20 @@ def _effect_damage(rules: Rules, target: Combatant, effect: EffectSpec) -> float
     return 0  # nothing, or an effect the AI does not value yet
 
 
-def _destructor(rules: Rules, fighter: Combatant, target: Combatant, command: int, using: int, rng: random.Random) -> float:
+def _destructor(rules: Rules, statuses: dict, fighter: Combatant, target: Combatant, command: int, using: int, rng: random.Random) -> float:
     if command in (Command.ATTACK_LEFT, Command.ATTACK_RIGHT):
         return _attack_damage(rules, fighter, target, command, rng)
     effect = _usable(fighter, command, using)
-    return 0 if effect is None else _effect_damage(rules, target, effect)
+    return 0 if effect is None else _effect_damage(rules, statuses, target, effect)
 
 
-def _schemer(rules: Rules, fighter: Combatant, target: Combatant, command: int, using: int, rng: random.Random) -> float:
+def _schemer(rules: Rules, statuses: dict, fighter: Combatant, target: Combatant, command: int, using: int, rng: random.Random) -> float:
     if command in (Command.ATTACK_LEFT, Command.ATTACK_RIGHT):
         return _attack_damage(rules, fighter, target, command, rng) * _attack_success(rules, fighter, target, command, rng)
     effect = _usable(fighter, command, using)
     if effect is None:
         return 0
-    value = _effect_damage(rules, target, effect)
+    value = _effect_damage(rules, statuses, target, effect)
     if command == Command.SKILL:
         return value * _attack_success(rules, fighter, target, command, rng)
     if command == Command.SPELL:
@@ -297,6 +312,7 @@ def _schemer(rules: Rules, fighter: Combatant, target: Combatant, command: int, 
 
 def goal_value(
     rules: Rules,
+    statuses: dict,
     fighter: Combatant,
     target: Combatant,
     command: int,
@@ -317,12 +333,12 @@ def goal_value(
     if goal == Goal.RANDOM:
         value = rng.randint(1, 1000)
     elif goal == Goal.DESTRUCTOR:
-        value = _destructor(rules, fighter, target, command, using, rng)
+        value = _destructor(rules, statuses, fighter, target, command, using, rng)
     elif goal == Goal.SCHEMER:
-        value = _schemer(rules, fighter, target, command, using, rng)
+        value = _schemer(rules, statuses, fighter, target, command, using, rng)
     elif goal == Goal.PREVENTOR:
         hp = target.current[rules.vital]
-        value = 0 if hp == 0 else math.floor(_destructor(rules, fighter, target, command, using, rng) / hp * 1000)
+        value = 0 if hp == 0 else math.floor(_destructor(rules, statuses, fighter, target, command, using, rng) / hp * 1000)
     elif goal == Goal.PROTECTOR:
         value = rules.pxp(target) * target.current[rules.vital]
     else:
@@ -375,7 +391,7 @@ def command_values(
                 if only is not None and where not in only:
                     value = 0
                 else:
-                    value = goal_value(rules, fighter, target, command, using, alignment, effect, rng)
+                    value = goal_value(rules, fight.statuses, fighter, target, command, using, alignment, effect, rng)
                 values.setdefault(party_index, {}).setdefault(group_index, {})[char_index] = value
     return values
 
@@ -543,16 +559,23 @@ class _Turn:
         self.rules, self.fight, self.address, self.rng = rules, fight, address, rng
         self.fighter = fight.get(address)
 
-    def finish(self, option: Option, *, only: Sequence[Address] | None = None, cut_percent: int | None = None) -> Choice | None:
+    def rank(self, option: Option, *, only: Sequence[Address] | None = None) -> dict[Key, float]:
+        """What the option is worth against everything it could be aimed at."""
         command, using = option
         values = command_values(self.rules, self.fight, self.fighter, self.address, command, using, self.rng, only)
         effect = command_effect(self.rules, self.fighter, command, using)
         reach = 0 if effect is None or command in NO_TARGET_COMMANDS else effect.targets
-        targets = combine_on_reach(command, using, reach, values)
-        if cut_percent is not None and targets:
-            targets = cut(targets, cut_percent)
+        return combine_on_reach(command, using, reach, values)
+
+    def pick(self, targets: dict[Key, float]) -> Choice | None:
         key = select(self.rules, self.fight, self.address, self.fighter, targets, self.rng)
         return None if key is None else Choice(key[0], key[1], key[2:])
+
+    def finish(self, option: Option, *, only: Sequence[Address] | None = None, cut_percent: int | None = None) -> Choice | None:
+        targets = self.rank(option, only=only)
+        if cut_percent is not None and targets:
+            targets = cut(dict(sorted(targets.items(), key=lambda item: -item[1])), cut_percent)  # the better half
+        return self.pick(targets)
 
 
 def _normal(turn: _Turn, *, cut_percent: int | None = None) -> Choice | None:
@@ -606,19 +629,88 @@ def _sharp(turn: _Turn) -> Choice | None:
     return _mage(turn)
 
 
+HINDERING = frozenset({CAUSE_BAD_STATUS, DECREASE_STATS, STEAL_STATS, REMOVE_GOOD_STATUS})
+HELPING = frozenset({REMOVE_BAD_STATUS, CAUSE_GOOD_STATUS, INCREASE_STATS})
+
+
+def _options_with(rules: Rules, fighter: Combatant, effects: frozenset) -> list[Option]:
+    """The abilities it can pay for and the items it has that do one of ``effects``."""
+    options = [
+        (_ability_command(ability), index)
+        for index, ability in enumerate(fighter.abilities)
+        if ability.effect.effect in effects and _affordable(rules, fighter, ability)
+    ]
+    return options + _items_with(fighter, lambda effect: effect in effects)
+
+
+def _afflicted(rules: Rules, fight: Fight, party: int) -> list[Address]:
+    """The living fighters of ``party`` under a bad status."""
+    return [
+        address
+        for address in fight.addresses()
+        if address[0] == party
+        and fight.get(address).alive(rules)
+        and any(token.spec.kind == "bad" for token in fight.get(address).tokens)
+    ]
+
+
+def _protector(turn: _Turn) -> Choice | None:
+    party = turn.address[0]
+    allies, _ = turn.rules.alignment(turn.fight, party)
+    needing = weak_links(turn.rules, turn.fight, party, 50) + _afflicted(turn.rules, turn.fight, party)
+    for ally in sorted(allies - {party}):
+        needing += weak_links(turn.rules, turn.fight, ally, 10) + _afflicted(turn.rules, turn.fight, ally)
+    options = _healing_options(turn.rules, turn.fighter) + _options_with(turn.rules, turn.fighter, HELPING)
+    if not options or not needing:
+        return _normal(turn)
+    return turn.finish(turn.rng.choice(options), only=needing)
+
+
+def _hinderer(turn: _Turn) -> Choice | None:
+    options = _options_with(turn.rules, turn.fighter, HINDERING)
+    if not options:
+        return _fighter(turn)
+    return turn.finish(turn.rng.choice(options), cut_percent=50)
+
+
+def _every_option(rules: Rules, fighter: Combatant) -> list[Option]:
+    return _attacks_and_abilities(rules, fighter, need_mp=True) + _items_with(fighter, lambda effect: effect != NONE)
+
+
+def _smart(turn: _Turn) -> Choice | None:
+    """Weighs every command it could use, and takes the one whose best aim is worth the most (ties at random)."""
+    ranked = [(option, turn.rank(option)) for option in _every_option(turn.rules, turn.fighter)]
+    ranked = [(option, targets) for option, targets in ranked if targets]
+    if not ranked:
+        return None
+    top = max(max(targets.values()) for _, targets in ranked)
+    _, targets = turn.rng.choice([(option, targets) for option, targets in ranked if max(targets.values()) == top])
+    return turn.pick(targets)
+
+
+def _omnipotent(turn: _Turn) -> Choice | None:
+    """As smart, reading every stat exactly (its experience is set to nothing for the turn)."""
+    judged = turn.fighter.ai_experience
+    turn.fighter.ai_experience = 0
+    try:
+        return _smart(turn)
+    finally:
+        turn.fighter.ai_experience = judged
+
+
 ACTIONS = {
     Action.STUPID: _stupid,
     Action.NORMAL: _normal,
     Action.HEALER: _healer,
-    Action.PROTECTOR: _healer,
+    Action.PROTECTOR: _protector,
     Action.PUMMELER: _pummeler,
     Action.FIGHTER: _fighter,
-    Action.HINDERER: _fighter,
+    Action.HINDERER: _hinderer,
     Action.CASTER: _caster,
     Action.MAGE: _mage,
     Action.SHARP: _sharp,
-    Action.SMART: _sharp,
-    Action.OMNIPOTENT: _sharp,
+    Action.SMART: _smart,
+    Action.OMNIPOTENT: _omnipotent,
 }
 
 
