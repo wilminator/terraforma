@@ -1,2 +1,2 @@
 #!/bin/env bash
-docker compose run --remove-orphans --rm test
+docker compose run --remove-orphans --rm test -n auto "$@"
