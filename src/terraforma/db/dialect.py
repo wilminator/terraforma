@@ -8,10 +8,10 @@ import json
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from sqlalchemy import Table, Text, func, text
+from sqlalchemy import MetaData, Table, Text, func, text
 from sqlalchemy.dialects import mysql, postgresql, sqlite
 from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.types import TypeDecorator
 
@@ -101,6 +101,35 @@ async def ensure_database(url: str) -> None:
                 raise NotImplementedError(f"ensure_database() doesn't know the {backend} database yet")
     finally:
         await engine.dispose()
+
+
+async def empty_tables(engine: AsyncEngine) -> None:
+    """Deletes every row of every table but Alembic's, and restarts the id counters (tests: much faster than rebuilding the tables)."""
+
+    def empty(connection) -> None:
+        metadata = MetaData()
+        metadata.reflect(connection)
+        names = [table.name for table in metadata.sorted_tables if table.name != "alembic_version"]
+        if not names:
+            return
+        name = connection.dialect.name
+        if name == "postgresql":
+            quoted = ", ".join(f'"{table}"' for table in names)
+            connection.execute(text(f"TRUNCATE {quoted} RESTART IDENTITY CASCADE"))
+        elif name in ("mysql", "mariadb"):
+            connection.execute(text("SET FOREIGN_KEY_CHECKS = 0"))
+            for table in names:
+                connection.execute(text(f"TRUNCATE TABLE `{table}`"))
+            connection.execute(text("SET FOREIGN_KEY_CHECKS = 1"))
+        elif name == "sqlite":
+            for table in reversed(metadata.sorted_tables):
+                if table.name != "alembic_version":
+                    connection.execute(table.delete())
+        else:
+            raise NotImplementedError(f"empty_tables() doesn't know the {name} database yet")
+
+    async with engine.begin() as connection:
+        await connection.run_sync(empty)
 
 
 class ExactJSON(TypeDecorator):
