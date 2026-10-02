@@ -1,6 +1,6 @@
 """Relationships: one row per direction, so A's view of B is separate from B's view of A."""
 
-from sqlalchemy import Integer, String, UniqueConstraint
+from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db.base import Base, Timestamps
@@ -24,3 +24,23 @@ class Relationship(Timestamps, Base):
     object_id: Mapped[int] = mapped_column(Integer, index=True)
     score: Mapped[int] = mapped_column(Integer, default=0)
     note: Mapped[str] = mapped_column(String(NOTE_MAX), default="")
+
+
+HELPED, HARMED, BOTH = "helped", "harmed", "both"
+PENDING, ANSWERED, DISMISSED = "pending", "answered", "dismissed"
+
+
+class RatingPrompt(Timestamps, Base):
+    """A question put to a team after a fight: another player team helped or harmed it, and it had no opinion of that team
+    (``relations.ratings``). The sides are team ids without links, like a relationship's, and go with the team."""
+
+    __tablename__ = "rating_prompts"
+    __table_args__ = (UniqueConstraint("fight_id", "subject_team_id", "object_team_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    fight_id: Mapped[int] = mapped_column(ForeignKey("fights.id"), index=True)
+    subject_team_id: Mapped[int] = mapped_column(Integer, index=True)
+    object_team_id: Mapped[int] = mapped_column(Integer, index=True)
+    # What the other team did: helped, harmed, or both.
+    interaction: Mapped[str] = mapped_column(String(8))
+    state: Mapped[str] = mapped_column(String(10), default=PENDING)

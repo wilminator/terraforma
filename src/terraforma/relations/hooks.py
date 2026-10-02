@@ -83,6 +83,13 @@ class Relations:
         """Where a new relationship starts: neutral, by default."""
         return 0
 
+    async def ask_after_fight(self, session, subject: Ref, object: Ref, interaction: str, score: int) -> bool:
+        """Whether to ask ``subject``'s player to rate ``object`` after a fight in which ``object`` helped or harmed it
+        (``interaction``: "helped", "harmed" or "both"). ``score`` is where ``subject`` stands with it now (a new
+        relationship starts at ``initial``). By default yes, but only when that is the neutral band: a team that already
+        has an opinion is not asked. What the player answers still goes through ``resolve`` like any other change."""
+        return self.band(score) == "neutral"
+
     async def resolve(self, session, subject: Ref, object: Ref, current: int, change: Change) -> int:
         """The score after ``change``, given ``current``: the one place a score changes. By default what was asked,
         within the scale (an absolute ``score``, or ``delta`` from ``current``)."""

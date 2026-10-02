@@ -24,6 +24,8 @@ from .. import wallclock
 from ..economy import Economy
 from ..heroes.models import Hero, Team
 from ..models import Map, World
+from ..relations import ratings
+from ..relations.hooks import Relations
 from ..world.rng import WorldRng
 from . import ai, store
 from .build import known_drop_tables, known_statuses, monster_fighter, team_party
@@ -175,7 +177,8 @@ async def _ai_stream(session: AsyncSession, record: FightRecord, round_number: i
     return WorldRng(world.seed).stream("map", game_map.name, "fight", record.id, "round", round_number, "ai")
 
 
-async def resolve_round(session: AsyncSession, record: FightRecord, rules: Rules, economy: Economy | None = None) -> RoundResult:
+async def resolve_round(session: AsyncSession, record: FightRecord, rules: Rules, economy: Economy | None = None,
+                        relations: Relations | None = None) -> RoundResult:
     """Plays the round being waited for with what has been committed: the players' commands, the AI's for the monsters,
     and a defend for any player's fighter that has not committed. Then, if that ended the fight, saves its result;
     if not, starts the next round's clock. Raises Refused for a finished fight and store.SequenceConflict if someone
@@ -208,6 +211,7 @@ async def resolve_round(session: AsyncSession, record: FightRecord, rules: Rules
     if now_fight.over:
         record.finished, record.round_deadline = True, None
         await store.apply_results(session, record, rules, economy)
+        await ratings.create_prompts(session, relations or Relations(), record.id, now_fight)
     else:
         record.round_deadline = wallclock.now() + timedelta(seconds=rules.round_seconds)
     await session.flush()
@@ -222,7 +226,8 @@ async def due(session: AsyncSession, now: datetime | None = None) -> list[int]:
     return list(rows.all())
 
 
-async def resolve_overdue(sessionmaker: async_sessionmaker, rules: Rules, economy: Economy | None, channels) -> int:
+async def resolve_overdue(sessionmaker: async_sessionmaker, rules: Rules, economy: Economy | None, channels,
+                          relations: Relations | None = None) -> int:
     """Plays every round whose time has run out, tells the fights' watchers, and returns how many it played. Each fight
     is its own transaction, so one that fails does not hold up the rest; a round someone else just played is skipped."""
     async with sessionmaker() as session:
@@ -234,7 +239,7 @@ async def resolve_overdue(sessionmaker: async_sessionmaker, rules: Rules, econom
                 record = await session.get(FightRecord, fight_id)
                 if record.finished or record.round_deadline is None or aware(record.round_deadline) > wallclock.now():
                     continue  # played meanwhile
-                result = await resolve_round(session, record, rules, economy)
+                result = await resolve_round(session, record, rules, economy, relations)
         except (store.SequenceConflict, Refused):
             continue
         played += 1

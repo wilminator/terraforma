@@ -16,6 +16,7 @@ from sqlalchemy import select
 from ..api.deps import ActingAccount, CurrentAccount
 from ..api.security import SESSION_ACCOUNT, SESSION_VERSION, same_origin
 from ..economy import Economy, TeamGold
+from ..relations.hooks import Relations
 from ..models import Account
 from . import live, store
 from .combatant import Command
@@ -63,6 +64,11 @@ def rules_of(carrier) -> Rules:
     return game.rules if game else Rules()
 
 
+def relations_of(carrier) -> Relations:
+    game = getattr(carrier, "app", carrier).state.game
+    return game.relations if game else Relations()
+
+
 def economy_of(carrier) -> Economy:
     game = getattr(carrier, "app", carrier).state.game
     return game.economy if game else TeamGold()
@@ -81,7 +87,7 @@ async def fight_command(fight_id: FightId, body: FightCommand, request: Request,
         async with request.app.state.sessionmaker() as session, session.begin():
             record = await live.get_record(session, fight_id)
             number = await live.submit_command(session, record, account.id, body.fighter.address(), COMMANDS[body.command], body.using, body.target.address(), rules)
-            result = await live.resolve_round(session, record, rules, economy_of(request)) if await live.everyone_committed(session, record, rules) else None
+            result = await live.resolve_round(session, record, rules, economy_of(request), relations_of(request)) if await live.everyone_committed(session, record, rules) else None
     except live.FightError as error:
         raise refuse(error) from error
     except store.SequenceConflict:  # the timer played the round a moment before: the command missed it

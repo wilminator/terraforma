@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..heroes.models import Team
 from .hooks import Change, Ref, Relations
-from .models import NOTE_MAX, Relationship
+from .models import NOTE_MAX, RatingPrompt, Relationship
 
 #: The kinds of side there are. Alliances arrive with their own piece.
 KINDS = ("team",)
@@ -97,6 +97,8 @@ async def forget(session: AsyncSession, ref: Ref) -> None:
         (Relationship.subject_kind == ref.kind) & (Relationship.subject_id == ref.id),
         (Relationship.object_kind == ref.kind) & (Relationship.object_id == ref.id),
     )))
+    if ref.kind == "team":
+        await session.execute(delete(RatingPrompt).where(or_(RatingPrompt.subject_team_id == ref.id, RatingPrompt.object_team_id == ref.id)))
 
 
 async def drop(session: AsyncSession, subject: Ref, object: Ref) -> bool:
