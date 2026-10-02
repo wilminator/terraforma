@@ -8,6 +8,7 @@ doesn't renumber the rest.
 from dataclasses import dataclass, field
 
 from .combatant import Address, Combatant
+from .drops import DropTable
 from .rules import Rules
 from .status import StatusSpec
 
@@ -42,6 +43,18 @@ class Fight:
     statuses: dict[str, StatusSpec] = field(default_factory=dict)
     #: Set once the fight has ended and been paid out (the ``FightOver`` event): nothing more is played.
     over: bool = False
+    #: The drop tables this fight knows, by key (a monster's ``drops`` name them), and the keys of the area's own tables
+    #: (the map's), rolled when the fight ends (``fights.drops``).
+    drop_tables: dict[str, DropTable] = field(default_factory=dict)
+    area_drops: list[str] = field(default_factory=list)
+
+    def drop_item(self, key: str):
+        """The item a drop table names by $key."""
+        for table in self.drop_tables.values():
+            for entry in table.entries:
+                if entry.item is not None and entry.item.key == key:
+                    return entry.item
+        raise KeyError(f"no drop table of this fight names the item {key!r}")
 
     def get(self, address: Address) -> Combatant:
         party, group, character = address
@@ -68,10 +81,12 @@ class Fight:
         return sum(1 for party in self.parties.values() if not party.dead(rules))
 
 
-def build_fight(layout: dict[int, dict[int, list[Combatant]]], statuses: dict[str, StatusSpec] | None = None) -> Fight:
+def build_fight(layout: dict[int, dict[int, list[Combatant]]], statuses: dict[str, StatusSpec] | None = None,
+                drop_tables: dict[str, DropTable] | None = None, area_drops: list[str] | None = None) -> Fight:
     """A fight from ``{party: {group: [combatants...]}}``, numbering each group's fighters 0, 1, 2, ...
-    $statuses are the statuses it knows, by key (``fights.content.status_spec`` makes them from the content)."""
+    $statuses are the statuses it knows, by key (``fights.content.status_spec`` makes them from the content), $drop_tables
+    the drop tables by key and $area_drops the keys of the area's own."""
     return Fight({
         party: Party({group: Group(dict(enumerate(members))) for group, members in groups.items()})
         for party, groups in layout.items()
-    }, dict(statuses or {}))
+    }, dict(statuses or {}), drop_tables=dict(drop_tables or {}), area_drops=list(area_drops or []))

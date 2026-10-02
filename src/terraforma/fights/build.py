@@ -6,13 +6,14 @@ A hero starts a fight at full HP and MP for now: heroes do not carry damage betw
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..content.models import Ability, Item, Job, Monster, Status
+from ..content.models import Ability, DropTable, Item, Job, Monster, Status
 from ..heroes import inventory
 from ..heroes.models import Hero, Team, TeamMember
 from ..parties import service as parties
 from .combatant import Combatant
-from .content import ability_spec, item_spec, monster_combatant, status_spec
+from .content import ability_spec, drop_table_spec, item_spec, monster_combatant, status_spec
 from .rules import Rules
+from .drops import DropTable as DropTableSpec
 from .status import StatusSpec
 
 
@@ -71,3 +72,11 @@ async def party_side(session: AsyncSession, party_id: int, rules: Rules) -> dict
     heroes = [await session.get(Hero, hero_id) for hero_id in await parties.hero_ids(session, party_id)]
     fighters = [await hero_fighter(session, hero) for hero in heroes]
     return {number: fighters[start:start + rules.group_size] for number, start in enumerate(range(0, len(fighters), rules.group_size))}
+
+
+async def known_drop_tables(session: AsyncSession, keys: set[str]) -> dict[str, DropTableSpec]:
+    """The active drop tables named in $keys, by key, with the items they drop: what a new fight is built with."""
+    tables = (await session.scalars(select(DropTable).where(DropTable.key.in_(keys), DropTable.active.is_(True)))).all() if keys else []
+    wanted = {entry["item"] for table in tables for entry in table.entries if entry["item"] is not None}
+    items = {item.key: item for item in (await session.scalars(select(Item).where(Item.key.in_(wanted)))).all()} if wanted else {}
+    return {table.key: drop_table_spec(table, items) for table in tables}

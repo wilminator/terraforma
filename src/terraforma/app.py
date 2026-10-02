@@ -63,7 +63,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
         if game and game.seed_dir:
             # A seed that doesn't check out stops the server here, naming what's wrong.
             async with app.state.sessionmaker() as session, session.begin():
-                await load_content(session, load_seed(game.seed_dir), game.rules.stats, game.rules.resource_names)
+                await load_content(session, load_seed(game.seed_dir), game.rules.stats, game.rules.resource_names, game.rules.drop_chance_scale)
         timer = asyncio.create_task(fight_timer(app, settings.fight_timer_seconds)) if settings.fight_timer_seconds else None
         yield
         if timer is not None:

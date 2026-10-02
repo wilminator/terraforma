@@ -41,6 +41,8 @@ class EventType(StrEnum):
     XP_EARNED = "XpEarned"  # [party, group, character, amount]
     GOLD = "Gold"  # [party, team, amount]: a team's share of the gold dropped
     FIGHT_OVER = "FightOver"  # []: the fight has ended and been paid out; nothing more is played
+    DROP = "Drop"  # [party, group, character, item key, quantity]: an item the hero was given
+    DROP_LOST = "DropLost"  # [party, group, character, item key, quantity]: it did not fit the hero's inventory
     LEVEL_UP = "LevelUp"  # [party, group, character, level, {stat: gain}]
     STATUS_APPLIED = "StatusApplied"  # [party, group, character, status key, source party, group, character, duration or None]
     STATUS_TICK = "StatusTick"  # [party, group, character, status key, source party, group, character, intensity, when]

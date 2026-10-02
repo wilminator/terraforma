@@ -8,6 +8,7 @@ every database and hashes the same everywhere.
 """
 
 from .combatant import Combatant
+from .drops import DropEntry, DropTable
 from .fight import Fight, Group, Party
 from .specs import AbilitySpec, EffectSpec, ItemSpec
 from .status import Curve, Modifier, StatusSpec, StatusToken, Tick
@@ -38,6 +39,28 @@ def _build_status(raw: dict) -> StatusSpec:
         key=raw["key"], name=raw["name"], kind=raw["kind"], duration=raw["duration"], xp_share=raw["xp_share"],
         curve=Curve(**raw["curve"]), ticks=tuple(Tick(**tick) for tick in raw["ticks"]),
         modifiers=tuple(Modifier(**modifier) for modifier in raw["modifiers"]),
+    )
+
+
+def _drop_table(table: DropTable) -> dict:
+    return {
+        "key": table.key, "name": table.name, "weighted": table.weighted, "rolls": table.rolls,
+        "entries": [
+            {"item": None if entry.item is None else _item(entry.item), "chance": entry.chance, "weight": entry.weight,
+             "min": entry.minimum, "max": entry.maximum, "share": entry.share}
+            for entry in table.entries
+        ],
+    }
+
+
+def _build_drop_table(raw: dict) -> DropTable:
+    return DropTable(
+        key=raw["key"], name=raw["name"], weighted=raw["weighted"], rolls=raw["rolls"],
+        entries=tuple(
+            DropEntry(None if entry["item"] is None else _build_item(entry["item"]), entry["chance"], entry["weight"],
+                      entry["min"], entry["max"], entry["share"])
+            for entry in raw["entries"]
+        ),
     )
 
 
@@ -72,11 +95,12 @@ def _fighter(fighter: Combatant) -> dict:
             "gold": fighter.gold, "xp_debts": [list(debt) for debt in fighter.xp_debts],
         },
         "tokens": [_token(token) for token in fighter.tokens],
+        "drops": list(fighter.drops), "buffed_by": [list(address) for address in fighter.buffed_by],
     }
 
 
 def dehydrate(fight: Fight) -> dict:
-    return {"over": fight.over, "statuses": {key: _status(spec) for key, spec in fight.statuses.items()}, "parties": [
+    return {"over": fight.over, "area_drops": list(fight.area_drops), "drop_tables": {key: _drop_table(table) for key, table in fight.drop_tables.items()}, "statuses": {key: _status(spec) for key, spec in fight.statuses.items()}, "parties": [
         {
             "index": party_index,
             "allies": None if party.allies is None else sorted(party.allies),
@@ -118,6 +142,7 @@ def _build_fighter(raw: dict, statuses: dict[str, StatusSpec]) -> Combatant:
         command=raw["command"], using=raw["using"], target=tuple(raw["target"]),
         **dict(zip(("ai_action", "ai_goal", "ai_target", "ai_experience"), raw.get("ai", (0, 0, 0, 0)), strict=True)),
         **_progress(raw.get("progress", {})),
+        drops=tuple(raw.get("drops", ())), buffed_by=[tuple(address) for address in raw.get("buffed_by", ())],
         tokens=[
             StatusToken(statuses[token["status"]], tuple(token["source"]), token["duration"], token["rounds"], token["turns"])
             for token in raw.get("tokens", [])
@@ -138,4 +163,5 @@ def hydrate(raw: dict) -> Fight:
             None if party["enemies"] is None else set(party["enemies"]),
             {int(team): list(members) for team, members in party.get("teams", {}).items()},
         )
-    return Fight(parties, statuses, over=raw.get("over", False))
+    return Fight(parties, statuses, over=raw.get("over", False), area_drops=list(raw.get("area_drops", ())),
+                 drop_tables={key: _build_drop_table(table) for key, table in raw.get("drop_tables", {}).items()})

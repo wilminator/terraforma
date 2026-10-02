@@ -20,6 +20,8 @@ from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Fie
 STATS = ("HP", "MP", "Speed", "Accuracy", "Strength", "Dodge", "Block", "Power", "Resistance", "Focus")
 #: The stats that are pools (``Rules.resource_names``): effects that push a stat's current value skip them.
 RESOURCES = ("HP", "MP")
+#: A drop's chance is out of this unless the game's rules say otherwise (``Rules.drop_chance_scale``).
+DROP_SCALE = 10000
 
 KEY = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 ASSET = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9_./-]{0,127}$")
@@ -214,6 +216,56 @@ class Personality(Strict):
     overworld: Overworld = Overworld()
 
 
+class DropEntry(Strict):
+    """One thing a drop table can drop. In a plain table ``chance`` is out of the game's ``Rules.drop_chance_scale`` (10000 by
+    default); in a weighted table ``weight`` picks it. ``min`` and ``max`` say how many. ``for`` says who gets it: ``one``
+    (the default), ``each_team`` (one in each team of the winning side) or ``each_member`` (every hero of the winning party)."""
+
+    item: Key | None = None
+    chance: int = Field(default=0, ge=0)
+    weight: int = Field(default=0, ge=0)
+    min: int = Field(default=1, ge=1)
+    max: int = Field(default=1, ge=1)
+    share: Literal["one", "each_team", "each_member"] = Field(default="one", validation_alias="for", serialization_alias="for")
+
+    @model_validator(mode="after")
+    def _min_is_not_above_max(self):
+        if self.min > self.max:
+            raise ValueError("min can't be above max")
+        return self
+
+
+class DropTable(Strict):
+    """What a monster (or an area) leaves behind: rolled once when it dies. A plain table rolls every entry on its own chance;
+    a ``weighted`` one picks an entry by weight ``rolls`` times, and an entry with no item means nothing drops."""
+
+    key: Key
+    name: str = Field(min_length=1, max_length=64)
+    weighted: bool = False
+    rolls: int = Field(default=1, ge=1, le=100)
+    entries: list[DropEntry] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def _entries_fit_the_kind_of_table(self, info: ValidationInfo):
+        scale = (info.context or {}).get("drop_scale", DROP_SCALE)
+        if self.weighted:
+            if any(entry.weight < 1 for entry in self.entries):
+                raise ValueError("every entry of a weighted table needs a weight of at least 1")
+            if any(entry.chance for entry in self.entries):
+                raise ValueError("a weighted table picks by weight: chance is for plain tables")
+            return self
+        if self.rolls != 1:
+            raise ValueError("rolls is for weighted tables")
+        for entry in self.entries:
+            if entry.item is None:
+                raise ValueError("an entry of a plain table needs an item (only a weighted table can drop nothing)")
+            if entry.weight:
+                raise ValueError("weight is for weighted tables")
+            if not 1 <= entry.chance <= scale:
+                raise ValueError(f"a chance is 1 to {scale}")
+        return self
+
+
 class MonsterAi(Strict):
     """The game's own numbers steering the monster's choices (what they mean is up to the game's fight rules)."""
 
@@ -233,6 +285,8 @@ class Monster(Strict):
     abilities: list[Key] = []
     items: list[Key] = []
     equipment: list[Key] = []
+    # Drop tables (keys) rolled when it dies.
+    drops: list[Key] = []
     ai: MonsterAi = MonsterAi()
 
 
@@ -339,6 +393,7 @@ class Status(Strict):
 KINDS: dict[str, type[Strict]] = {
     "abilities": Ability,
     "items": Item,
+    "drop_tables": DropTable,
     "personalities": Personality,
     "jobs": Job,
     "monsters": Monster,
@@ -346,7 +401,7 @@ KINDS: dict[str, type[Strict]] = {
 }
 
 
-def check_seed(seed: dict[str, list[dict]], stats: tuple[str, ...] = STATS, resources: tuple[str, ...] = RESOURCES) -> dict[str, list[Strict]]:
+def check_seed(seed: dict[str, list[dict]], stats: tuple[str, ...] = STATS, resources: tuple[str, ...] = RESOURCES, drop_scale: int = DROP_SCALE) -> dict[str, list[Strict]]:
     """Every content file in $seed (as load_seed returns it) turned into checked rows.
 
     Other files in the seed are none of the content's business and are left alone.
@@ -359,7 +414,7 @@ def check_seed(seed: dict[str, list[dict]], stats: tuple[str, ...] = STATS, reso
         rows = []
         for number, raw in enumerate(seed.get(kind, []), start=1):
             try:
-                rows.append(model.model_validate(raw, context={"stats": stats, "resources": resources}))
+                rows.append(model.model_validate(raw, context={"stats": stats, "resources": resources, "drop_scale": drop_scale}))
             except ValidationError as error:
                 for detail in error.errors():
                     where = ".".join(str(part) for part in detail["loc"])
@@ -378,6 +433,7 @@ def check_seed(seed: dict[str, list[dict]], stats: tuple[str, ...] = STATS, reso
         ("monsters", "abilities", "abilities"),
         ("monsters", "items", "items"),
         ("monsters", "equipment", "items"),
+        ("monsters", "drops", "drop_tables"),
         ("monsters", "personality", "personalities"),
     ]
     for kind, field, target in references:
@@ -387,6 +443,10 @@ def check_seed(seed: dict[str, list[dict]], stats: tuple[str, ...] = STATS, reso
             for name in (entry.ability if isinstance(entry, JobAbility) else entry for entry in names):
                 if name not in keys[target]:
                     problems.append(f"{kind}.json {row.key}: {field} names {name!r}, which {target}.json doesn't have")
+    for table in checked["drop_tables"]:
+        for entry in table.entries:
+            if entry.item is not None and entry.item not in keys["items"]:
+                problems.append(f"drop_tables.json {table.key}: entries name {entry.item!r}, which items.json doesn't have")
     kinds = {row.key: row.kind for row in checked["statuses"]}
     effects = [(kind, row, effect) for kind, field in (("abilities", "effect"), ("items", "use_effect"))
                for row in checked[kind] if (effect := getattr(row, field)) is not None]

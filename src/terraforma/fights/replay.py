@@ -29,6 +29,8 @@ def apply_events(fight: Fight, rules: Rules, events: list[Event]) -> None:
             fight.get(tuple(data[:3])).current[rules.vital] = 0
         elif kind is EventType.FIGHT_OVER:
             fight.over = True
+        elif kind in (EventType.DROP,):
+            fight.get(tuple(data[:3])).add_item(rules, fight.drop_item(data[3]), data[4])
         elif kind is EventType.XP_DEBT:
             fight.get(tuple(data[:3])).xp_debts.append(list(data[3:]))
         elif kind is EventType.XP_EARNED:

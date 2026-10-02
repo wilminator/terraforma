@@ -54,6 +54,14 @@ class Rules:
     #: How long a round waits for the players' commands, in seconds, before it plays with what it has (anyone who
     #: has not committed defends). A round also plays at once when every player's fighter has committed.
     round_seconds: int = 30
+    #: A drop's chance is out of this (10000: one in ten thousand is the rarest, 10000 is a sure thing).
+    drop_chance_scale: int = 10000
+    #: Whether the area's drop tables (the map's) roll once for the fight (the default) or for every monster that dies.
+    map_drops_once_per_fight: bool = True
+    #: How many stacks a hero's inventory holds and how many of one thing a stack holds (``heroes.inventory`` keeps to the
+    #: same numbers: a test says so).
+    inventory_stacks: int = 12
+    stack_size: int = 250
     #: What an empty hand attacks with.
     unarmed: ItemSpec = ItemSpec(key="", name="Fists")
 
@@ -207,6 +215,22 @@ class Rules:
         from .potential import potential  # here, since potential reads Rules
 
         return potential(self, fighter)
+
+    def roll_drops(self, fight, rng) -> list:
+        """Called when a fight ends, after the experience and the gold: rolls the drops of the monsters that died and
+        gives them out (``fights.drops``). Returns the events, already applied to the fight."""
+        from .drops import settle  # here, since drops reads Rules
+
+        return settle(self, fight, rng)
+
+    def drop_recipients(self, fight, party: int, monsters, share: str, rng) -> list:
+        """Who in $party receives one drop of the monsters that died ($monsters: the one that dropped it, or all of them for
+        an area's table), given its $share (``one``, ``each_team`` or ``each_member``). Returns the fighters' addresses.
+        By default one at random among the heroes who contributed to the kill (struck it, harmed it through a status, placed
+        a bad status on it, or buffed one who did; healing does not count), every one with an equal chance."""
+        from .drops import default_recipients
+
+        return default_recipients(fight, party, monsters, share, rng)
 
     # --- hooks ---------------------------------------------------------------------------------
     def gauge_moved(self, fight, actor: tuple, target: tuple, resource: str, before: int, after: int, maximum: int) -> list:

@@ -68,4 +68,5 @@ def settle(rules: Rules, fight: Fight, rng: random.Random) -> list[Event]:
         level_ups = rules.advance(fight, address, rng)
         apply_events(fight, rules, level_ups)
         events.extend(level_ups)
+    events.extend(rules.roll_drops(fight, rng))  # after the experience and the gold, so adding it changes nothing before it
     return events

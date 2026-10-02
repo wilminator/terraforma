@@ -37,6 +37,8 @@ class FightRecord(Located, Timestamps, Base):
     # running), and whether the fight has ended and been saved (see fights.live).
     round_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     finished: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Whether the items the fight dropped have been put in the heroes' inventories (once: see fights.store).
+    drops_saved: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
 
 class FightParticipant(Base):

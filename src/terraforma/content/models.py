@@ -76,7 +76,19 @@ class Monster(ContentRow, Base):
     abilities: Mapped[list] = mapped_column(JSON)
     items: Mapped[list] = mapped_column(JSON)
     equipment: Mapped[list] = mapped_column(JSON)
+    # The drop tables (keys) it rolls when it dies. (Null until the seed is loaded again, for rows older than drops.)
+    drops: Mapped[list | None] = mapped_column(JSON)
     ai: Mapped[dict] = mapped_column(JSON)
+
+
+class DropTable(ContentRow, Base):
+    """What a monster or an area leaves behind (``fights.drops``)."""
+
+    __tablename__ = "drop_tables"
+
+    weighted: Mapped[bool] = mapped_column(Boolean, default=False)
+    rolls: Mapped[int] = mapped_column(Integer, default=1)
+    entries: Mapped[list] = mapped_column(JSON)
 
 
 class Status(ContentRow, Base):

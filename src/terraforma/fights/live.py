@@ -26,7 +26,7 @@ from ..heroes.models import Hero, Team
 from ..models import Map, World
 from ..world.rng import WorldRng
 from . import ai, store
-from .build import known_statuses, monster_fighter, team_party
+from .build import known_drop_tables, known_statuses, monster_fighter, team_party
 from .combatant import Address
 from .events import Event
 from .fight import build_fight
@@ -78,9 +78,9 @@ def _groups(fighters: list, size: int) -> dict[int, list]:
     return {number: fighters[start:start + size] for number, start in enumerate(range(0, len(fighters), size))}
 
 
-async def start_team_fight(session: AsyncSession, team: Team, monster_keys: list[str], rules: Rules) -> FightRecord:
+async def start_team_fight(session: AsyncSession, team: Team, monster_keys: list[str], rules: Rules, area_drops: list[str] | None = None) -> FightRecord:
     """A fight between a player's team (party 0) and monsters (party 1), where the team's first hero stands. The round
-    clock starts now. Raises Refused for a team with no heroes, no monsters, too many of them, or a hero who is in a
+    clock starts now. $area_drops are the keys of the area's own drop tables (the map's), rolled when the team wins. Raises Refused for a team with no heroes, no monsters, too many of them, or a hero who is in a
     fight already."""
     heroes, teams = await team_party(session, team)
     if not heroes:
@@ -94,7 +94,11 @@ async def start_team_fight(session: AsyncSession, team: Team, monster_keys: list
     if busy is not None:
         raise Refused("a hero of that team is already in a fight")
     monsters = [await monster_fighter(session, key, rules) for key in monster_keys]
-    fight = build_fight({0: _groups(heroes, rules.group_size), 1: _groups(monsters, rules.group_size)}, await known_statuses(session))
+    wanted = {key for monster in monsters for key in monster.drops} | set(area_drops or ())
+    tables = await known_drop_tables(session, wanted)
+    if missing := set(area_drops or ()) - set(tables):
+        raise Refused(f"there is no drop table {sorted(missing)[0]!r}")
+    fight = build_fight({0: _groups(heroes, rules.group_size), 1: _groups(monsters, rules.group_size)}, await known_statuses(session), tables, list(area_drops or ()))
     fight.parties[0].teams = teams
     first = await session.get(Hero, heroes[0].charid)
     record = await store.create_fight(session, await session.get(Map, first.map_id), fight, first.x, first.y)
