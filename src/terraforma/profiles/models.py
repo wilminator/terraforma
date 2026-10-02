@@ -13,7 +13,9 @@ TOKEN_MAX = 32
 
 class PlayerProfile(Base):
     """A player's page: the handle (from the account) and a short bio. ``team_pages`` is the one switch that turns
-    the player's team pages on or off; each team's ``listed`` flag decides whether the player's page names it."""
+    the player's team pages on or off; each team's ``listed`` flag decides whether the player's page names it.
+    ``team_alliances`` is a second switch: whether a team's public page names the alliances the team is in (off by
+    default, since the page's address can be passed around)."""
 
     __tablename__ = "player_profiles"
 
@@ -22,6 +24,7 @@ class PlayerProfile(Base):
     token: Mapped[str] = mapped_column(String(TOKEN_MAX), unique=True)
     bio: Mapped[str] = mapped_column(String(BIO_MAX), default="", server_default="")
     team_pages: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    team_alliances: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
 
 
 class TeamProfile(Base):
