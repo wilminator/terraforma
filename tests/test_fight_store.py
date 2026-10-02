@@ -17,7 +17,7 @@ from terraforma.fights.rules import Rules
 from terraforma.fights.state import dehydrate, hydrate
 from terraforma.fights.store import FightLogError, FightNotOver, FightOver, SequenceConflict, command_record
 from terraforma.heroes import inventory, service
-from terraforma.models import Account
+from terraforma.models import Account, World
 from terraforma.world.rng import WorldRng
 from terraforma.world.start import ensure_start
 
@@ -36,6 +36,7 @@ def attack(source, target):
 async def start(db, **stats):
     """A duel on the hub: a sturdy fighter against another with a sword."""
     hub = await ensure_start(db)
+    (await db.get(World, hub.world_id)).seed = 20261002  # a world's seed is random: fix it so a duel always plays out the same
     knight = fighter("Knight", HP=80, Strength=18, Accuracy=14, Speed=11)
     knight.inventory = [[sword(), 1]]
     knight.equipment = {"lhand": 0}
