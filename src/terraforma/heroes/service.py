@@ -16,7 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..content.models import Job
 from ..models import Account, Map
 from ..world.start import ensure_start
-from .models import Hero, Team, TeamMember
+from . import inventory
+from .models import Hero, HeroAbility, HeroEquipment, HeroItem, Team, TeamMember
 
 MAX_HEROES = 12
 MAX_TEAMS = 8
@@ -73,6 +74,7 @@ async def create_hero(session: AsyncSession, account: Account, name: str, job_ke
             await session.flush()
     except IntegrityError as error:
         raise NameTaken("you already have a hero with that name") from error
+    await inventory.grant_abilities(session, hero)
     return hero
 
 
@@ -98,6 +100,8 @@ async def rename_hero(session: AsyncSession, account: Account, hero_id: int, nam
 async def delete_hero(session: AsyncSession, account: Account, hero_id: int) -> None:
     hero = await own_hero(session, account, hero_id)
     await session.execute(delete(TeamMember).where(TeamMember.hero_id == hero.id))
+    for table in (HeroEquipment, HeroItem, HeroAbility):
+        await session.execute(delete(table).where(table.hero_id == hero.id))
     await session.delete(hero)
     await session.flush()
 

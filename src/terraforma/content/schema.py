@@ -14,7 +14,7 @@ names and folders, never absolute paths or "..".
 import re
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, ValidationError
+from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, ValidationError
 
 STATS = ("HP", "MP", "Speed", "Accuracy", "Strength", "Dodge", "Block", "Power", "Resistance", "Focus")
 
@@ -115,12 +115,26 @@ class Item(Strict):
     fight_presentation: Presentation = Presentation()
 
 
+class JobAbility(Strict):
+    """An ability a job grants, and the level a hero must reach to have it."""
+
+    ability: Key
+    level: int = Field(default=1, ge=1)
+
+
+def _job_abilities(value):
+    """A bare key means "from level 1": ["slash"] and [{"ability": "slash", "level": 1}] are the same."""
+    if isinstance(value, list):
+        return [{"ability": entry, "level": 1} if isinstance(entry, str) else entry for entry in value]
+    return value
+
+
 class Job(Strict):
     key: Key
     name: str = Field(min_length=1, max_length=64)
     xp_needed: int = Field(default=0, ge=0)
     stat_growth: Growth = {}
-    abilities: list[Key] = []
+    abilities: Annotated[list[JobAbility], BeforeValidator(_job_abilities)] = []
 
 
 class Facing(Strict):
@@ -226,7 +240,8 @@ def check_seed(seed: dict[str, list[dict]]) -> dict[str, list[Strict]]:
     for kind, field, target in references:
         for row in checked[kind]:
             value = getattr(row, field)
-            for name in value if isinstance(value, list) else [value]:
+            names = value if isinstance(value, list) else [value]
+            for name in (entry.ability if isinstance(entry, JobAbility) else entry for entry in names):
                 if name not in keys[target]:
                     problems.append(f"{kind}.json {row.key}: {field} names {name!r}, which {target}.json doesn't have")
     if problems:

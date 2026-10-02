@@ -26,6 +26,7 @@ from .db.session import make_engine, make_sessionmaker
 from .fights.channels import FightChannels
 from .content.loader import load_content
 from .game import Game
+from .heroes.inventory_routes import router as inventory_router
 from .heroes.routes import router as heroes_router
 from .keys import KeyRing
 from .mail import Mailer, OutboxMailer, SmtpMailer
@@ -98,6 +99,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(account_router)
     app.include_router(twofa_router)
     app.include_router(heroes_router)
+    app.include_router(inventory_router)
 
     @app.get("/api/about")
     async def about(request: Request) -> dict:
