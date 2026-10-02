@@ -20,6 +20,9 @@ class Hero(Located, Timestamps, Base):
     level: Mapped[int] = mapped_column(Integer, default=1)
     xp: Mapped[int] = mapped_column(BigInteger, default=0)
     stats: Mapped[dict] = mapped_column(JSON)
+    # What the hero's resources (HP, MP, ...) stand at between fights, by resource name; None means every one is full.
+    # ``stats`` holds the maximums. A game restores or regenerates them itself (``service.rest_hero``).
+    vitals: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True, default=None)
     gold: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
 
 

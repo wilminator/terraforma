@@ -80,6 +80,12 @@ async def create_hero(session: AsyncSession, account: Account, name: str, job_ke
     return hero
 
 
+def rest_hero(hero: Hero) -> None:
+    """Fills all of the hero's resources (HP, MP, ...) back up: an inn, a potion of the game's making, a level's rest.
+    The engine itself never regenerates a hero between fights: that is a game's option."""
+    hero.vitals = None
+
+
 async def own_hero(session: AsyncSession, account: Account, hero_id: int) -> Hero:
     hero = await session.scalar(select(Hero).where(Hero.id == hero_id, Hero.account_id == account.id))
     if hero is None:

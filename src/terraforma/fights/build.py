@@ -17,13 +17,18 @@ from .status import StatusSpec
 
 
 async def hero_fighter(session: AsyncSession, hero: Hero) -> Combatant:
-    """The hero as it goes into a fight: its stats, what it knows, its inventory and what it wears."""
+    """The hero as it goes into a fight: its stats (resources at the level the last fight left them), what it knows,
+    its inventory and what it wears."""
     stacks = await inventory.stacks(session, hero)
     position_of = {stack.id: stack.position for stack, _item in stacks}
     worn = await inventory.equipment(session, hero)
     job = await session.get(Job, hero.job_id)
+    current = dict(hero.stats)
+    for name, value in (hero.vitals or {}).items():  # what the last fight left (never above the maximum)
+        if name in current:
+            current[name] = max(0, min(value, current[name]))
     return Combatant(
-        name=hero.name, base=dict(hero.stats), current=dict(hero.stats),
+        name=hero.name, base=dict(hero.stats), current=current,
         abilities=[ability_spec(ability) for ability in await inventory.known_abilities(session, hero)],
         inventory=[[item_spec(item), stack.qty] for stack, item in stacks],
         equipment={slot: position_of[stack_id] for slot, stack_id in worn.items()},

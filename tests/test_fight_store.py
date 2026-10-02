@@ -255,6 +255,27 @@ async def test_a_hero_becomes_a_fighter_with_what_it_knows_carries_and_wields(db
     assert fighter_.equipment == {"rhand": 0} and fighter_.get_current(RULES, "Strength", Command.ATTACK_RIGHT) == 15
 
 
+async def test_a_hero_enters_a_fight_with_the_vitals_it_was_left_with(db):
+    hero = await a_hero(db)
+    assert hero.vitals is None and (await hero_fighter(db, hero)).current["HP"] == 40, "a new hero is full"
+    hero.vitals = {"HP": 12, "MP": 3, "Gizmo": 9}
+    fighter_ = await hero_fighter(db, hero)
+    assert (fighter_.current["HP"], fighter_.current["MP"]) == (12, 3) and "Gizmo" not in fighter_.current
+    assert fighter_.base["HP"] == 40, "the maximum is the stat"
+    hero.vitals = {"HP": 999, "MP": -5}
+    fighter_ = await hero_fighter(db, hero)
+    assert (fighter_.current["HP"], fighter_.current["MP"]) == (40, 0), "never above the maximum or below nothing"
+
+
+async def test_resting_fills_a_hero_up(db):
+    hero = await a_hero(db)
+    hero.vitals = {"HP": 1, "MP": 0}
+    service.rest_hero(hero)
+    await db.flush()
+    await db.refresh(hero)
+    assert hero.vitals is None and (await hero_fighter(db, hero)).current["HP"] == 40
+
+
 async def test_a_monster_becomes_a_fighter_with_its_gear_on(db):
     await load_content(db, SEED)
     ogre = await monster_fighter(db, "ogre")
@@ -294,6 +315,7 @@ async def a_team_fights_a_rat(db):
     team = await service.create_team(db, account, "Alpha")
     await service.add_to_team(db, account, team.id, hero.id)
     hub = await ensure_start(db)
+    (await db.get(World, hub.world_id)).seed = 20261002  # fixed: the fight must not depend on luck
     heroes, teams = await team_party(db, team)
     fight = build_fight({0: {0: heroes}, 1: {0: [await monster_fighter(db, "rat")]}})
     fight.parties[0].teams = teams
@@ -347,6 +369,22 @@ async def test_the_result_is_saved_to_the_hero_with_the_abilities_its_new_level_
     assert sorted(ability.key for ability in await inventory.known_abilities(db, hero)) == ["rend", "slash"], "level 2 earns Rend"
     await store.apply_results(db, record, RULES)
     assert (hero.xp, hero.level) == (fighter_.exp, fighter_.level), "saving twice changes nothing"
+
+
+async def test_the_hero_keeps_its_hp_and_mp_into_the_next_fight(db):
+    hero, record = await a_team_fights_a_rat(db)
+    await play_to_the_end(db, record)
+    await store.apply_results(db, record, RULES)
+    state, _played = await store.load_state(db, record, RULES)
+    left = state.get((0, 0, 0)).current
+    assert hero.vitals == {"HP": left["HP"], "MP": left["MP"]}
+    assert 0 < hero.vitals["HP"] < hero.stats["HP"], "the rat hurt it, and it lives"
+    await db.commit()
+    await db.refresh(hero)
+    assert hero.vitals == {"HP": left["HP"], "MP": left["MP"]}, "stored, not just held in memory"
+    assert (await hero_fighter(db, hero)).current["HP"] == left["HP"]
+    await store.apply_results(db, record, RULES)
+    assert hero.vitals == {"HP": left["HP"], "MP": left["MP"]}, "saving twice changes nothing"
 
 
 async def test_the_fights_gold_is_paid_to_the_team_once(db):
