@@ -40,6 +40,7 @@ class EventType(StrEnum):
     XP_DEBT = "XpDebt"  # [party, group, character, creditor party, group, character, ratio, pxp]: what it now owes
     XP_EARNED = "XpEarned"  # [party, group, character, amount]
     GOLD = "Gold"  # [party, team, amount]: a team's share of the gold dropped
+    FIGHT_OVER = "FightOver"  # []: the fight has ended and been paid out; nothing more is played
     LEVEL_UP = "LevelUp"  # [party, group, character, level, {stat: gain}]
 
 

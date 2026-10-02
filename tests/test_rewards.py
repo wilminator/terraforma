@@ -160,3 +160,13 @@ def test_experience_needed_and_levelling_use_the_streams_rolls():
 def test_the_top_level_is_the_limit():
     hero = fighter("Hero", job_need=1, growth={"Strength": 1.0}, exp=10**12, level=100)
     assert RULES.advance(build_fight({0: {0: [hero]}}), (0, 0, 0), Scripted()) == []
+
+
+def test_a_finished_fight_pays_out_once_even_if_another_round_is_played():
+    fight, hero, _monster = duel()
+    first = kill(fight, hero)
+    assert EventType.XP_EARNED in kinds(first)
+    exp_after = hero.exp
+    again = do_combat(fight, RULES, Scripted(*[100] * 5))
+    assert again == [], "nothing is left to play"
+    assert hero.exp == exp_after

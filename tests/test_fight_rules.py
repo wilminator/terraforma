@@ -455,7 +455,9 @@ def test_nothing_to_hit_means_no_action_at_all():
         foe.current["HP"] = 0
     fight = build_fight({0: {0: [hero]}, 1: {0: foes[:1]}, 2: {0: foes[1:]}})
     hero.command, hero.target = Command.ATTACK_LEFT, (1, 0, 0)
-    assert do_combat(fight, RULES, Scripted(100)) == [], "only one party has anyone alive: the fight is already over"
+    first = do_combat(fight, RULES, Scripted(100))
+    assert types(first) == [EventType.FIGHT_OVER], "only one party has anyone alive: nobody acts, the fight is declared over"
+    assert do_combat(fight, RULES, Scripted(100)) == [], "and a finished fight plays no more rounds"
 
 
 # --- changing gear in a fight ---------------------------------------------------------------------------------------------

@@ -46,7 +46,7 @@ def _fighter(fighter: Combatant) -> dict:
 
 
 def dehydrate(fight: Fight) -> dict:
-    return {"parties": [
+    return {"over": fight.over, "parties": [
         {
             "index": party_index,
             "allies": None if party.allies is None else sorted(party.allies),
@@ -103,4 +103,4 @@ def hydrate(raw: dict) -> Fight:
             None if party["enemies"] is None else set(party["enemies"]),
             {int(team): list(members) for team, members in party.get("teams", {}).items()},
         )
-    return Fight(parties)
+    return Fight(parties, over=raw.get("over", False))

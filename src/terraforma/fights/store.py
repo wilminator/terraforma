@@ -21,6 +21,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..heroes import inventory
+from ..heroes.models import Hero
 from ..models import Map, World
 from ..world.rng import WorldRng
 from .combatant import Address, Command
@@ -40,6 +42,14 @@ class FightLogError(ValueError):
         super().__init__(f"round {sequence}: {reason}" if sequence else reason)
         self.sequence = sequence
         self.reason = reason
+
+
+class FightOver(RuntimeError):
+    """The fight has ended and been paid out: it plays no more rounds."""
+
+
+class FightNotOver(RuntimeError):
+    """The fight is still being played: there is no result to save yet."""
 
 
 class SequenceConflict(RuntimeError):
@@ -124,10 +134,12 @@ async def play_round(session: AsyncSession, record: FightRecord, commands: list[
     """Plays the next round with $commands (see ``command_record``), logs it, and returns its events.
 
     $snapshot also keeps the fight as it stands after the round, for ``verify`` to compare replays against.
-    Raises SequenceConflict if another call played the same round first.
+    Raises SequenceConflict if another call played the same round first, and FightOver if the fight has ended.
     """
     logged = await actions(session, record)
     fight = _replayed(record.initial_state, rules, logged)
+    if fight.over:
+        raise FightOver(f"fight {record.id} is over")
     sequence = len(logged) + 1
     _set_commands(fight, commands)
     events = do_combat(fight, rules, await _stream(session, record, sequence))
@@ -176,3 +188,29 @@ async def verify(session: AsyncSession, record: FightRecord, rules: Rules, *, de
             if action.final_state is not None and dehydrate(fight) != action.final_state:
                 raise FightLogError(number, "playing it again gave a different fight")
     return len(logged)
+
+
+# --- the result -------------------------------------------------------------------------------------------------------
+
+async def apply_results(session: AsyncSession, record: FightRecord, rules: Rules) -> list[Hero]:
+    """Saves a finished fight's result to its heroes: the experience, level and stats they ended with, and the
+    abilities their job grants at that level. Returns the heroes it updated.
+
+    Safe to call again: it sets what the fight says rather than adding to it. (Gold is not saved here: the
+    ``Gold`` events name a team, and where a team's gold lives is decided separately.) Raises FightNotOver if
+    the fight is still going.
+    """
+    fight, _played = await load_state(session, record, rules)
+    if not fight.over:
+        raise FightNotOver(f"fight {record.id} is not over")
+    updated = []
+    for address in fight.addresses():
+        fighter = fight.get(address)
+        hero = await session.get(Hero, fighter.charid) if fighter.charid is not None else None
+        if hero is None:  # a monster, or a hero deleted since the fight began
+            continue
+        hero.xp, hero.level, hero.stats = fighter.exp, fighter.level, dict(fighter.base)
+        await session.flush()
+        await inventory.grant_abilities(session, hero)
+        updated.append(hero)
+    return updated

@@ -37,6 +37,8 @@ class Party:
 @dataclass
 class Fight:
     parties: dict[int, Party] = field(default_factory=dict)
+    #: Set once the fight has ended and been paid out (the ``FightOver`` event): nothing more is played.
+    over: bool = False
 
     def get(self, address: Address) -> Combatant:
         party, group, character = address

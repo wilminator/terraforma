@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..content.models import Ability, Item, Job, Monster
 from ..heroes import inventory
-from ..heroes.models import Hero
+from ..heroes.models import Hero, Team, TeamMember
 from .combatant import Combatant
 from .content import ability_spec, item_spec, monster_combatant
 from .rules import Rules
@@ -39,3 +39,13 @@ async def monster_fighter(session: AsyncSession, key: str, rules: Rules | None =
     fighter = monster_combatant(monster, items, abilities, rules)
     fighter.monster = key
     return fighter
+
+
+async def team_party(session: AsyncSession, team: Team) -> tuple[list[Combatant], dict[int, list[int]]]:
+    """A team's heroes as fighters, in the order of their slots, and the ``{team id: [hero ids]}`` to set on the
+    party's ``teams`` so the experience tree pays them (only fighters on a team earn)."""
+    rows = await session.execute(
+        select(Hero).join(TeamMember, TeamMember.hero_id == Hero.id).where(TeamMember.team_id == team.id).order_by(TeamMember.slot)
+    )
+    heroes = list(rows.scalars().all())
+    return [await hero_fighter(session, hero) for hero in heroes], {team.id: [hero.id for hero in heroes]}
