@@ -80,10 +80,16 @@ async def create_hero(session: AsyncSession, account: Account, name: str, job_ke
     return hero
 
 
-def rest_hero(hero: Hero) -> None:
-    """Fills all of the hero's resources (HP, MP, ...) back up: an inn, a potion of the game's making, a level's rest.
-    The engine itself never regenerates a hero between fights: that is a game's option."""
-    hero.vitals = None
+def rest_hero(hero: Hero, rules: Rules | None = None) -> None:
+    """Rests the hero: its resources (HP, MP, ...) become what the game's ``Rules.rest`` says (by default all full,
+    and a dead hero lives again; a game can revive at 1 HP, at half, and so on). The engine itself never rests or
+    regenerates a hero: a game calls this from its inn, potion, camp or level-up rule."""
+    rules = rules or Rules()
+    maximums = {name: hero.stats[name] for name in rules.resource_names if name in hero.stats}
+    vitals = {name: min(max(0, (hero.vitals or {}).get(name, maximum)), maximum) for name, maximum in maximums.items()}
+    rested = rules.rest(vitals, maximums)
+    rested = {name: min(max(0, rested.get(name, vitals[name])), maximum) for name, maximum in maximums.items()}
+    hero.vitals = None if rested == maximums else rested
 
 
 async def own_hero(session: AsyncSession, account: Account, hero_id: int) -> Hero:

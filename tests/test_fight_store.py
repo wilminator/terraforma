@@ -267,13 +267,44 @@ async def test_a_hero_enters_a_fight_with_the_vitals_it_was_left_with(db):
     assert (fighter_.current["HP"], fighter_.current["MP"]) == (40, 0), "never above the maximum or below nothing"
 
 
-async def test_resting_fills_a_hero_up(db):
+async def test_resting_fills_a_hero_up_by_default_the_dead_too(db):
     hero = await a_hero(db)
     hero.vitals = {"HP": 1, "MP": 0}
     service.rest_hero(hero)
-    await db.flush()
-    await db.refresh(hero)
     assert hero.vitals is None and (await hero_fighter(db, hero)).current["HP"] == 40
+    hero.vitals = {"HP": 0, "MP": 0}
+    service.rest_hero(hero)
+    assert hero.vitals is None, "a dead hero lives again, in full"
+
+
+class Gentle(Rules):
+    """A game that brings the dead back at half and heals the living a quarter of their maximum."""
+
+    def rest(self, vitals, maximums):
+        if vitals[self.vital] <= 0:
+            return {**vitals, self.vital: maximums[self.vital] // 2}
+        return {name: min(maximums[name], value + maximums[name] // 4) for name, value in vitals.items()}
+
+
+async def test_the_games_rules_decide_how_a_rest_revives_and_heals(db):
+    hero = await a_hero(db)
+    hero.vitals = {"HP": 0, "MP": 0}
+    service.rest_hero(hero, Gentle())
+    assert hero.vitals == {"HP": 20, "MP": 0}, "revived at half, and nothing more"
+    assert (await hero_fighter(db, hero)).current["HP"] == 20
+    service.rest_hero(hero, Gentle())
+    assert hero.vitals["HP"] == 30, "the living gain a quarter of the maximum"
+    for _ in range(3):
+        service.rest_hero(hero, Gentle())
+    assert hero.vitals["HP"] == 40 and hero.vitals["MP"] <= hero.stats["MP"], "never above the maximum"
+    hero.vitals = {"HP": 5, "MP": 0}
+
+    class Lazy(Rules):
+        def rest(self, vitals, maximums):
+            return {self.vital: 999, "Nonsense": 3}
+
+    service.rest_hero(hero, Lazy())
+    assert hero.vitals == {"HP": 40, "MP": 0}, "values are clamped to the maximum, strangers ignored, a resource left out stays as it was"
 
 
 async def test_a_monster_becomes_a_fighter_with_its_gear_on(db):

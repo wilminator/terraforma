@@ -129,6 +129,20 @@ class Rules:
         """The base amount of an effect plus a random share of the extra."""
         return rng.randint(0, effect.added) + effect.base
 
+    def rest(self, vitals: dict[str, int], maximums: dict[str, int]) -> dict[str, int]:
+        """What a hero's resources stand at after it rests (an inn, a camp, a revive between fights): $vitals is where
+        they stand now (the vital resource at 0 means the hero is dead) and $maximums the most each can hold; returns
+        the new values by resource name. This is the game's regeneration and revive rule, applied when the game calls
+        ``heroes.service.rest_hero``; the engine never rests a hero on its own. The default fills everything,
+        the living and the dead alike. A game might bring the dead back at 1 HP, at half, or heal a part of the maximum:
+
+            def rest(self, vitals, maximums):
+                if vitals[self.vital] <= 0:
+                    return {**vitals, self.vital: max(1, maximums[self.vital] // 2)}
+                return vitals
+        """
+        return dict(maximums)
+
     def revive_chance(self, rng: random.Random, effect: EffectSpec) -> bool:
         """Whether a revive on someone still alive takes: $base is the chance out of 100."""
         return rng.randint(1, 100) < effect.base
