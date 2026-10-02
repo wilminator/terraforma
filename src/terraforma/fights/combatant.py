@@ -64,6 +64,10 @@ class Combatant:
     growth: dict[str, float] = field(default_factory=dict)
     gold: int = 0
     xp_debts: list[list] = field(default_factory=list)
+    #: The drop tables a monster rolls when it dies (keys; ``fights.drops``), and who placed a good status on this
+    #: fighter (they count as having helped it when drops are shared out).
+    drops: tuple[str, ...] = ()
+    buffed_by: list[Address] = field(default_factory=list)
 
     # --- stats ----------------------------------------------------------------------------
     def alive(self, rules: Rules) -> bool:
@@ -173,6 +177,22 @@ class Combatant:
         return False
 
     # --- the inventory ---------------------------------------------------------------------------
+    def add_item(self, rules: Rules, item: ItemSpec, qty: int) -> int:
+        """Puts $qty of $item in the inventory, as ``heroes.inventory.add_item`` does (non-equipment and ammunition stack up
+        to ``Rules.stack_size``, gear never, in at most ``Rules.inventory_stacks`` stacks). Returns how many did not fit."""
+        stackable = not item.equip_slots or any(slot in AMMO_SLOTS for slot in item.equip_slots)
+        if stackable:
+            for stack in self.inventory:
+                if stack[0].key == item.key and stack[1] < rules.stack_size and qty:
+                    moved = min(qty, rules.stack_size - stack[1])
+                    stack[1] += moved
+                    qty -= moved
+        while qty and len(self.inventory) < rules.inventory_stacks:
+            size = min(qty, rules.stack_size) if stackable else 1
+            self.inventory.append([item, size])
+            qty -= size
+        return qty
+
     def remove_item(self, index: int, qty: int) -> int:
         """Takes $qty from the stack at $index (all of it if that's the lot, closing the list up). Returns how many went."""
         if not 0 <= index < len(self.inventory):

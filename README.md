@@ -80,7 +80,8 @@ A game's starting content is JSON in its `seed/` folder (`Game(seed_dir=...)`): 
 | `items.json` | `key`, `name`, `price`, `one_use`, `description`, `icon`, `use_effect`, `equip_slots`, `stat_bonus`, `stat_percent`, `attack`, `use_presentation`, `fight_presentation` |
 | `jobs.json` | `key`, `name`, `xp_needed`, `stat_growth` (stats per level), `abilities` (each `{"ability": key, "level": n}`, the level a hero gets it at; a bare key means level 1) |
 | `personalities.json` | `key`, `name`, an animation for each of `base equip flee hit die attack_close attack_throw attack_shoot skill spell item`, and `overworld` (`stand` and `move`, each facing `up down left right`) |
-| `monsters.json` | `key`, `name`, `personality` (key), `xp_reward`, `gold_reward`, `stats`, `abilities`, `items`, `equipment` (keys), `ai` |
+| `monsters.json` | `key`, `name`, `personality` (key), `xp_reward`, `gold_reward`, `stats`, `abilities`, `items`, `equipment` (keys), `drops` (drop table keys), `ai` |
+| `drop_tables.json` | `key`, `name`, `weighted`, `rolls`, `entries` (see Item drops below) |
 | `statuses.json` | `key`, `name`, `kind` (`good` or `bad`), `description`, `icon`, `duration`, `intensity`, `ticks`, `modifiers`, `xp_share` (see Statuses below) |
 
 - **Keys.** Every row has a `key` (1-64 lowercase letters, digits, `_` or `-`) that the game picks and never reuses. Rows name each other by key. Only `key` and `name` are required; the rest have defaults.
@@ -115,6 +116,16 @@ A party is a collection of *whole teams* (`terraforma.parties.service`). A team 
 How many heroes a party holds is the game's rule: `Rules.party_size`, 20 by default, and `Rules.group_size`, 5 by default, the size of the groups a fight's side is laid out in (four groups of five). A team joins only if there is a place for every one of its heroes, and a hero added to a team that is in a party needs a place too (the add-hero call follows the game's `party_size`). Deleting a team takes it out of its party, and an empty party goes with its last team.
 
 These are service functions, not server calls: the map drives them later (an interaction on the map forms and merges parties), so they take ids and whoever calls them decides who may. A party becomes one side of a fight with `fights.build.party_side(session, party_id, rules)`: its heroes team by team, in the order the teams joined, in groups of `group_size` (`build_fight({0: await party_side(...), 1: ...})`).
+
+## Item drops
+
+A drop table (`drop_tables.json`) says what a monster, or an area, leaves behind. A monster names the tables it rolls when it dies (`drops`); a fight may carry *area* tables of its own (`live.start_team_fight(..., area_drops=[keys])`; the map's, once there are maps).
+
+- **A plain table** rolls every entry on its own: an entry is `{"item", "chance", "min", "max", "for"}`. `chance` is out of `Rules.drop_chance_scale` (10000 by default, so 10000 is a sure thing and 1 is one in ten thousand); `min` and `max` (default 1) say how many. **A weighted table** (`"weighted": true`) instead picks an entry by `weight`, `rolls` times; an entry with no `item` means nothing drops.
+- **Who gets it.** An entry's `for` is `one` (one person, the default), `each_team` (one in each team of the winning side) or `each_member` (every hero of the winning party). Who that person is, is the game's rule: `Rules.drop_recipients(fight, party, monsters, share, rng)`. The default picks one at random among the heroes who *contributed*, which it reads off the experience debts the fight keeps: whoever harmed a monster that died (a hit, or through a status, or by placing a bad status on it) and whoever placed a good status on one of those. Healing does not count. Everyone in the pool has the same chance, and a hit for 1 HP counts the same as any other. A game overrides it for a leader's choice, the last strike, round robin, a team chest and so on (choices that need players to answer later need a pending-drops table, which is a later piece).
+- **When.** `Rules.roll_drops` runs when a fight ends, after the experience and the gold, for each party of players that won: the tables of every monster that died, and the area's tables once for the fight (`Rules.map_drops_once_per_fight`, on by default; off rolls them for every monster instead). The dice are the fight's own stream, so a fight replays exactly.
+- **What lands.** A `Drop` event, and the item goes into the hero's inventory in the fight; what does not fit (twelve stacks, 250 to a stack, gear never stacking: `Rules.inventory_stacks` and `stack_size`) is a `DropLost` event, never lost silently. `store.apply_results` puts the dropped items in the heroes' inventories, once.
+- **Checks.** The seed refuses a table that names an unknown item, a chance outside 1 to the scale, a minimum above its maximum, an empty table, a plain entry with no item or a weight, a weighted one with no weight or a chance, and a monster that names an unknown table.
 
 ## Gold and the economy
 
