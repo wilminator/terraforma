@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 
 from ..accounts.routes import Strict
-from ..api.deps import ActingAccount, CurrentAccount, Db
+from ..api.deps import ActingAccount, CurrentAccount, Db, GameEconomy
 from . import inventory, service
 from .routes import Id, refuse
 
@@ -47,25 +47,25 @@ def outcome(result: inventory.EquipResult):
 
 
 @router.get("/inventory")
-async def look(hero_id: Id, account: CurrentAccount, db: Db) -> dict:
+async def look(hero_id: Id, account: CurrentAccount, db: Db, economy: GameEconomy) -> dict:
     try:
-        return await inventory.view(db, await service.own_hero(db, account, hero_id))
+        return await inventory.view(db, await service.own_hero(db, account, hero_id), economy)
     except service.HeroError as error:
         raise refuse(error) from error
 
 
 @router.post("/inventory/move")
-async def move(hero_id: Id, body: Move, account: ActingAccount, db: Db) -> dict:
+async def move(hero_id: Id, body: Move, account: ActingAccount, db: Db, economy: GameEconomy) -> dict:
     try:
         hero = await service.own_hero(db, account, hero_id)
         await inventory.move_item(db, hero, body.from_position, body.to_position)
-        return await inventory.view(db, hero)
+        return await inventory.view(db, hero, economy)
     except (service.HeroError, inventory.InventoryError) as error:
         raise refuse(error) from error
 
 
 @router.post("/inventory/discard")
-async def discard(hero_id: Id, body: Discard, account: ActingAccount, db: Db) -> dict:
+async def discard(hero_id: Id, body: Discard, account: ActingAccount, db: Db, economy: GameEconomy) -> dict:
     """Throws away up to qty of the stack (all of it, and its equipment slots, if that's the lot)."""
     try:
         hero = await service.own_hero(db, account, hero_id)
@@ -74,7 +74,7 @@ async def discard(hero_id: Id, body: Discard, account: ActingAccount, db: Db) ->
     removed = await inventory.remove_item(db, hero, body.position, body.qty)
     if removed == 0:
         raise refuse(service.NotFound("there's nothing in that position"))
-    return {"discarded": removed, **await inventory.view(db, hero)}
+    return {"discarded": removed, **await inventory.view(db, hero, economy)}
 
 
 @router.post("/equip")
