@@ -182,7 +182,10 @@ async def delete_team(session: AsyncSession, account: Account, team_id: int, all
     """Deletes the team: it leaves its party and its alliances (the game's ``Alliances`` says how an alliance copes), and
     its relationships go."""
     team = await own_team(session, account, team_id)
-    await parties.leave_party(session, team.id)
+    try:
+        await parties.leave_party(session, team.id)
+    except parties.PartyError as error:  # (a team in a town with its party: it leaves with the town's own call)
+        raise HeroError(str(error)) from error
     await remove_team(session, alliances or Alliances(), team.id)
     await forget(session, Ref("team", team.id))
     await session.execute(delete(TeamMember).where(TeamMember.team_id == team.id))

@@ -33,6 +33,7 @@ from .combatant import Address, Command
 from .events import Event, EventType
 from .fight import Fight
 from . import pending
+from ..tokens import service as tokens
 from .models import FightActionRecord, FightParticipant, FightRecord
 from .replay import apply_events
 from .resolve import do_combat, fight_stream
@@ -223,6 +224,7 @@ async def apply_results(session: AsyncSession, record: FightRecord, rules: Rules
     await credit_fight_gold(session, economy or TeamGold(), record, await gold_payments(session, record))
     await save_drops(session, record, fight)
     await save_relations(session, record, relations or Relations())
+    await tokens.pay_fight(session, record, fight, rules)
     return updated
 
 
