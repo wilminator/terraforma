@@ -73,20 +73,32 @@ class Rules:
         return value
 
     # --- hitting ------------------------------------------------------------------------
-    def chance_to_hit(self, rng: random.Random, accuracy: int, dodge: int) -> int | None:
-        """None for a miss; for a hit, the roll (1 up to Accuracy): the lower, the cleaner the hit, and 1 is a critical."""
+    def hit_chance(self, accuracy: int, dodge: int) -> float:
+        """The chance, in percent, that an attack lands: Accuracy out of Accuracy plus Dodge (each at least 1)."""
         accuracy, dodge = max(accuracy, 1), max(dodge, 1)
-        roll = rng.randint(1, accuracy + dodge)
-        return None if roll > accuracy else roll
+        return 100.0 * accuracy / (accuracy + dodge)
 
-    def hit_damage(self, strength: int, block: int, accuracy: int, roll: int, defending: bool, impact: float) -> int:
-        """Damage from a hit that landed (never less than 1). Strength doubles on a critical, Block blunts it,
-        a cleaner roll hits harder (half to full), and defending halves it."""
-        accuracy, strength, block = max(accuracy, 1), max(strength, 1), max(block, 1)
-        if roll == 1:
+    def chance_to_hit(self, rng: random.Random, accuracy: int, dodge: int) -> int | None:
+        """Rolls out of 100 against the hit chance. None for a miss; for a hit, the roll (1 to 100): the lower, the
+        cleaner the hit. The roll is always out of 100, so how often it takes a given value doesn't depend on
+        how large Accuracy and Dodge are (which keeps criticals as common at high levels as at low ones)."""
+        roll = rng.randint(1, 100)
+        return roll if roll <= self.hit_chance(accuracy, dodge) else None
+
+    def is_critical(self, roll: int) -> bool:
+        """Whether a hit is a critical. By default only the best possible roll, a 1: one hit in a hundred, always."""
+        return roll == 1
+
+    def hit_damage(self, strength: int, block: int, window: float, roll: int, defending: bool, impact: float,
+                   critical: bool = False) -> int:
+        """Damage from a hit that landed (never less than 1). $window is the hit chance in percent, so $roll (1 up to
+        the window) says how cleanly it hit: from half damage at the edge of the window to full at a 1. Strength
+        doubles on a critical, Block blunts it, and defending halves it."""
+        window, strength, block = max(window, 1.0), max(strength, 1), max(block, 1)
+        if critical:
             strength *= 2
         ratio = math.atan2(strength, block) * 2.0 / math.pi
-        damage = math.floor(strength * ratio * impact * (0.5 + ((accuracy + 1 - roll) / accuracy) * 0.5))
+        damage = math.floor(strength * ratio * impact * (0.5 + ((window + 1 - roll) / window) * 0.5))
         if defending:
             damage = math.floor(damage / 2)
         return max(damage, 1)

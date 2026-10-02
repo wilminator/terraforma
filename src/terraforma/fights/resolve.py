@@ -232,16 +232,17 @@ def affected_by(fight, rules, rng, fighter, fighter_address, effect, target, tar
     if command in (Command.ATTACK_LEFT, Command.ATTACK_RIGHT):
         if target.get_current(rules, vital) == 0:
             return
-        accuracy = fighter.get_current(rules, "Accuracy", command)
-        roll = rules.chance_to_hit(rng, accuracy, target.get_current(rules, "Dodge"))
+        accuracy, dodge = fighter.get_current(rules, "Accuracy", command), target.get_current(rules, "Dodge")
+        roll = rules.chance_to_hit(rng, accuracy, dodge)
         if roll is None:
             log.add(EventType.MISS, *target_address)
             return
+        critical = rules.is_critical(roll)
         damage = rules.hit_damage(
             fighter.get_current(rules, "Strength", command), target.get_current(rules, "Block"),
-            accuracy, roll, target.command == Command.DEFEND, impact,
+            rules.hit_chance(accuracy, dodge), roll, target.command == Command.DEFEND, impact, critical,
         )
-        inflict_damage(fight, rules, fighter_address, target, target_address, damage, roll == 1, log)
+        inflict_damage(fight, rules, fighter_address, target, target_address, damage, critical, log)
     elif command == Command.ITEM:
         do_effect(fight, rules, rng, effect, fighter_address, target, target_address, impact, 1, log)
     elif command == Command.SKILL:

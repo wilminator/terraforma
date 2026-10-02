@@ -75,15 +75,22 @@ def test_a_hit_does_damage_by_strength_against_block_and_the_quality_of_the_roll
     assert RULES.hit_damage(20, 10, 10, 10, False, 1.0) == 7
 
 
-def test_a_roll_of_one_is_a_critical_that_doubles_strength():
-    assert RULES.hit_damage(10, 10, 10, 1, False, 1.0) == 14  # as if Strength were 20
-    assert RULES.hit_damage(10, 10, 10, 1, False, 1.0) > RULES.hit_damage(10, 10, 10, 2, False, 1.0)
+def test_a_critical_doubles_strength():
+    assert RULES.hit_damage(10, 10, 10, 1, False, 1.0, critical=True) == 14  # as if Strength were 20
+    assert RULES.hit_damage(10, 10, 10, 1, False, 1.0, critical=True) > RULES.hit_damage(10, 10, 10, 1, False, 1.0)
 
 
 def test_defending_halves_damage_and_damage_is_never_less_than_one():
-    assert RULES.hit_damage(10, 10, 10, 1, True, 1.0) == 7
+    assert RULES.hit_damage(10, 10, 10, 1, True, 1.0, critical=True) == 7
     assert RULES.hit_damage(1, 100, 10, 10, False, 1.0) == 1
     assert RULES.hit_damage(1, 100, 10, 10, True, 1.0) == 1
+
+
+def test_a_cleaner_hit_does_more_damage_across_the_whole_hit_window():
+    window = 60.0
+    damages = [RULES.hit_damage(100, 100, window, roll, False, 1.0) for roll in (1, 20, 40, 60)]
+    assert damages == sorted(damages, reverse=True) and damages[0] > damages[-1]
+    assert damages[-1] >= damages[0] // 2 - 1, "even the edge of the window does about half"
 
 
 def test_a_ranged_hit_falls_off_with_distance_from_the_centre():
@@ -93,14 +100,32 @@ def test_a_ranged_hit_falls_off_with_distance_from_the_centre():
 
 
 def test_accuracy_and_dodge_are_floored_at_one_so_nothing_divides_by_zero():
-    assert RULES.hit_damage(5, 0, 0, 1, False, 1.0) >= 1
-    assert RULES.chance_to_hit(Scripted(1), 0, 0) == 1, "1 up to 1+1: a roll of 1 hits"
+    assert RULES.hit_chance(0, 0) == 50.0
+    assert RULES.chance_to_hit(Scripted(50), 0, 0) == 50 and RULES.chance_to_hit(Scripted(51), 0, 0) is None
 
 
-def test_the_chance_to_hit_is_a_roll_against_accuracy_plus_dodge():
-    assert RULES.chance_to_hit(Scripted(10), 10, 10) == 10, "a roll up to Accuracy hits"
-    assert RULES.chance_to_hit(Scripted(11), 10, 10) is None, "above it misses"
-    assert RULES.chance_to_hit(Scripted(20), 10, 10) is None
+def test_the_hit_chance_is_accuracy_out_of_accuracy_plus_dodge_as_a_percentage():
+    assert RULES.hit_chance(10, 10) == 50.0
+    assert RULES.hit_chance(30, 10) == 75.0
+    assert abs(RULES.hit_chance(10, 20) - 100 / 3) < 1e-9
+
+
+def test_the_roll_is_always_out_of_100_and_hits_up_to_the_chance():
+    assert RULES.chance_to_hit(Scripted(50), 10, 10) == 50, "a roll up to the chance hits"
+    assert RULES.chance_to_hit(Scripted(51), 10, 10) is None, "above it misses"
+    assert RULES.chance_to_hit(Scripted(75), 30, 10) == 75 and RULES.chance_to_hit(Scripted(76), 30, 10) is None
+    assert RULES.chance_to_hit(Scripted(1), 1, 5000) is None, "a hopeless attack can miss even a 1"
+    assert RULES.chance_to_hit(Scripted(99), 5000, 1) == 99, "nearly a sure thing"
+    assert RULES.chance_to_hit(Scripted(100), 5000, 1) is None, "but Dodge counts for at least 1, so never quite"
+
+
+@pytest.mark.parametrize("accuracy, dodge", [(1, 1), (10, 10), (50, 20), (1000, 1000), (5000, 20), (300, 2000)])
+def test_a_critical_is_one_hit_in_a_hundred_whatever_the_size_of_the_stats(accuracy, dodge):
+    """Rolling every possible roll once: the critical (a 1) is one of the hundred, hit chance aside."""
+    hits = [roll for roll in range(1, 101) if RULES.chance_to_hit(Scripted(roll), accuracy, dodge) is not None]
+    assert hits and hits[0] == 1, "the best roll always hits, as long as there is any chance"
+    assert [roll for roll in range(1, 101) if RULES.is_critical(roll)] == [1]
+    assert RULES.is_critical(1) and not RULES.is_critical(2) and not RULES.is_critical(100)
 
 
 def test_the_saving_throw_gives_none_half_or_all():
@@ -176,18 +201,18 @@ def test_a_blow_that_lands_is_a_turn_an_attack_a_target_and_damage():
     attacker.command, attacker.target = Command.ATTACK_LEFT, (1, 0, 0)
     defender.command = Command.DEFEND
     events = do_combat(fight, RULES, Scripted(100, 10))  # Speed roll, then a hit roll of 10
-    # Unarmed: Strength 10 gives 5 + up to 5; the weapon's own Strength is the wielder's: hit_damage(10, 10, 10, 10) halved by defending.
+    # A 50% chance and a roll of 10: hit_damage(10, 10, 50, 10) is 4, halved by defending.
     assert listing(events) == [
-        ("Turn", 0, 0, 0), ("Attack", None, "left", 0), ("Target", 1, 0, 0, 0), ("Damage", 1, 0, 0, 1, False),
+        ("Turn", 0, 0, 0), ("Attack", None, "left", 0), ("Target", 1, 0, 0, 0), ("Damage", 1, 0, 0, 2, False),
     ]
-    assert defender.current["HP"] == 19
+    assert defender.current["HP"] == 18
 
 
 def test_a_miss_is_reported_and_does_no_damage():
     fight, attacker, defender = duel(fighter("A", Accuracy=5), fighter("B", Dodge=5))
     attacker.command, attacker.target = Command.ATTACK_LEFT, (1, 0, 0)
     defender.command = Command.DEFEND
-    events = do_combat(fight, RULES, Scripted(100, 10))
+    events = do_combat(fight, RULES, Scripted(100, 90))  # a 50% chance, and a roll of 90
     assert types(events)[-1] is EventType.MISS and defender.current["HP"] == 20
 
 
@@ -310,7 +335,7 @@ def test_a_spell_with_not_enough_mp_does_nothing_but_says_so():
 
 def test_a_harmful_skill_can_be_dodged_but_not_resisted():
     stab = spell(EffectSpec(specs.HURT, 0, base=8), cost=0, kind="skill")
-    _fight, _caster, foe, events = cast(stab, [100, 100, 100, 20], foe=fighter("foe", HP=50, Dodge=10))
+    _fight, _caster, foe, events = cast(stab, [100, 100, 100, 70], foe=fighter("foe", HP=50, Dodge=10))
     assert types(events)[-1] is EventType.MISS and foe.current["HP"] == 50
     _fight, _caster, foe, events = cast(stab, [100, 100, 100, 5, 0], foe=fighter("foe", HP=50, Dodge=10))
     assert foe.current["HP"] == 42
@@ -527,7 +552,7 @@ def test_the_same_fight_with_the_same_stream_plays_out_identically_and_another_m
 
 def test_a_game_can_replace_a_formula():
     class Brutal(Rules):
-        def hit_damage(self, strength, block, accuracy, roll, defending, impact):
+        def hit_damage(self, strength, block, window, roll, defending, impact, critical=False):
             return 99
 
         def chance_to_hit(self, rng, accuracy, dodge):
