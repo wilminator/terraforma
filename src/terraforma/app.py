@@ -13,7 +13,6 @@ from fastapi import FastAPI, Path, Request, WebSocket, WebSocketDisconnect, stat
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
-from starlette.middleware.sessions import SessionMiddleware
 
 from . import __doc__ as ENGINE
 from . import logscrub
@@ -21,7 +20,7 @@ from .accounts.routes import router as account_router
 from .accounts.twofa_routes import router as twofa_router
 from .accounts.tokens import Tokens
 from .api.deps import ActingAccount
-from .api.security import SESSION_ACCOUNT, SESSION_VERSION, same_origin
+from .api.security import SESSION_ACCOUNT, SESSION_VERSION, TolerantSessionMiddleware, same_origin
 from .db.session import make_engine, make_sessionmaker
 from .fights.channels import FightChannels
 from .content.loader import load_content
@@ -88,7 +87,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.state.tokens = Tokens(settings.session_secret)
     app.state.mailer = mailer or default_mailer(settings)
     app.add_middleware(
-        SessionMiddleware,
+        TolerantSessionMiddleware,
         secret_key=settings.session_secret,
         session_cookie="terraforma_session",
         max_age=settings.session_max_age,
