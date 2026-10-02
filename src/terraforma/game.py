@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .economy import Economy, TeamGold
 from .fights.rules import Rules
+from .alliances.hooks import Alliances
 from .relations.hooks import Relations
 
 
@@ -27,3 +28,5 @@ class Game:
     economy: Economy = field(default_factory=TeamGold)
     # How teams feel about each other: the scale's bands, who may form a relationship, and every change to one.
     relations: Relations = field(default_factory=Relations)
+    # What roles an alliance of teams has, what each may do, and who may found or join one.
+    alliances: Alliances = field(default_factory=Alliances)

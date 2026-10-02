@@ -24,7 +24,7 @@ SCORE_MIN, SCORE_MAX = -100, 100
 
 @dataclass(frozen=True)
 class Ref:
-    """One side of a relationship: a team (``kind`` "team") by its id."""
+    """One side of a relationship: a team (``kind`` "team") or an alliance (``kind`` "alliance"), by its id."""
 
     kind: str
     id: int
