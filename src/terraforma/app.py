@@ -65,7 +65,7 @@ async def housekeeping_timer(app: FastAPI, seconds: float) -> None:
     """Runs the housekeeping jobs every $seconds, for as long as the app runs."""
     while True:
         await asyncio.sleep(seconds)
-        await housekeeping.run(app.state.sessionmaker)
+        await housekeeping.run(app.state.sessionmaker, app.state.settings)
 
 
 def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer | None = None) -> FastAPI:

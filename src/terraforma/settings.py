@@ -63,6 +63,9 @@ class Settings(BaseModel):
     fight_timer_seconds: float = Field(default=1.0, ge=0)
     # How often the server tidies up what has gone stale (housekeeping jobs), in seconds (0: never, for tests).
     housekeeping_seconds: float = Field(default=3600.0, ge=0)
+    # How long a pending drop (need/want or hand-out) may wait for its players before housekeeping settles it with the
+    # answers so far, in seconds (0: never, the default).
+    pending_drop_timeout_seconds: float = Field(default=0.0, ge=0)
 
 
 def load_settings(path: str | os.PathLike | None = None) -> Settings:

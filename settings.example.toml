@@ -22,6 +22,10 @@ key_dir = "keys"
 # How often the server tidies up what has gone stale (finished rate-limit windows, say), in seconds.
 # housekeeping_seconds = 3600.0
 
+# How long a held drop (need/want roll, hand-out) waits for its players before housekeeping settles it with the answers
+# so far (nobody answered: it is left unclaimed), in seconds. 0 means it waits for ever.
+# pending_drop_timeout_seconds = 0
+
 # Outgoing mail. Leave this section out for development: messages are then
 # written as .eml files to outbox_dir (default "outbox") instead of sent.
 # Cloudflare: port 465 with implicit TLS; the API key is both username and password.
