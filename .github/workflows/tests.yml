@@ -10,8 +10,20 @@ on:
   pull_request:
 
 jobs:
+  # Builds the virtual environment when pyproject.toml (or Python) changed, and saves it for the
+  # jobs below, which wait for it and only restore it.
+  environment:
+    name: environment
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+        with:
+          build: "true"
+
   no-database:
     name: no database
+    needs: environment
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -19,6 +31,7 @@ jobs:
       - run: pytest -n auto -m "not db"
 
   sqlite:
+    needs: environment
     name: sqlite (${{ matrix.category }})
     runs-on: ubuntu-latest
     strategy:
@@ -33,6 +46,7 @@ jobs:
       - run: pytest -n auto -m "db and ${{ matrix.category }}"
 
   postgres:
+    needs: environment
     name: postgres (${{ matrix.category }})
     runs-on: ubuntu-latest
     strategy:
@@ -59,6 +73,7 @@ jobs:
       - run: pytest -n auto -m "db and ${{ matrix.category }}"
 
   mysql:
+    needs: environment
     name: mysql (${{ matrix.category }})
     runs-on: ubuntu-latest
     strategy:
@@ -101,11 +116,12 @@ jobs:
   test:
     name: test
     if: always()
-    needs: [no-database, sqlite, postgres, mysql]
+    needs: [environment, no-database, sqlite, postgres, mysql]
     runs-on: ubuntu-latest
     steps:
       - name: Every test job must have passed
         run: |
+          test "${{ needs.environment.result }}" = success
           test "${{ needs.no-database.result }}" = success
           test "${{ needs.sqlite.result }}" = success
           test "${{ needs.postgres.result }}" = success
