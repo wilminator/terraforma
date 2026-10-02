@@ -15,6 +15,7 @@ from typing import Any
 from itsdangerous import BadSignature, URLSafeSerializer
 
 from .. import wallclock
+from ..api.security import CLOCK_LEEWAY
 
 LIFETIMES = {
     "confirm-email": 3 * 24 * 60 * 60,
@@ -52,6 +53,7 @@ class Tokens:
         except BadSignature as error:
             raise TokenError("not a valid link") from error
         age = wallclock.timestamp() - int(payload["t"])
-        if age < 0 or age > LIFETIMES[purpose]:
+        # A token a few seconds in the future is a clock that stepped back, not a forgery.
+        if age < -CLOCK_LEEWAY or age > LIFETIMES[purpose]:
             raise TokenError("this link has expired")
         return Token(account_id=int(payload["a"]), data=dict(payload["d"]))

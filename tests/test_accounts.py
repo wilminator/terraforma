@@ -304,3 +304,25 @@ def test_with_2fa_on_a_live_code_is_needed_to_change_the_email(member, mailbox, 
     assert client.post("/api/email-change", json={"email": NEW, "code": code}, headers=headers).status_code == 202
     later(30)
     assert client.post("/api/email-change", json={"email": NEW, "code": code}, headers=headers).status_code == 401, "a code works once"
+
+
+# --- a clock that steps back ----------------------------------------------------------------
+
+def test_a_clock_that_steps_back_a_few_seconds_does_not_log_anyone_out(member, monkeypatch):
+    """A session signed a moment ago looks like it's from the future once the clock steps back; that must still count."""
+    from itsdangerous import TimestampSigner
+
+    client, headers = member
+    real = TimestampSigner.get_timestamp
+    monkeypatch.setattr(TimestampSigner, "get_timestamp", lambda self: real(self) - 3)
+    assert client.get("/api/me").status_code == 200, "3 seconds back: still logged in"
+    monkeypatch.setattr(TimestampSigner, "get_timestamp", lambda self: real(self) - 60)
+    assert client.get("/api/me").status_code == 401, "a minute ahead isn't a clock hiccup"
+
+
+def test_a_link_made_a_moment_ago_still_works_after_the_clock_steps_back(member, mailbox, later):
+    client, headers = member
+    ask_to_change(client, headers)
+    token = token_in(mailbox.last_to(NEW))
+    later(-5)
+    assert client.post("/api/email-change/complete", json={"token": token}).status_code == 200
