@@ -16,7 +16,7 @@ from ..models import Account
 from ..relations import service as relations
 from ..relations.hooks import Ref
 from .hooks import Alliances
-from .models import NAME_MAX, Alliance, AllianceInvite, AllianceMember
+from .models import NAME_MAX, Alliance, AllianceInvite, AllianceMember, Ballot, BallotVote, BallotVoter
 
 
 class AllianceError(ValueError):
@@ -159,7 +159,22 @@ async def decline(session: AsyncSession, team: Team, alliance_id: int) -> None:
 
 # --- running it ------------------------------------------------------------------------------------------------------------------
 
+async def _forget_votes(session: AsyncSession, team_id: int, alliance_id: int | None = None) -> None:
+    """The team's votes in ballots that are still open (in one alliance, or in all of them) go when it stops being a member
+    (what closed ballots counted stays in their results)."""
+    open_ballots = select(Ballot.id).where(Ballot.closed_at.is_(None))
+    if alliance_id is not None:
+        open_ballots = open_ballots.where(Ballot.alliance_id == alliance_id)
+    await session.execute(delete(BallotVote).where(BallotVote.team_id == team_id, BallotVote.ballot_id.in_(open_ballots)))
+    await session.execute(delete(BallotVoter).where(BallotVoter.team_id == team_id, BallotVoter.ballot_id.in_(select(Ballot.id).where(
+        Ballot.alliance_id == alliance_id if alliance_id is not None else Ballot.id.is_not(None)))))
+
+
 async def _delete_alliance(session: AsyncSession, alliance: Alliance) -> None:
+    ballots = select(Ballot.id).where(Ballot.alliance_id == alliance.id)
+    await session.execute(delete(BallotVote).where(BallotVote.ballot_id.in_(ballots)))
+    await session.execute(delete(BallotVoter).where(BallotVoter.ballot_id.in_(ballots)))
+    await session.execute(delete(Ballot).where(Ballot.alliance_id == alliance.id))
     await session.execute(delete(AllianceMember).where(AllianceMember.alliance_id == alliance.id))
     await session.execute(delete(AllianceInvite).where(AllianceInvite.alliance_id == alliance.id))
     await relations.forget(session, Ref("alliance", alliance.id))
@@ -179,6 +194,7 @@ async def leave(session: AsyncSession, hooks: Alliances, alliance: Alliance, tea
         return True
     if row.role == hooks.founder_role and not any(other.role == hooks.founder_role for other in others):
         raise AllianceError("hand the leadership over before leaving")
+    await _forget_votes(session, team_id, alliance.id)
     await session.delete(row)
     await session.flush()
     return False
@@ -186,6 +202,7 @@ async def leave(session: AsyncSession, hooks: Alliances, alliance: Alliance, tea
 
 async def remove(session: AsyncSession, hooks: Alliances, alliance: Alliance, actor_team_id: int, target_team_id: int) -> None:
     _, target = await _acting(session, hooks, alliance, actor_team_id, "remove", target_team_id)
+    await _forget_votes(session, target_team_id, alliance.id)
     await session.delete(target)
     await session.flush()
 
@@ -225,6 +242,7 @@ async def remove_team(session: AsyncSession, hooks: Alliances, team_id: int) -> 
             heir = min(others, key=lambda other: (hooks.rank(other.role), other.id))
             heir.role = hooks.founder_role
         await session.delete(row)
+    await _forget_votes(session, team_id)
     await session.flush()
 
 
