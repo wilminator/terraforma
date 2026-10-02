@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import time
 from contextlib import suppress
 
 import pytest
@@ -234,8 +235,16 @@ def test_the_timer_plays_a_round_nobody_committed_to_and_the_socket_hears_it(cli
         client.portal.call(run_timer)
         assert client.get(f"/api/fights/{client.fight_id}").json()["round"] == 1, "its time has not run out"
         later(31)
-        client.portal.call(run_timer)
-        played = socket.receive_json()
+        # The round takes as long as the database needs: wait for it, don't guess a time.
+        timer = client.portal.start_task_soon(fight_timer, client.app, 0.01)
+        try:
+            deadline = time.monotonic() + 60
+            while client.get(f"/api/fights/{client.fight_id}").json()["round"] < 2:
+                assert time.monotonic() < deadline, "the timer never played the round"
+                time.sleep(0.05)
+            played = socket.receive_json()
+        finally:
+            timer.cancel()
         assert played["type"] == "round" and played["round"] == 1
     assert client.get(f"/api/fights/{client.fight_id}").json()["round"] == 2
 
