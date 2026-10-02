@@ -70,6 +70,8 @@ alembic revision --autogenerate -m "what changed"
 
 A test fails whenever the models and the migrations disagree.
 
+Migrations are numbered `0001`, `0002`, ... in the file name and the revision id, and each points (`down_revision`) at the one with the number before. Take the next free number when you cut your branch. When another branch merges first, re-point yours at the new head and rename it: a test fails on a repeated or missing number, a second head, or a revision that doesn't follow the one before it.
+
 ## Seed data
 
 A game's starting content is JSON in its `seed/` folder (`Game(seed_dir=...)`): one file per kind of content, each a list of objects. These formats are a public interface, so changing one is deliberate and noted here.
