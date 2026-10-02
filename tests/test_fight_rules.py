@@ -784,3 +784,87 @@ def test_random_party_is_a_valid_scope_in_a_seed_and_is_valued_like_a_party():
     assert target_rating(specs.RANDOM_PARTY) == target_rating(specs.PARTY)
     values = {0: {0: {0: 4.0}}, 1: {0: {0: 8.0}}}
     assert combine_on_reach(1, 0, specs.RANDOM_PARTY, values) == {(1, 0, 0, 0, 0): 6.0}, "the average of the parties it might land on"
+
+
+# --- harm to a non-enemy and the relationships ----------------------------------------------------------------
+
+class Lucky:
+    """A stream where every roll is the same: speed 100, every hit lands, no extra damage, the first pick."""
+
+    def randint(self, low, high):
+        return 100 if low == 85 else low
+
+    def shuffle(self, items):
+        pass
+
+    def choice(self, items):
+        return items[0]
+
+
+class Grudge(Rules):
+    """A game that lets harm to someone who is not an enemy sour the teams' relationship."""
+
+    def relation_moved(self, fight, actor, target, resource, before, after, maximum):
+        return -3 if after < before else 0
+
+
+def teamed_fight(alignment):
+    """Parties 0, 1 and 2, one fighter each, each its own team (team ids 10, 11 and 12), party 0 told to hit party 1."""
+    fight = build_fight({number: {0: [fighter(f"p{number}")]} for number in range(3)})
+    for number in range(3):
+        fight.parties[number].teams = {10 + number: [100 + number]}
+        fight.get((number, 0, 0)).charid = 100 + number
+    for number, (allies, enemies) in alignment.items():
+        fight.parties[number].allies, fight.parties[number].enemies = allies, enemies
+    zap = AbilitySpec("zap", "Zap", "skill", 0, EffectSpec(specs.HURT, specs.INDIVIDUAL, base=4))
+    caster = fight.get((0, 0, 0))
+    caster.abilities, caster.command, caster.using, caster.target = [zap], Command.SKILL, 0, (1, 0, 0)
+    for address in fight.addresses():
+        if address != (0, 0, 0):
+            fight.get(address).command = Command.DEFEND
+    return fight
+
+
+def changes(events):
+    return [list(each.data) for each in events if each.type is EventType.RELATION_CHANGE]
+
+
+def test_by_default_harm_to_a_non_enemy_changes_no_relationship():
+    fight = teamed_fight({0: (set(), {2})})  # party 1 is neutral to party 0
+    events = do_combat(fight, RULES, Lucky())
+    assert fight.get((1, 0, 0)).current["HP"] < 20, "it did hurt"
+    assert changes(events) == []
+
+
+def test_a_game_can_sour_the_teams_relationship_for_harm_to_a_neutral_or_an_ally():
+    for alignment in ({0: (set(), {2})}, {0: ({1}, {2})}):
+        fight = teamed_fight(alignment)
+        assert changes(do_combat(fight, Grudge(), Lucky())) == [[10, 11, -3]], "the actor's team's view of the target's team"
+
+
+def test_harm_to_an_enemy_does_not_ask_the_games_relationship_rule():
+    fight = teamed_fight({})  # everyone else is an enemy
+    assert changes(do_combat(fight, Grudge(), Lucky())) == []
+
+
+def test_a_fighter_not_on_a_team_does_not_move_a_relationship():
+    fight = teamed_fight({0: (set(), {2})})
+    fight.parties[1].teams = {}
+    assert changes(do_combat(fight, Grudge(), Lucky())) == []
+    fight = teamed_fight({0: (set(), {2})})
+    fight.get((0, 0, 0)).charid = None
+    assert changes(do_combat(fight, Grudge(), Lucky())) == []
+
+
+def test_a_partymate_on_another_team_counts_but_ones_own_team_does_not():
+    fight = teamed_fight({})
+    fight.parties[0].teams = {10: [100], 11: [101]}
+    fight.get((1, 0, 0)).charid = 101  # (a fighter of party 1 who belongs to team 11 of party 0: harming it from party 0)
+    fight.parties[1].teams = {11: [101]}
+    fight.parties[0].allies = {0, 1}
+    assert changes(do_combat(fight, Grudge(), Lucky())) == [[10, 11, -3]]
+    own = teamed_fight({0: ({1}, set())})
+    own.parties[1].teams = {10: [101]}
+    own.get((1, 0, 0)).charid = 101
+    own.parties[0].teams = {10: [100, 101]}
+    assert changes(do_combat(own, Grudge(), Lucky())) == [], "harming your own team is not a relationship"

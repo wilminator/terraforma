@@ -23,7 +23,7 @@ from .api.security import TolerantSessionMiddleware
 from .db.session import make_engine, make_sessionmaker
 from .fights import live
 from .fights.channels import FightChannels
-from .fights.routes import economy_of, fight_socket, rules_of
+from .fights.routes import economy_of, fight_socket, relations_of, rules_of
 from .fights.routes import router as fights_router
 from .content.loader import load_content
 from .game import Game
@@ -48,7 +48,7 @@ async def fight_timer(app: FastAPI, seconds: float) -> None:
     while True:
         await asyncio.sleep(seconds)
         try:
-            await live.resolve_overdue(app.state.sessionmaker, rules_of(app), economy_of(app), app.state.fights)
+            await live.resolve_overdue(app.state.sessionmaker, rules_of(app), economy_of(app), app.state.fights, relations_of(app))
         except Exception:  # one bad pass must not stop the timer
             logging.getLogger(__name__).exception("playing the overdue fight rounds failed")
 

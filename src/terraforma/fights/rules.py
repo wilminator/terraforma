@@ -205,6 +205,19 @@ class Rules:
         fight.get(target).xp_debts.append(list(owed))
         return [event(EventType.XP_DEBT, *target, *owed)]
 
+    def relation_moved(self, fight, actor: tuple, target: tuple, resource: str, before: int, after: int, maximum: int) -> int:
+        """Called, beside ``gauge_moved``, when a fighter moves the gauge of one on another team whose party is not an
+        enemy of its own (an ally, a neutral, or a partymate): returns how much the actor's team's view of the target's team changes (0 for
+        none, negative to sour it: harm to a friend, a spell that caught a bystander; positive to warm it: help). The
+        change is a ``RelationChange`` event, applied to the teams' relationship (``Game(relations=...)``) once the fight
+        is saved (``fights.store.apply_results``). Both must be on teams. The default changes nothing: relationships move
+        only when a game says so, for example
+
+            def relation_moved(self, fight, actor, target, resource, before, after, maximum):
+                return -max(1, (before - after) * 10 // maximum) if after < before else 0
+        """
+        return 0
+
     def alignment(self, fight, party: int) -> tuple[set[int], set[int]]:
         """How the fight's other parties stand to $party: (allies, enemies). A party in neither is neutral to it.
         A party is always its own ally. Reads each party's ``allies`` and ``enemies`` if the fight set them: with
