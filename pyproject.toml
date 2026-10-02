@@ -44,4 +44,6 @@ packages = ["src/terraforma"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra"
+addopts = "-ra --dist worksteal"
+# A test stuck for two minutes dumps every thread's stack, so a hang names itself instead of waiting forever.
+faulthandler_timeout = 120

@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from terraforma.accounts.service import AccountError, EmailTaken, UsernameTaken, authenticate, create_account
-from terraforma.db.dialect import same_text, upsert
+from terraforma.db.dialect import empty_tables, same_text, upsert
 from terraforma.models import Account, Fighter, Map, World, advance_clock
 
 pytestmark = pytest.mark.anyio
@@ -128,3 +128,16 @@ async def test_account_rules(db, username, password, email):
     with pytest.raises(AccountError):
         await create_account(db, username, password, email=email)
     assert (await db.scalar(select(Account))) is None
+
+
+async def test_emptying_the_tables_keeps_the_schema_and_restarts_the_ids(engine, db):
+    db.add(World(name="Terra"))
+    await db.commit()
+    first = (await db.execute(select(World.id))).scalar_one()
+    await db.close()
+    await empty_tables(engine)
+    async with db.bind.connect() as connection:
+        assert (await connection.execute(select(World.id))).all() == []
+    db.add(World(name="Terra"))
+    await db.commit()
+    assert (await db.execute(select(World.id))).scalar_one() == first
