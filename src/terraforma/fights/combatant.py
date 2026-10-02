@@ -41,6 +41,8 @@ class Combatant:
     equipment: dict[str, int | None] = field(default_factory=dict)  # slot -> inventory index
     #: Who plays it, if anyone (a hero's id). None: a monster or NPC.
     charid: int | None = None
+    #: The monster's key in the seed, if it is one.
+    monster: str | None = None
     # What it has decided to do this round.
     command: int = Command.DEFEND
     using: int = 0

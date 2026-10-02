@@ -119,3 +119,4 @@ class Fighter(Located, Timestamps, Base):
 # The content and hero tables register with the rest.
 from .content import models as _content  # noqa: E402,F401
 from .heroes import models as _heroes  # noqa: E402,F401
+from .fights import models as _fights  # noqa: E402,F401
