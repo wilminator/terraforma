@@ -5,10 +5,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.dialect import upsert
 from . import models
-from .schema import Strict, check_seed
+from .schema import RESOURCES, STATS, Strict, check_seed
 
 # Parents before the rows that name them.
 TABLES = {
+    "statuses": models.Status,
     "abilities": models.Ability,
     "items": models.Item,
     "personalities": models.Personality,
@@ -28,14 +29,15 @@ def _values(kind: str, row: Strict) -> dict:
     return {**values, "active": True}
 
 
-async def load_content(session: AsyncSession, seed: dict[str, list[dict]], stats: tuple[str, ...] | None = None) -> dict[str, int]:
+async def load_content(session: AsyncSession, seed: dict[str, list[dict]], stats: tuple[str, ...] | None = None,
+                       resources: tuple[str, ...] | None = None) -> dict[str, int]:
     """Checks $seed (raising ContentError if it's wrong) and makes the database match it.
 
     New keys are added, known keys updated, and keys the seed no longer lists
     are marked inactive (never deleted). Returns how many rows of each kind
     the seed has. A seed with no content files leaves the database alone.
     """
-    checked = check_seed(seed, stats) if stats else check_seed(seed)
+    checked = check_seed(seed, stats or STATS, resources or RESOURCES)
     counts = {}
     for kind, table in TABLES.items():
         if kind not in seed:

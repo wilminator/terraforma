@@ -13,6 +13,7 @@ from enum import IntEnum
 from .gear import AMMO_SLOTS, EquipOutcome, EquipResult, equipment_bonus, find_slot
 from .rules import Rules
 from .specs import AbilitySpec, ItemSpec
+from .status import StatusToken, stat_bonus
 
 Address = tuple[int, int, int]
 
@@ -43,6 +44,8 @@ class Combatant:
     charid: int | None = None
     #: The monster's key in the seed, if it is one.
     monster: str | None = None
+    #: The statuses it is under (fights.status).
+    tokens: list[StatusToken] = field(default_factory=list)
     # What it has decided to do this round.
     command: int = Command.DEFEND
     using: int = 0
@@ -92,7 +95,7 @@ class Combatant:
         if stat not in rules.resource_names:
             every = all_equipment is True
             command = all_equipment if not isinstance(all_equipment, bool) else self.command
-            value = self.with_gear(rules, stat, value, command, every)
+            value = self.with_gear(rules, stat, value, command, every) + stat_bonus(self, stat)
         return value
 
     def reset_stats(self, rules: Rules, everything: bool = False) -> None:

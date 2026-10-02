@@ -6,7 +6,7 @@ rows (a job's abilities, a monster's items) are lists of keys inside JSON
 columns, checked when the seed is loaded.
 """
 
-from sqlalchemy import JSON, Boolean, Integer, String
+from sqlalchemy import JSON, Boolean, Float, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db.base import Base
@@ -77,3 +77,18 @@ class Monster(ContentRow, Base):
     items: Mapped[list] = mapped_column(JSON)
     equipment: Mapped[list] = mapped_column(JSON)
     ai: Mapped[dict] = mapped_column(JSON)
+
+
+class Status(ContentRow, Base):
+    """A status fighters can be under (see fights.status): its ticks, modifiers, duration and intensity."""
+
+    __tablename__ = "statuses"
+
+    kind: Mapped[str] = mapped_column(String(8))  # "good" or "bad"
+    description: Mapped[str] = mapped_column(String(255), default="")
+    icon: Mapped[str] = mapped_column(String(64), default="")
+    duration: Mapped[int | None] = mapped_column(Integer)
+    intensity: Mapped[dict] = mapped_column(JSON)
+    ticks: Mapped[list] = mapped_column(JSON)
+    modifiers: Mapped[list] = mapped_column(JSON)
+    xp_share: Mapped[float] = mapped_column(Float, default=0.0)

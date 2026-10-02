@@ -133,6 +133,34 @@ class Rules:
         (it reads like a mix-up with ``max * added / 100``; override this if your game wants the percentage)."""
         return round_half_up(maximum * 100.0 / max(effect.added, 1))
 
+    def slay_chance(self, rng: random.Random, effect: EffectSpec) -> bool:
+        """Whether a slay takes: $base is the chance out of 100."""
+        return rng.randint(1, 100) <= effect.base
+
+    # --- stats that move -----------------------------------------------------------------------------
+    def stat_range(self, stat: str, base: int) -> tuple[int, int]:
+        """The lowest and highest the current value of a stat can be pushed to by increase, decrease and steal effects
+        (before gear counts): none below zero, and none above twice the base (at least 10 over it)."""
+        return 0, max(base * 2, base + 10)
+
+    def stat_drift(self, stat: str, current: int, base: int) -> int:
+        """How much a pushed stat moves back towards its base at the end of each round: a quarter of the gap, at
+        least 1, never past the base. Returns the (signed) amount to add; 0 when it is at its base."""
+        gap = base - current
+        if gap == 0:
+            return 0
+        step = min(max(1, abs(gap) // 4), abs(gap))
+        return step if gap > 0 else -step
+
+    # --- statuses --------------------------------------------------------------------------------------
+    def status_acted(self, fight, source: tuple, target: tuple, status, intensity: float, ratio: float) -> list:
+        """Called when a status token does something that moves no gauge (a skipped turn, for one; a tick that
+        damages already reaches ``gauge_moved``, with the token's source as the actor). $source is who placed the token,
+        $target who bears it, $intensity how strong the token was, and $ratio the share of the bearer's worth (its
+        PXP) the source has earned: the status's ``xp_share`` times the intensity. The place for the experience
+        tree to record a debt to the source. Returns events to add after the tick. Nothing by default."""
+        return []
+
     def alignment(self, fight, party: int) -> tuple[set[int], set[int]]:
         """How the fight's other parties stand to $party: (allies, enemies). A party in neither is neutral to it.
         A party is always its own ally. Reads each party's ``allies`` and ``enemies`` if the fight set them: with

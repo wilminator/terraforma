@@ -4,6 +4,7 @@ from .combatant import Combatant
 from .gear import EquipOutcome
 from .rules import Rules
 from .specs import AbilitySpec, EffectSpec, ItemSpec, scope_number
+from .status import Curve, Modifier, StatusSpec, Tick
 
 
 def item_spec(item) -> ItemSpec:
@@ -18,6 +19,18 @@ def item_spec(item) -> ItemSpec:
 
 def ability_spec(ability) -> AbilitySpec:
     return AbilitySpec(ability.key, ability.name, ability.kind, ability.mp_cost, EffectSpec.from_dict(ability.effect))
+
+
+def status_spec(status) -> StatusSpec:
+    """A status from its content row."""
+    curve = status.intensity
+    return StatusSpec(
+        key=status.key, name=status.name, kind=status.kind, duration=status.duration,
+        curve=Curve(curve["shape"], curve["high"], curve["low"]),
+        ticks=tuple(Tick(**tick) for tick in status.ticks),
+        modifiers=tuple(Modifier(**modifier) for modifier in status.modifiers),
+        xp_share=status.xp_share,
+    )
 
 
 def monster_combatant(monster, items: dict, abilities: dict, rules: Rules | None = None) -> Combatant:

@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 
 from .combatant import Address, Combatant
 from .rules import Rules
+from .status import StatusSpec
 
 
 @dataclass
@@ -34,6 +35,8 @@ class Party:
 @dataclass
 class Fight:
     parties: dict[int, Party] = field(default_factory=dict)
+    #: The statuses this fight knows, by key: what an effect that places one looks up.
+    statuses: dict[str, StatusSpec] = field(default_factory=dict)
 
     def get(self, address: Address) -> Combatant:
         party, group, character = address
@@ -60,9 +63,10 @@ class Fight:
         return sum(1 for party in self.parties.values() if not party.dead(rules))
 
 
-def build_fight(layout: dict[int, dict[int, list[Combatant]]]) -> Fight:
-    """A fight from ``{party: {group: [combatants...]}}``, numbering each group's fighters 0, 1, 2, ..."""
+def build_fight(layout: dict[int, dict[int, list[Combatant]]], statuses: dict[str, StatusSpec] | None = None) -> Fight:
+    """A fight from ``{party: {group: [combatants...]}}``, numbering each group's fighters 0, 1, 2, ...
+    $statuses are the statuses it knows, by key (``fights.content.status_spec`` makes them from the content)."""
     return Fight({
         party: Party({group: Group(dict(enumerate(members))) for group, members in groups.items()})
         for party, groups in layout.items()
-    })
+    }, dict(statuses or {}))
