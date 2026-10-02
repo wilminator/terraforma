@@ -184,6 +184,10 @@ A player, a team and an alliance can each have a public page, reached by a **ran
 
 The owner's calls need a login and, to change anything, the CSRF token, and are limited to 60 an hour per account. The public pages need neither, and are limited per address (120 per 15 minutes) so a token can't be hunted for. Deleting a team or disbanding an alliance deletes its page. These routes and their response shapes are public interfaces (the license exception covers them).
 
+## Tokens
+
+Tokens are a currency whose meaning the game decides; the engine keeps each account's balance (`TokenBalance`) and a ledger of every change (`TokenEntry`: who, how many, why, which fight), so a balance can always be re-derived (`tokens.service.audit`). `Rules.tokens_earned(fight, address)` says what a hero's fighter earns when a fight ends; it pays nothing by default, so a game opts in. `fights.store.apply_results` pays it, once per account per fight (the ledger holds a unique fight and account pair, so saving the result again pays nothing more). A game spends through `tokens.service.change(session, account_id, -amount, reason)`, which refuses to take the balance below zero. Tokens are only ever paid to the account that owns a hero in the fight, so an admin (`Account.is_admin`) earns only when fighting as a player, never for a monster or a fight they watched. No call sets `is_admin`: a game's own setup does, with `tokens.service.set_admin`. `Rules.tokens_earned` and the `tokens.service` functions are public interfaces (the license exception covers them).
+
 ## Fight rules
 
 A fight is DragonStar's process: every fighter has chosen a command (attack with the left or right hand, use an item, change gear, use a skill, cast a spell, defend, run), then the round resolves in one pass and returns *events* (`Turn`, `Attack`, `Damage`, `Miss`, `Died`, ...) that say what happened. The fight's state after the round is what you get by applying its events in order (`terraforma.fights.replay.apply_events`), so a stored fight can be replayed and shown to spectators.

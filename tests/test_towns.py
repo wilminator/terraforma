@@ -10,8 +10,8 @@ from terraforma.content.loader import load_content
 from terraforma.content.models import Job
 from terraforma.game import Game
 from terraforma.heroes import service
-from terraforma.heroes.models import Hero
-from terraforma.models import Map
+from terraforma.heroes.models import Hero, Team
+from terraforma.models import Account, Map
 from terraforma.parties import service as parties
 from terraforma.parties.models import Party
 from terraforma.testing import in_app_db
@@ -99,6 +99,15 @@ async def test_a_party_in_a_town_cannot_be_changed_until_it_is_whole(db):
         await parties.merge_parties(db, lone.id, party.id, 20)
     with pytest.raises(parties.PartyError):
         await parties.leave_party(db, teams[0])
+
+
+async def test_deleting_a_team_in_a_town_is_refused_as_a_hero_error_not_a_crash(db):
+    party, teams = await party_of_three(db)
+    await towns_service.enter_town(db, TOWNS, party.id)
+    team = await db.get(Team, teams[0])
+    with pytest.raises(service.HeroError):
+        await service.delete_team(db, await db.get(Account, team.account_id), team.id)
+    assert await count(db, TownTeam) == 3
 
 
 # --- leaving ---------------------------------------------------------------------------------------------------------

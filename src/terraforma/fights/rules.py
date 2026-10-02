@@ -284,6 +284,12 @@ class Rules:
 
         return settle(self, fight, rng)
 
+    def tokens_earned(self, fight, address) -> int:
+        """Called for each hero's fighter when a fight ends: how many tokens (the game's own currency, kept per account in
+        ``terraforma.tokens``) it earns. None by default: a game opts in. Called only for heroes, so an admin earns only
+        when fighting as a player, and never for a monster or a fight they only watched. A negative answer pays nothing."""
+        return 0
+
     def drop_recipients(self, fight, party: int, monsters, share: str, rng) -> list:
         """Who in $party receives one drop of the monsters that died ($monsters: the one that dropped it, or all of them for
         an area's table), given its $share (``one``, ``each_team`` or ``each_member``). Returns the fighters' addresses.
