@@ -60,13 +60,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    with op.batch_alter_table('pending_drop_choices', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_pending_drop_choices_pending_id'))
-        batch_op.drop_index(batch_op.f('ix_pending_drop_choices_hero_id'))
-
+    # (no separate index drops: MySQL refuses to drop an index a foreign key needs, and dropping the table takes them)
     op.drop_table('pending_drop_choices')
-    with op.batch_alter_table('pending_drops', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_pending_drops_map_id'))
-        batch_op.drop_index(batch_op.f('ix_pending_drops_fight_id'))
-
     op.drop_table('pending_drops')
