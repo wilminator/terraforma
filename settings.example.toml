@@ -16,6 +16,9 @@ public_url = "http://localhost:8000"
 # Where the encryption key files are (mounted into the container).
 key_dir = "keys"
 
+# How often the server looks for fights whose round time has run out, in seconds.
+# fight_timer_seconds = 1.0
+
 # Outgoing mail. Leave this section out for development: messages are then
 # written as .eml files to outbox_dir (default "outbox") instead of sent.
 # Cloudflare: port 465 with implicit TLS; the API key is both username and password.

@@ -5,13 +5,13 @@ arguments, so a call with the wrong shape is refused before any game code
 runs. The account calls are in accounts/routes.py.
 """
 
+import asyncio
+import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
-from typing import Annotated, Literal
+from contextlib import asynccontextmanager, suppress
 
-from fastapi import FastAPI, Path, Request, WebSocket, WebSocketDisconnect, status
+from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 
 from . import __doc__ as ENGINE
@@ -19,50 +19,36 @@ from . import logscrub
 from .accounts.routes import router as account_router
 from .accounts.twofa_routes import router as twofa_router
 from .accounts.tokens import Tokens
-from .api.deps import ActingAccount
-from .api.security import SESSION_ACCOUNT, SESSION_VERSION, TolerantSessionMiddleware, same_origin
+from .api.security import TolerantSessionMiddleware
 from .db.session import make_engine, make_sessionmaker
+from .fights import live
 from .fights.channels import FightChannels
+from .fights.routes import economy_of, fight_socket, rules_of
+from .fights.routes import router as fights_router
 from .content.loader import load_content
 from .game import Game
 from .heroes.inventory_routes import router as inventory_router
 from .heroes.routes import router as heroes_router
 from .keys import KeyRing
 from .mail import Mailer, OutboxMailer, SmtpMailer
-from .models import Account
 from .seed import load_seed
 from .settings import Settings
-
-
-class Strict(BaseModel):
-    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
-
-
-class FighterRef(Strict):
-    """A fighter's place in a fight: party, group, and place in the group."""
-
-    party: int = Field(ge=0, le=7)
-    group: int = Field(ge=0, le=3)
-    character: int = Field(ge=0, le=9)
-
-
-class FightCommand(Strict):
-    fighter: FighterRef
-    command: Literal[
-        "attack_left", "attack_right", "item", "equip", "skill", "spell", "defend", "flee", "equip_weapon"
-    ]
-    # Which item, skill or spell, by its place in the fighter's list.
-    using: int = Field(default=0, ge=0, le=255)
-    target: FighterRef
-
-
-FightId = Annotated[int, Path(ge=1)]
 
 
 def default_mailer(settings: Settings) -> Mailer:
     if settings.mail is not None:
         return SmtpMailer(settings.mail)
     return OutboxMailer(settings.outbox_dir)
+
+
+async def fight_timer(app: FastAPI, seconds: float) -> None:
+    """Plays the rounds whose time has run out, every $seconds, for as long as the app runs."""
+    while True:
+        await asyncio.sleep(seconds)
+        try:
+            await live.resolve_overdue(app.state.sessionmaker, rules_of(app), economy_of(app), app.state.fights)
+        except Exception:  # one bad pass must not stop the timer
+            logging.getLogger(__name__).exception("playing the overdue fight rounds failed")
 
 
 def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer | None = None) -> FastAPI:
@@ -78,7 +64,12 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
             # A seed that doesn't check out stops the server here, naming what's wrong.
             async with app.state.sessionmaker() as session, session.begin():
                 await load_content(session, load_seed(game.seed_dir), game.rules.stats, game.rules.resource_names)
+        timer = asyncio.create_task(fight_timer(app, settings.fight_timer_seconds)) if settings.fight_timer_seconds else None
         yield
+        if timer is not None:
+            timer.cancel()
+            with suppress(asyncio.CancelledError):
+                await timer
         await engine.dispose()
 
     app = FastAPI(title=game.name if game else "TerraForma", lifespan=lifespan)
@@ -115,40 +106,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
             return JSONResponse({"ok": False, "database": False}, status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
         return JSONResponse({"ok": True, "database": True})
 
-    @app.post("/api/fights/{fight_id}/commands", status_code=status.HTTP_202_ACCEPTED)
-    async def fight_command(fight_id: FightId, body: FightCommand, request: Request, account: ActingAccount) -> dict:
-        # The fight engine arrives in phase 6: for now the command is
-        # checked for shape and pushed to everyone watching the fight.
-        await request.app.state.fights.push(
-            fight_id, {"type": "command", "fight": fight_id, "by": account.id, **body.model_dump()}
-        )
-        return {"accepted": True}
-
-    @app.websocket("/ws/fights/{fight_id}")
-    async def fight_socket(socket: WebSocket, fight_id: FightId) -> None:
-        if not same_origin(socket) or not await logged_in(socket):
-            await socket.close(code=status.WS_1008_POLICY_VIOLATION)
-            return
-        channels: FightChannels = socket.app.state.fights
-        await socket.accept()
-        channels.join(fight_id, socket)
-        try:
-            await socket.send_json({"type": "joined", "fight": fight_id, "watching": channels.watching(fight_id)})
-            while True:
-                # The page only listens; anything it sends is ignored (commands go through the calls).
-                await socket.receive_text()
-        except WebSocketDisconnect:
-            pass
-        finally:
-            channels.leave(fight_id, socket)
+    app.include_router(fights_router)
+    app.add_api_websocket_route("/ws/fights/{fight_id}", fight_socket)
 
     return app
-
-
-async def logged_in(socket: WebSocket) -> bool:
-    account_id = socket.session.get(SESSION_ACCOUNT)
-    if account_id is None:
-        return False
-    async with socket.app.state.sessionmaker() as session:
-        account = await session.get(Account, account_id)
-    return account is not None and account.session_version == socket.session.get(SESSION_VERSION)

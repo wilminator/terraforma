@@ -12,7 +12,9 @@ stored as exact text (``ExactJSON``), because a database's own JSON type may re-
 a hash covers every digit.
 """
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, UniqueConstraint, false
+from datetime import datetime
+
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db.base import Base, Timestamps
@@ -31,6 +33,10 @@ class FightRecord(Located, Timestamps, Base):
     initial_state: Mapped[dict] = mapped_column(ExactJSON)
     # Whether the fight's gold has been paid out (it is paid once: see terraforma.economy).
     gold_paid: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Live fights: when the round being waited for plays whether or not everyone has committed (None: not
+    # running), and whether the fight has ended and been saved (see fights.live).
+    round_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    finished: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
 
 class FightParticipant(Base):
@@ -63,3 +69,19 @@ class FightActionRecord(Base):
     hash: Mapped[str] = mapped_column(String(64))
     # The fight after the round, kept only when asked (to check replays against).
     final_state: Mapped[dict | None] = mapped_column(ExactJSON)
+
+
+class FightCommandRecord(Base):
+    """A fighter's command for the round being waited for. Taken from the player, replaced if they change their mind,
+    and gone once the round has played (the round's own record keeps the commands that were used)."""
+
+    __tablename__ = "fight_commands"
+
+    fight_id: Mapped[int] = mapped_column(ForeignKey("fights.id"), primary_key=True, autoincrement=False)
+    round_number: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    party: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    group_index: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    character: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    command: Mapped[int] = mapped_column(Integer)
+    using_index: Mapped[int] = mapped_column(Integer)
+    target: Mapped[list] = mapped_column(JSON)
