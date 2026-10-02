@@ -447,3 +447,26 @@ async def test_the_log_reads_back_exactly_what_was_written_floats_included(db):
     assert row.events == [tricky] and row.final_state == tricky
     assert [type(value) for value in row.events[0]["nested"]] == [float, type(None), bool, str]
     assert row.events[0]["whole"] == 40.0 and isinstance(row.events[0]["whole"], float), "a float stays a float"
+
+
+async def test_what_a_fight_did_to_the_relationships_is_applied_once_by_the_games_rules(db):
+    from terraforma.relations import service as relations_service
+    from terraforma.relations.hooks import Ref, Relations
+    from terraforma.relations.models import Relationship
+
+    hero = await a_hero(db)
+    account = await db.get(Account, hero.account_id)
+    mine, theirs = await service.create_team(db, account, "Mine"), await service.create_team(db, account, "Theirs")
+    _hub, record = await start(db)
+    for sequence, delta in ((1, -3), (2, -4)):
+        db.add(FightActionRecord(
+            fight_id=record.id, sequence=sequence, commands=[], previous_hash="", hash=f"h{sequence}", final_state={},
+            events=[["RelationChange", [mine.id, theirs.id, delta]], ["RelationChange", [theirs.id, 9999, -1]]],
+        ))
+    await db.flush()
+    assert await store.save_relations(db, record, Relations()) is True
+    row = await relations_service.get(db, Ref("team", mine.id), Ref("team", theirs.id))
+    assert row is not None and row.score == -7, "the changes added up, from the starting score"
+    assert await db.scalar(select(func.count()).select_from(Relationship)) == 1, "the change for a team that is not there was dropped"
+    assert await store.save_relations(db, record, Relations()) is False
+    assert (await relations_service.get(db, Ref("team", mine.id), Ref("team", theirs.id))).score == -7, "applied once"

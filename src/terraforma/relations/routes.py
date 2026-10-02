@@ -19,7 +19,7 @@ from .models import NOTE_MAX
 
 router = APIRouter(prefix="/api/teams/{team_id}/relationships")
 
-Kind = Literal["team"]
+Kind = Literal["team", "alliance"]
 
 
 class Other(Strict):

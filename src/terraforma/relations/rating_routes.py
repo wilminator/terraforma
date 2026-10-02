@@ -1,7 +1,7 @@
 """The rating questions after a fight: list what a player is asked, answer one, or dismiss it. Each is its own route."""
 
 from fastapi import APIRouter, HTTPException, Request, status
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from ..accounts import ratelimit
 from ..accounts.routes import Strict, limited
@@ -14,7 +14,16 @@ router = APIRouter(prefix="/api/ratings")
 
 
 class Rating(Strict):
-    score: int = Field(ge=SCORE_MIN, le=SCORE_MAX)
+    """A score for the other team, or ``accept`` for the change the game's rule suggested (one or the other)."""
+
+    score: int | None = Field(default=None, ge=SCORE_MIN, le=SCORE_MAX)
+    accept: bool = False
+
+    @model_validator(mode="after")
+    def one_answer(self):
+        if self.accept == (self.score is not None):
+            raise ValueError("answer with a score, or accept the suggestion")
+        return self
 
 
 def refuse(error: service.RelationError) -> HTTPException:
@@ -31,10 +40,10 @@ async def questions(account: CurrentAccount, db: Db, relations: GameRelations) -
 
 @router.post("/{prompt_id}/answer")
 async def answer(prompt_id: Id, body: Rating, request: Request, account: ActingAccount, db: Db, relations: GameRelations) -> dict:
-    """Rates the other team. The score that results is the game's rule (``Relations.resolve``)."""
+    """Rates the other team, or accepts the change the game's rule suggested. The score that results is the game's rule (``Relations.resolve``)."""
     await limited(request, ratelimit.RELATION_BY_ACCOUNT, str(account.id))
     try:
-        return await service.view(db, relations, await ratings.answer(db, relations, account.id, prompt_id, body.score))
+        return await service.view(db, relations, await ratings.answer(db, relations, account.id, prompt_id, body.score, body.accept))
     except service.RelationError as error:
         raise refuse(error) from error
 

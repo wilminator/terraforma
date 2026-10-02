@@ -41,6 +41,9 @@ class RatingPrompt(Timestamps, Base):
     fight_id: Mapped[int] = mapped_column(ForeignKey("fights.id"), index=True)
     subject_team_id: Mapped[int] = mapped_column(Integer, index=True)
     object_team_id: Mapped[int] = mapped_column(Integer, index=True)
-    # What the other team did: helped, harmed, or both.
+    # What the other team did: helped, harmed or both; "asked" when only the game's rule asked (``AskPlayer``).
     interaction: Mapped[str] = mapped_column(String(8))
     state: Mapped[str] = mapped_column(String(10), default=PENDING)
+    # When the game's rule asked (``Rules.relation_moved`` returned ``AskPlayer``): the change it suggests and why. Else none.
+    suggested: Mapped[int | None] = mapped_column(Integer)
+    reason: Mapped[str] = mapped_column(String(255), default="")

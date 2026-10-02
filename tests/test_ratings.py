@@ -98,9 +98,9 @@ async def test_a_neutral_team_that_was_harmed_is_asked_once_and_an_opinionated_o
     fight.get((1, 0, 0)).xp_debts.append([0, 0, 0, -0.25, 10])  # Bravo's owes Alpha's: Alpha helped Bravo
     relations = Relations()
     await relations_service.apply(db, relations, Change(Ref("team", bravo.id), Ref("team", alpha.id), score=-70))  # Bravo already dislikes Alpha
-    made = await ratings.create_prompts(db, relations, record.id, fight)
+    made = await ratings.create_prompts(db, relations, record, fight)
     assert [(each.subject_team_id, each.object_team_id, each.interaction) for each in made] == [(alpha.id, bravo.id, "harmed")]
-    assert await ratings.create_prompts(db, relations, record.id, fight) == [], "asked once per fight"
+    assert await ratings.create_prompts(db, relations, record, fight) == [], "asked once per fight"
 
 
 async def test_a_game_decides_whom_to_ask(db):
@@ -115,15 +115,15 @@ async def test_a_game_decides_whom_to_ask(db):
         async def ask_after_fight(self, session, subject, object, interaction, score):
             return True
 
-    assert await ratings.create_prompts(db, Never(), record.id, fight) == []
+    assert await ratings.create_prompts(db, Never(), record, fight) == []
     await relations_service.apply(db, Always(), Change(Ref("team", alpha.id), Ref("team", bravo.id), score=-90))
-    assert len(await ratings.create_prompts(db, Always(), record.id, fight)) == 1, "even one that has an opinion, when the game says so"
+    assert len(await ratings.create_prompts(db, Always(), record, fight)) == 1, "even one that has an opinion, when the game says so"
 
 
 async def test_only_the_team_asked_sees_the_question_and_with_the_names(db):
     mike, zed, alpha, bravo, _a, _b, fight, record = await a_pvp_fight(db)
     fight.get((0, 0, 0)).xp_debts.append([1, 0, 0, 0.5, 10])
-    await ratings.create_prompts(db, Relations(), record.id, fight)
+    await ratings.create_prompts(db, Relations(), record, fight)
     [asked] = await ratings.pending(db, mike.id)
     assert asked["interaction"] == "harmed" and asked["fight"] == record.guid
     assert (asked["team"], asked["other"]) == ({"id": alpha.id, "name": "Alpha"}, {"id": bravo.id, "name": "Bravo"})
@@ -133,7 +133,7 @@ async def test_only_the_team_asked_sees_the_question_and_with_the_names(db):
 async def test_answering_rates_the_team_through_the_games_rule_and_closes_the_question(db):
     mike, zed, alpha, bravo, _a, _b, fight, record = await a_pvp_fight(db)
     fight.get((0, 0, 0)).xp_debts.append([1, 0, 0, 0.5, 10])
-    [prompt] = await ratings.create_prompts(db, Relations(), record.id, fight)
+    [prompt] = await ratings.create_prompts(db, Relations(), record, fight)
 
     class Cautious(Relations):
         async def resolve(self, session, subject, object, current, change):
@@ -149,7 +149,7 @@ async def test_answering_rates_the_team_through_the_games_rule_and_closes_the_qu
 async def test_nobody_else_can_answer_or_dismiss_and_dismissing_changes_nothing(db):
     mike, zed, alpha, bravo, _a, _b, fight, record = await a_pvp_fight(db)
     fight.get((0, 0, 0)).xp_debts.append([1, 0, 0, 0.5, 10])
-    [prompt] = await ratings.create_prompts(db, Relations(), record.id, fight)
+    [prompt] = await ratings.create_prompts(db, Relations(), record, fight)
     with pytest.raises(relations_service.NotFound):
         await ratings.answer(db, Relations(), zed.id, prompt.id, 50)
     with pytest.raises(relations_service.NotFound):
@@ -163,7 +163,7 @@ async def test_nobody_else_can_answer_or_dismiss_and_dismissing_changes_nothing(
 async def test_a_team_that_goes_takes_its_questions_with_it(db):
     mike, zed, alpha, bravo, _a, _b, fight, record = await a_pvp_fight(db)
     fight.get((0, 0, 0)).xp_debts.append([1, 0, 0, 0.5, 10])
-    await ratings.create_prompts(db, Relations(), record.id, fight)
+    await ratings.create_prompts(db, Relations(), record, fight)
     await service.delete_team(db, zed, bravo.id)
     assert await db.scalar(select(RatingPrompt.id)) is None
 
@@ -182,6 +182,59 @@ async def test_a_player_fight_played_to_the_end_asks_the_teams_that_hurt_each_ot
     assert {(each["team"]["id"], each["other"]["id"]) for each in await ratings.pending(db, mike.id)} <= {(alpha.id, bravo.id)}
 
 
+# --- the game's own rule asking (AskPlayer) ----------------------------------------------------------------------------------------
+
+async def a_prompt_in_the_log(db, delta=-15, reason="you nuked a neutral team"):
+    """A PvP fight whose log holds a RelationPrompt event from Alpha about Bravo, as ``Rules.relation_moved`` returning AskPlayer makes."""
+    from terraforma.fights.events import EventType
+    from terraforma.fights.models import FightActionRecord
+
+    mike, zed, alpha, bravo, _a, _b, fight, record = await a_pvp_fight(db)
+    db.add(FightActionRecord(fight_id=record.id, sequence=1, commands=[], events=[[EventType.RELATION_PROMPT.value, [alpha.id, bravo.id, delta, reason]]],
+                             previous_hash="", hash=""))
+    await db.flush()
+    return mike, zed, alpha, bravo, fight, record
+
+
+async def test_a_question_the_games_rule_asked_carries_its_suggestion_and_reason_and_is_always_asked(db):
+    mike, zed, alpha, bravo, fight, record = await a_prompt_in_the_log(db)
+    await relations_service.apply(db, Relations(), Change(Ref("team", alpha.id), Ref("team", bravo.id), score=-80))  # not neutral: still asked
+    [prompt] = await ratings.create_prompts(db, Relations(), record, fight)
+    assert (prompt.subject_team_id, prompt.object_team_id, prompt.interaction, prompt.suggested, prompt.reason) == (alpha.id, bravo.id, "asked", -15, "you nuked a neutral team")
+    [shown] = await ratings.pending(db, mike.id)
+    assert (shown["suggested"], shown["reason"]) == (-15, "you nuked a neutral team")
+    assert await ratings.pending(db, zed.id) == []
+
+
+async def test_a_suggestion_can_be_accepted_as_it_stands_and_the_game_still_decides(db):
+    mike, zed, alpha, bravo, fight, record = await a_prompt_in_the_log(db, delta=-15)
+    await relations_service.apply(db, Relations(), Change(Ref("team", alpha.id), Ref("team", bravo.id), score=10))
+    [prompt] = await ratings.create_prompts(db, Relations(), record, fight)
+    row = await ratings.answer(db, Relations(), mike.id, prompt.id, accept=True)
+    assert row.score == -5 and prompt.state == "answered", "10 less 15"
+
+
+async def test_there_is_only_one_way_to_answer_and_only_a_game_question_has_a_suggestion(db):
+    mike, zed, alpha, bravo, _a, _b, fight, record = await a_pvp_fight(db)
+    fight.get((0, 0, 0)).xp_debts.append([1, 0, 0, 0.5, 10])
+    [prompt] = await ratings.create_prompts(db, Relations(), record, fight)
+    with pytest.raises(relations_service.RelationError, match="no suggestion"):
+        await ratings.answer(db, Relations(), mike.id, prompt.id, accept=True)
+    for kwargs in ({}, {"score": 5, "accept": True}):
+        with pytest.raises(relations_service.RelationError, match="score, or accept"):
+            await ratings.answer(db, Relations(), mike.id, prompt.id, **kwargs)
+    assert prompt.state == "pending"
+
+
+async def test_a_question_both_the_rule_and_the_debts_raise_is_one_question_with_the_suggestion(db):
+    mike, zed, alpha, bravo, fight, record = await a_prompt_in_the_log(db)
+    fight.get((0, 0, 0)).xp_debts.append([1, 0, 0, 0.5, 10])  # Bravo harmed Alpha too: the same pair, once
+    fight.get((1, 0, 0)).xp_debts.append([0, 0, 0, 0.5, 10])  # and Alpha harmed Bravo: Bravo is asked about Alpha as well
+    made = await ratings.create_prompts(db, Relations(), record, fight)
+    assert sorted((each.subject_team_id, each.object_team_id, each.suggested) for each in made) == sorted([(alpha.id, bravo.id, -15), (bravo.id, alpha.id, None)])
+    assert [each.interaction for each in made if each.subject_team_id == alpha.id] == ["harmed"], "what happened, with the rule's suggestion"
+
+
 # --- the calls ---------------------------------------------------------------------------------------------------------------------
 
 @pytest.fixture
@@ -197,7 +250,7 @@ def client(app_client):
     async def setup(db):
         mike, zed, alpha, bravo, aria, bram, fight, record = await a_pvp_fight(db)
         fight.get((0, 0, 0)).xp_debts.append([1, 0, 0, 0.5, 10])
-        [prompt] = await ratings.create_prompts(db, Relations(), record.id, fight)
+        [prompt] = await ratings.create_prompts(db, Relations(), record, fight)
         return prompt.id, bravo.id
 
     app_client.prompt_id, app_client.other_team = in_app_db(app_client, setup)
@@ -224,7 +277,7 @@ def test_a_rating_is_answered_once_with_a_login_the_token_and_a_score_in_range(c
     assert client.post(url, json={"score": 50}).status_code == 401
     headers = log_in(client)
     assert client.post(url, json={"score": 50}).status_code == 403, "no CSRF token"
-    for bad in ({"score": 101}, {"score": -101}, {"score": "9"}, {}, {"score": 5, "extra": 1}):
+    for bad in ({"score": 101}, {"score": -101}, {"score": "9"}, {}, {"score": 5, "extra": 1}, {"score": 5, "accept": True}, {"accept": False}):
         assert client.post(url, json=bad, headers=headers).status_code == 422
     done = client.post(url, json={"score": 55}, headers=headers)
     assert done.status_code == 200 and done.json()["score"] == 55 and done.json()["band"] == "friendly"
@@ -240,3 +293,19 @@ def test_a_question_can_be_dismissed_and_is_not_anyone_elses_to_answer(client):
     assert client.post(f"/api/ratings/{client.prompt_id}/dismiss", headers=headers).json() == {"dismissed": True}
     assert client.post(f"/api/ratings/{client.prompt_id}/dismiss", headers=headers).status_code == 409
     assert client.post("/api/ratings/999/dismiss", headers=headers).status_code == 404
+
+
+def test_accepting_a_suggestion_through_the_call(app_client):
+    client = app_client
+
+    async def setup(db):
+        mike, zed, alpha, bravo, fight, record = await a_prompt_in_the_log(db, delta=-30)
+        [prompt] = await ratings.create_prompts(db, Relations(), record, fight)
+        return prompt.id
+
+    prompt_id = in_app_db(client, setup)
+    headers = log_in(client)
+    [asked] = client.get("/api/ratings").json()["questions"]
+    assert (asked["suggested"], asked["reason"]) == (-30, "you nuked a neutral team")
+    done = client.post(f"/api/ratings/{prompt_id}/answer", json={"accept": True}, headers=headers)
+    assert done.status_code == 200 and done.json()["score"] == -30 and done.json()["band"] == "wary"

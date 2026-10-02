@@ -121,5 +121,6 @@ from .content import models as _content  # noqa: E402,F401
 from .heroes import models as _heroes  # noqa: E402,F401
 from .fights import models as _fights  # noqa: E402,F401
 from .parties import models as _parties  # noqa: E402,F401
+from .alliances import models as _alliances  # noqa: E402,F401
 from .relations import models as _relations  # noqa: E402,F401
 from .trading import models as _trading  # noqa: E402,F401

@@ -1,7 +1,7 @@
 """rating prompts: asking a player to rate a team after a fight
 
-Revision ID: 0019
-Revises: 0017
+Revision ID: 0020
+Revises: 0019
 Created: 2026-10-02
 """
 from collections.abc import Sequence
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from alembic import op
 
 
-revision: str = '0019'
-down_revision: str | None = '0017'  # alliances (0018, in flight) also build on 0017: whichever merges second re-points
+revision: str = '0020'
+down_revision: str | None = '0019'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -24,6 +24,8 @@ def upgrade() -> None:
     sa.Column('object_team_id', sa.Integer(), nullable=False),
     sa.Column('interaction', sa.String(length=8), nullable=False),
     sa.Column('state', sa.String(length=10), nullable=False),
+    sa.Column('suggested', sa.Integer(), nullable=True),
+    sa.Column('reason', sa.String(length=255), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['fight_id'], ['fights.id'], name=op.f('fk_rating_prompts_fight_id_fights')),

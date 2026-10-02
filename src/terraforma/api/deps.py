@@ -7,6 +7,7 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..economy import Economy, TeamGold
+from ..alliances.hooks import Alliances
 from ..relations.hooks import Relations
 from ..fights.rules import Rules
 from ..models import Account
@@ -48,6 +49,15 @@ def get_relations(request: Request) -> Relations:
 
 
 GameRelations = Annotated[Relations, Depends(get_relations)]
+
+
+def get_alliances(request: Request) -> Alliances:
+    """The game's alliance rules (the engine's defaults, when the app runs without a game)."""
+    game = request.app.state.game
+    return game.alliances if game else Alliances()
+
+
+GameAlliances = Annotated[Alliances, Depends(get_alliances)]
 
 
 async def current_account(request: Request, db: Db) -> Account:

@@ -17,7 +17,7 @@ nobody picks their own opponents.
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .. import wallclock
@@ -32,7 +32,7 @@ from .build import known_drop_tables, known_statuses, monster_fighter, team_part
 from .combatant import Address
 from .events import Event
 from .fight import build_fight
-from .models import FightCommandRecord, FightParticipant, FightRecord
+from .models import FightActionRecord, FightCommandRecord, FightParticipant, FightRecord
 from .resolve import valid_action
 from .rules import Rules
 
@@ -210,8 +210,8 @@ async def resolve_round(session: AsyncSession, record: FightRecord, rules: Rules
     now_fight, _played = await store.load_state(session, record, rules)
     if now_fight.over:
         record.finished, record.round_deadline = True, None
-        await store.apply_results(session, record, rules, economy)
-        await ratings.create_prompts(session, relations or Relations(), record.id, now_fight)
+        await store.apply_results(session, record, rules, economy, relations)
+        await ratings.create_prompts(session, relations or Relations(), record, now_fight)
     else:
         record.round_deadline = wallclock.now() + timedelta(seconds=rules.round_seconds)
     await session.flush()
@@ -269,6 +269,37 @@ async def view(session: AsyncSession, record: FightRecord, rules: Rules, account
             for address in fight.addresses()
         ],
     }
+
+
+async def mine(session: AsyncSession, account_id: int, limit: int = 20, running_only: bool = False) -> list[dict]:
+    """The fights an account has a hero in, running ones first and then the most recent: what a page needs to find its
+    way to a fight (its number for the calls and the socket, its public name to share, which round it waits for and when it
+    plays, and which of the account's heroes are in it)."""
+    query = (
+        select(FightRecord).join(FightParticipant, FightParticipant.fight_id == FightRecord.id).join(Hero, Hero.id == FightParticipant.hero_id)
+        .where(Hero.account_id == account_id).distinct()
+    )
+    if running_only:
+        query = query.where(FightRecord.finished.is_(False))
+    records = (await session.scalars(query.order_by(FightRecord.finished, FightRecord.id.desc()).limit(limit))).all()
+    ids = [record.id for record in records]
+    played = dict((await session.execute(
+        select(FightActionRecord.fight_id, func.count()).where(FightActionRecord.fight_id.in_(ids)).group_by(FightActionRecord.fight_id)
+    )).all()) if ids else {}
+    heroes: dict[int, list[dict]] = {fight_id: [] for fight_id in ids}
+    rows = await session.execute(
+        select(FightParticipant.fight_id, Hero.id, Hero.name).join(Hero, Hero.id == FightParticipant.hero_id)
+        .where(FightParticipant.fight_id.in_(ids), Hero.account_id == account_id).order_by(FightParticipant.id)
+    ) if ids else []
+    for fight_id, hero_id, name in rows:
+        heroes[fight_id].append({"hero_id": hero_id, "name": name})
+    return [
+        {
+            "id": record.id, "guid": record.guid, "over": record.finished, "round": played.get(record.id, 0) + 1,
+            "deadline": aware(record.round_deadline).isoformat() if record.round_deadline else None, "heroes": heroes[record.id],
+        }
+        for record in records
+    ]
 
 
 async def watchers(session: AsyncSession, record: FightRecord) -> set[int]:

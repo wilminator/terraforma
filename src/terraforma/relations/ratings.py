@@ -8,6 +8,10 @@ the score that results, and ``Relations.ask_after_fight`` lets a game decide who
 Who interacted with whom is read off the experience debts the fight kept (``Rules.gauge_moved`` and
 ``Rules.status_acted``): a debt of a fighter to someone on another player team means that team harmed it (positive) or
 helped it (negative). Monsters and teams of the same party's own side are not asked about.
+
+A game's own rule can ask too: when ``Rules.relation_moved`` returns ``AskPlayer(delta, reason)``, the fight's log holds a
+``RelationPrompt`` event and the actor's team is asked whether to change its view by that much. That question is always
+asked (the game said so), carries the suggestion and the reason, and can be accepted as it stands or answered with a score.
 """
 
 from sqlalchemy import select
@@ -43,22 +47,47 @@ def interactions(fight) -> dict[tuple[int, int], str]:
     return {pair: BOTH if len(found) > 1 else next(iter(found)) for pair, found in kinds.items()}
 
 
-async def create_prompts(session: AsyncSession, relations: Relations, fight_id: int, fight) -> list[RatingPrompt]:
-    """Puts the questions a finished fight raises (see the module's text). Safe to call twice: a team is asked once per fight."""
+async def asked_by_the_game(session: AsyncSession, record) -> dict[tuple[int, int], tuple[int, str]]:
+    """What the game's own rule asked in a finished fight: ``{(team, other team): (suggested change, reason)}``, a team's
+    suggestions for another added up and the last reason kept (the fight's ``RelationPrompt`` events)."""
+    from ..fights import store
+    from ..fights.events import Event, EventType
+
+    asked: dict[tuple[int, int], tuple[int, str]] = {}
+    for action in await store.actions(session, record):
+        for raw in action.events:
+            each = Event.from_list(raw)
+            if each.type is EventType.RELATION_PROMPT:
+                team, other, delta, reason = each.data
+                asked[(team, other)] = (asked.get((team, other), (0, ""))[0] + delta, reason)
+    return asked
+
+
+async def create_prompts(session: AsyncSession, relations: Relations, record, fight) -> list[RatingPrompt]:
+    """Puts the questions a finished fight raises (see the module's text): those the game's rule asked, then those the
+    debts raise for a neutral team the game agrees to ask. Safe to call twice: a team is asked once per fight about another."""
+    seen = interactions(fight)
     made = []
-    for (subject_team, object_team), interaction in sorted(interactions(fight).items()):
+    wanted: list[tuple[int, int, str, int | None, str]] = [
+        (team, other, seen.get((team, other), "asked"), delta, reason) for (team, other), (delta, reason) in sorted((await asked_by_the_game(session, record)).items())
+    ]
+    for (subject_team, object_team), interaction in sorted(seen.items()):
         subject, object = Ref("team", subject_team), Ref("team", object_team)
-        if await service.name_of(session, subject) is None or await service.name_of(session, object) is None:
-            continue
         row = await service.get(session, subject, object)
         score = row.score if row is not None else await relations.initial(session, subject, object)
-        if not await relations.ask_after_fight(session, subject, object, interaction, score):
+        if await relations.ask_after_fight(session, subject, object, interaction, score):
+            wanted.append((subject_team, object_team, interaction, None, ""))
+    for subject_team, object_team, interaction, suggested, reason in wanted:
+        if await service.name_of(session, Ref("team", subject_team)) is None or await service.name_of(session, Ref("team", object_team)) is None:
+            continue
+        if subject_team == object_team or any(each.subject_team_id == subject_team and each.object_team_id == object_team for each in made):
             continue
         if await session.scalar(select(RatingPrompt.id).where(
-            RatingPrompt.fight_id == fight_id, RatingPrompt.subject_team_id == subject_team, RatingPrompt.object_team_id == object_team
+            RatingPrompt.fight_id == record.id, RatingPrompt.subject_team_id == subject_team, RatingPrompt.object_team_id == object_team
         )):
             continue
-        prompt = RatingPrompt(fight_id=fight_id, subject_team_id=subject_team, object_team_id=object_team, interaction=interaction)
+        prompt = RatingPrompt(fight_id=record.id, subject_team_id=subject_team, object_team_id=object_team, interaction=interaction,
+                              suggested=suggested, reason=reason)
         session.add(prompt)
         made.append(prompt)
     await session.flush()
@@ -77,7 +106,8 @@ async def pending(session: AsyncSession, account_id: int, limit: int = 50) -> li
         .where(asking.c.account_id == account_id, RatingPrompt.state == PENDING).order_by(RatingPrompt.id).limit(limit)
     )
     return [
-        {"id": prompt.id, "fight": guid, "interaction": prompt.interaction, "team": {"id": team_id, "name": team_name},
+        {"id": prompt.id, "fight": guid, "interaction": prompt.interaction, "suggested": prompt.suggested, "reason": prompt.reason,
+         "team": {"id": team_id, "name": team_name},
          "other": {"id": other_id, "name": other_name}}
         for prompt, guid, team_id, team_name, other_id, other_name in rows.all()
     ]
@@ -93,13 +123,18 @@ async def _own_open(session: AsyncSession, account_id: int, prompt_id: int) -> R
     return prompt
 
 
-async def answer(session: AsyncSession, relations: Relations, account_id: int, prompt_id: int, score: int):
+async def answer(session: AsyncSession, relations: Relations, account_id: int, prompt_id: int, score: int | None = None, accept: bool = False):
     """The player rates the other team: an ordinary change to their relationship (so the game's ``resolve`` decides the
-    score that results), then the question is closed. Returns the relationship."""
+    score that results), then the question is closed. With ``accept`` the change is the one the game's rule suggested
+    (only a question the game's rule asked has one). Returns the relationship."""
     prompt = await _own_open(session, account_id, prompt_id)
+    if accept == (score is not None):
+        raise service.RelationError("answer with a score, or accept the suggestion")
+    if accept and prompt.suggested is None:
+        raise service.RelationError("there is no suggestion to accept")
     row = await service.apply(session, relations, Change(
-        Ref("team", prompt.subject_team_id), Ref("team", prompt.object_team_id), score=score, by="player",
-        reason=f"rated after a fight in which they {prompt.interaction}",
+        Ref("team", prompt.subject_team_id), Ref("team", prompt.object_team_id), score=score, delta=prompt.suggested if accept else None,
+        by="player", reason=prompt.reason or f"rated after a fight in which they {prompt.interaction}",
     ))
     prompt.state = ANSWERED
     await session.flush()

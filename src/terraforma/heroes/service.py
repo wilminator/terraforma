@@ -18,6 +18,8 @@ from ..models import Account, Map
 from ..world.start import ensure_start
 from ..fights.rules import Rules
 from ..parties import service as parties
+from ..alliances.hooks import Alliances
+from ..alliances.service import remove_team
 from ..relations.hooks import Ref
 from ..relations.service import forget
 from . import inventory
@@ -175,9 +177,12 @@ async def rename_team(session: AsyncSession, account: Account, team_id: int, nam
     return team
 
 
-async def delete_team(session: AsyncSession, account: Account, team_id: int) -> None:
+async def delete_team(session: AsyncSession, account: Account, team_id: int, alliances: Alliances | None = None) -> None:
+    """Deletes the team: it leaves its party and its alliances (the game's ``Alliances`` says how an alliance copes), and
+    its relationships go."""
     team = await own_team(session, account, team_id)
     await parties.leave_party(session, team.id)
+    await remove_team(session, alliances or Alliances(), team.id)
     await forget(session, Ref("team", team.id))
     await session.execute(delete(TeamMember).where(TeamMember.team_id == team.id))
     await session.delete(team)
