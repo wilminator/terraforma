@@ -29,6 +29,7 @@ from .specs import (
     HURT,
     INCREASE_STATS,
     PARTY,
+    RANDOM_PARTY,
     REMOVE_BAD_STATUS,
     REMOVE_GOOD_STATUS,
     REVIVE,
@@ -42,7 +43,7 @@ def target_rating(targets: int) -> float:
     """How much a reach is worth: one target 1, a group 3, a party 9, everyone 27, and a little for neighbours."""
     if targets == GROUP:
         return 3
-    if targets == PARTY:
+    if targets in (PARTY, RANDOM_PARTY):
         return 9
     if targets in (ALL_PARTIES, ALL_ENEMIES, ALL_ALLIES, ALL_NOT_ENEMIES, ALL_NOT_ALLIES):
         return 27

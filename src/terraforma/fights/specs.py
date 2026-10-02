@@ -18,15 +18,20 @@ ALL_ENEMIES = -4
 ALL_ALLIES = -5
 ALL_NOT_ENEMIES = -6
 ALL_NOT_ALLIES = -7
+RANDOM_PARTY = -8
 
 SCOPES = {
     "individual": INDIVIDUAL, "group": GROUP, "party": PARTY,
     "all_parties": ALL_PARTIES, "all_enemies": ALL_ENEMIES, "all_allies": ALL_ALLIES,
-    "all_not_enemies": ALL_NOT_ENEMIES, "all_not_allies": ALL_NOT_ALLIES,
+    "all_not_enemies": ALL_NOT_ENEMIES, "all_not_allies": ALL_NOT_ALLIES, "random_party": RANDOM_PARTY,
 }
 
 #: The scopes that name parties by how they stand to the actor's party, rather than by position.
 BY_ALIGNMENT = (ALL_PARTIES, ALL_ENEMIES, ALL_ALLIES, ALL_NOT_ENEMIES, ALL_NOT_ALLIES)
+
+#: Every scope that is not aimed at a position: the alignment scopes, and ``RANDOM_PARTY`` (one party drawn from the
+#: fight's stream, from the ones ``Rules.random_party_pool`` names).
+NOT_AIMED = (*BY_ALIGNMENT, RANDOM_PARTY)
 
 # Effects (the seed's names, which are DragonStar's, in lower case).
 NONE = "none"
