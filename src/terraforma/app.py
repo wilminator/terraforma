@@ -29,6 +29,7 @@ from .content.loader import load_content
 from .game import Game
 from .heroes.inventory_routes import router as inventory_router
 from .heroes.routes import router as heroes_router
+from .trading.routes import router as trading_router
 from .keys import KeyRing
 from .mail import Mailer, OutboxMailer, SmtpMailer
 from .seed import load_seed
@@ -63,7 +64,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
         if game and game.seed_dir:
             # A seed that doesn't check out stops the server here, naming what's wrong.
             async with app.state.sessionmaker() as session, session.begin():
-                await load_content(session, load_seed(game.seed_dir), game.rules.stats, game.rules.resource_names)
+                await load_content(session, load_seed(game.seed_dir), game.rules.stats, game.rules.resource_names, game.rules.drop_chance_scale)
         timer = asyncio.create_task(fight_timer(app, settings.fight_timer_seconds)) if settings.fight_timer_seconds else None
         yield
         if timer is not None:
@@ -90,6 +91,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(twofa_router)
     app.include_router(heroes_router)
     app.include_router(inventory_router)
+    app.include_router(trading_router)
 
     @app.get("/api/about")
     async def about(request: Request) -> dict:

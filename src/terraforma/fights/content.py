@@ -1,6 +1,7 @@
 """Turning content rows (items, abilities, monsters) into what a fight uses. Plain attribute reads, no queries."""
 
 from .combatant import Combatant
+from .drops import DropEntry, DropTable
 from .gear import EquipOutcome
 from .rules import Rules
 from .specs import AbilitySpec, EffectSpec, ItemSpec, scope_number
@@ -33,6 +34,17 @@ def status_spec(status) -> StatusSpec:
     )
 
 
+def drop_table_spec(table, items: dict) -> DropTable:
+    """A drop table from its content row. $items maps item keys to content rows."""
+    return DropTable(
+        key=table.key, name=table.name, weighted=table.weighted, rolls=table.rolls,
+        entries=tuple(
+            DropEntry(None if entry["item"] is None else item_spec(items[entry["item"]]), entry["chance"], entry["weight"], entry["min"], entry["max"], entry["for"])
+            for entry in table.entries
+        ),
+    )
+
+
 def monster_combatant(monster, items: dict, abilities: dict, rules: Rules | None = None) -> Combatant:
     """A fighter from a monster row, with its gear on. $items and $abilities map keys to content rows."""
     stats = dict(monster.stats)
@@ -42,6 +54,7 @@ def monster_combatant(monster, items: dict, abilities: dict, rules: Rules | None
         inventory=[[item_spec(items[key]), 1] for key in monster.items],
         ai_action=monster.ai.get("action", 0), ai_goal=monster.ai.get("goal", 0),
         ai_target=monster.ai.get("target", 0), ai_experience=monster.ai.get("experience", 0), gold=monster.gold_reward,
+        drops=tuple(monster.drops or ()),
     )
     for key in monster.equipment:
         fighter.inventory.append([item_spec(items[key]), 1])

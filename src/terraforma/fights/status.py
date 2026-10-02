@@ -172,6 +172,8 @@ def place(fighter: "Combatant", spec: StatusSpec, source: Address, duration: int
     if token is None:
         token = StatusToken(spec, source, duration)
         fighter.tokens.append(token)
+        if spec.kind == GOOD and source not in fighter.buffed_by:
+            fighter.buffed_by.append(source)
     else:
         token.duration, token.rounds = duration, 0
     return token

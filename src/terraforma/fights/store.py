@@ -17,7 +17,7 @@ import hashlib
 import json
 import secrets
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -217,7 +217,26 @@ async def apply_results(session: AsyncSession, record: FightRecord, rules: Rules
         await inventory.grant_abilities(session, hero)
         updated.append(hero)
     await credit_fight_gold(session, economy or TeamGold(), record, await gold_payments(session, record))
+    await save_drops(session, record, fight)
     return updated
+
+
+async def save_drops(session: AsyncSession, record: FightRecord, fight: Fight) -> bool:
+    """Puts what the fight dropped in the heroes' inventories, once (True if it did now). The log's ``Drop`` events say
+    who got what; ``DropLost`` ones did not fit and are not saved."""
+    claimed = await session.execute(update(FightRecord).where(FightRecord.id == record.id, FightRecord.drops_saved.is_(False)).values(drops_saved=True))
+    if claimed.rowcount == 0:
+        return False
+    for action in await actions(session, record):
+        for raw in action.events:
+            each = Event.from_list(raw)
+            if each.type is EventType.DROP:
+                hero_id = fight.get(tuple(each.data[:3])).charid
+                hero = await session.get(Hero, hero_id) if hero_id is not None else None
+                if hero is not None:
+                    await inventory.add_item(session, hero, each.data[3], each.data[4])
+    await session.refresh(record, ["drops_saved"])
+    return True
 
 
 async def gold_payments(session: AsyncSession, record: FightRecord) -> list[tuple[int, int]]:
