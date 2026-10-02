@@ -14,7 +14,7 @@ a hash covers every digit.
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, false
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db.base import Base, Timestamps
@@ -41,6 +41,18 @@ class FightRecord(Located, Timestamps, Base):
     finished: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # Whether the items the fight dropped have been put in the heroes' inventories (once: see fights.store).
     drops_saved: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # The longest round time any player in the fight asked for (``Rules.time_multipliers``): rounds wait this many times
+    # ``Rules.round_seconds``. Fixed when the fight starts.
+    time_multiplier: Mapped[float] = mapped_column(Float, default=1.0, server_default="1.0")
+
+
+class PlayerSettings(Base):
+    """What a player chose for themselves. For now: how much longer rounds wait for them (``Rules.time_multipliers``)."""
+
+    __tablename__ = "player_settings"
+
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), primary_key=True)
+    time_multiplier: Mapped[float] = mapped_column(Float, default=1.0, server_default="1.0")
 
 
 class FightParticipant(Base):
@@ -89,3 +101,37 @@ class FightCommandRecord(Base):
     command: Mapped[int] = mapped_column(Integer)
     using_index: Mapped[int] = mapped_column(Integer)
     target: Mapped[list] = mapped_column(JSON)
+
+
+class PendingDrop(Located, Timestamps, Base):
+    """A drop the game held for the party's players to settle (``Rules.drop_mode``), one row per ``DropHeld`` event of a
+    fight. ``status`` is ``open`` until it is given (``awarded``: to ``winner_id``, with ``lost`` of it not fitting the pack)
+    or nobody wanted it (``unclaimed``). Stands where the fight did."""
+
+    __tablename__ = "pending_drops"
+    __table_args__ = (UniqueConstraint("fight_id", "number"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    fight_id: Mapped[int] = mapped_column(ForeignKey("fights.id"), index=True)
+    #: Which held drop of the fight this is (in the order the log held them), so saving it again adds nothing.
+    number: Mapped[int] = mapped_column(Integer)
+    party: Mapped[int] = mapped_column(Integer)
+    item_key: Mapped[str] = mapped_column(String(64))
+    qty: Mapped[int] = mapped_column(BigInteger)
+    mode: Mapped[str] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(String(16), default="open")
+    winner_id: Mapped[int | None] = mapped_column(ForeignKey("heroes.id"))
+    lost: Mapped[int] = mapped_column(BigInteger, default=0)
+
+
+class PendingDropChoice(Base):
+    """What one hero said about a pending need/want drop, and the roll that came of it once it was settled."""
+
+    __tablename__ = "pending_drop_choices"
+    __table_args__ = (UniqueConstraint("pending_id", "hero_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    pending_id: Mapped[int] = mapped_column(ForeignKey("pending_drops.id"), index=True)
+    hero_id: Mapped[int] = mapped_column(ForeignKey("heroes.id"), index=True)
+    choice: Mapped[str] = mapped_column(String(8))
+    roll: Mapped[int | None] = mapped_column(Integer)

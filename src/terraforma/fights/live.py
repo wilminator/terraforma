@@ -1,7 +1,7 @@
 """Live fights: starting one, taking the players' commands, playing rounds on time, and saving the result.
 
 A fight waits for its round. Each player commands the fighters of their own heroes (``submit_command``); the round
-plays as soon as every player's living fighter has committed, or when ``Rules.round_seconds`` run out
+plays as soon as every player's living fighter has committed, or when ``Rules.round_seconds`` (times the players' longest-asked multiplier, see ``timing``) run out
 (``resolve_overdue``, which the server's timer calls), and a fighter that has not committed defends. Monsters choose
 with the AI (``fights.ai``) from a stream of their own under the round's, and what they chose is stored with the round
 like any other command, so a replay never runs the AI again. When a round ends the fight, its result is saved to the
@@ -27,7 +27,7 @@ from ..models import Map, World
 from ..relations import ratings
 from ..relations.hooks import Relations
 from ..world.rng import WorldRng
-from . import ai, store
+from . import ai, store, timing
 from .build import known_drop_tables, known_statuses, monster_fighter, team_party
 from .combatant import Address
 from .events import Event
@@ -96,6 +96,8 @@ async def start_team_fight(session: AsyncSession, team: Team, monster_keys: list
     if busy is not None:
         raise Refused("a hero of that team is already in a fight")
     monsters = [await monster_fighter(session, key, rules) for key in monster_keys]
+    multiplier = timing.fight_multiplier([await timing.multiplier_for(session, team.account_id)])
+    timing.toughen(monsters, rules, rules.time_bonus(multiplier))
     wanted = {key for monster in monsters for key in monster.drops} | set(area_drops or ())
     tables = await known_drop_tables(session, wanted)
     if missing := set(area_drops or ()) - set(tables):
@@ -104,7 +106,8 @@ async def start_team_fight(session: AsyncSession, team: Team, monster_keys: list
     fight.parties[0].teams = teams
     first = await session.get(Hero, heroes[0].charid)
     record = await store.create_fight(session, await session.get(Map, first.map_id), fight, first.x, first.y)
-    record.round_deadline = wallclock.now() + timedelta(seconds=rules.round_seconds)
+    record.time_multiplier = multiplier
+    record.round_deadline = wallclock.now() + timedelta(seconds=rules.round_length(multiplier))
     await session.flush()
     return record
 
@@ -213,7 +216,7 @@ async def resolve_round(session: AsyncSession, record: FightRecord, rules: Rules
         await store.apply_results(session, record, rules, economy, relations)
         await ratings.create_prompts(session, relations or Relations(), record, now_fight)
     else:
-        record.round_deadline = wallclock.now() + timedelta(seconds=rules.round_seconds)
+        record.round_deadline = wallclock.now() + timedelta(seconds=rules.round_length(record.time_multiplier))
     await session.flush()
     return RoundResult(number, events, now_fight.over, record.round_deadline)
 
