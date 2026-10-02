@@ -218,3 +218,7 @@ Maps and a changing world come later. The groundwork is there from the first com
 - **Randomness.** All of it comes from the world's seed, through named streams (`WorldRng`), so worlds can be rebuilt and bugs replayed.
 - **Time.** The world keeps its own clock, counted in ticks rather than wall time (`advance_clock`).
 - **Checked input.** Map names and coordinates from the browser are validated like any other input (`Position`).
+
+## Housekeeping
+
+`terraforma.housekeeping` tidies up what has gone stale. The server runs every job each `housekeeping_seconds` (settings, 3600 by default, 0 for never; `housekeeping.run` does one pass). A job is an async function `(session, now)` registered with `@housekeeping.job` that returns how many rows it removed; each runs in its own transaction, and a failing job is logged without stopping the others. A job deletes only what nothing reads any more, so a repeat or a second server is harmless. Today: `finished_rate_limit_windows` removes rate-limit counters whose window is over (a subject that never returns would keep its row otherwise). Games cannot add jobs yet.

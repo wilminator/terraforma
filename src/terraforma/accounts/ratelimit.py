@@ -35,6 +35,8 @@ EMAIL_CHANGE_BY_ACCOUNT = Limit("email-change", 5, 60 * 60)
 TRADE_BY_ACCOUNT = Limit("trade", 120, 60 * 60)
 RELATION_BY_ACCOUNT = Limit("relation", 120, 60 * 60)
 ALLIANCE_BY_ACCOUNT = Limit("alliance", 120, 60 * 60)
+# Every limit above, for housekeeping: new limits go in here too (a test checks that none is missing).
+ALL_LIMITS = [value for value in list(globals().values()) if isinstance(value, Limit)]
 
 
 class RateLimited(Exception):
