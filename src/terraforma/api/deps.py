@@ -6,6 +6,7 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..economy import Economy, TeamGold
 from ..fights.rules import Rules
 from ..models import Account
 from .security import SESSION_ACCOUNT, SESSION_VERSION, csrf_matches
@@ -28,6 +29,15 @@ def get_rules(request: Request) -> Rules:
 
 
 GameRules = Annotated[Rules, Depends(get_rules)]
+
+
+def get_economy(request: Request) -> Economy:
+    """The game's economy (gold on the team, when the app runs without a game)."""
+    game = request.app.state.game
+    return game.economy if game else TeamGold()
+
+
+GameEconomy = Annotated[Economy, Depends(get_economy)]
 
 
 async def current_account(request: Request, db: Db) -> Account:

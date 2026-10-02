@@ -116,6 +116,12 @@ How many heroes a party holds is the game's rule: `Rules.party_size`, 20 by defa
 
 These are service functions, not server calls: the map drives them later (an interaction on the map forms and merges parties), so they take ids and whoever calls them decides who may. A party becomes one side of a fight with `fights.build.party_side(session, party_id, rules)`: its heroes team by team, in the order the teams joined, in groups of `group_size` (`build_fight({0: await party_side(...), 1: ...})`).
 
+## Gold and the economy
+
+Where gold lives is the game's decision, so the engine asks `Game(economy=...)` (`terraforma.economy.Economy`). `TeamGold`, the default, is DragonStar's way: a hero on a team spends and earns from the team's gold (`Team.gold`), and a hero on no team has gold of their own (`Hero.gold`). `HeroGold` keeps every hero's gold on the hero and splits what a team earns between its heroes, the first by slot getting the odd coins. A game subclasses `Economy` for anything else, overriding `purse(session, hero)` (the row whose `gold` is the hero's money) and `credit_team(session, team_id, amount)` (what a team earns).
+
+`balance`, `credit` and `debit` work on the hero's purse; a debit that would take more than is there raises `NotEnoughGold` and takes nothing. Gold moves with single statements, so two calls at the same instant never lose a coin. The inventory call shows the hero's purse in the game's economy. A fight's gold is paid by `economy.credit_fight_gold(session, economy, fight_record, [(team_id, amount), ...])`: once per fight (the fight records that it has paid), however often it is called. These are public interfaces (the license exception covers them).
+
 ## Fight rules
 
 A fight is DragonStar's process: every fighter has chosen a command (attack with the left or right hand, use an item, change gear, use a skill, cast a spell, defend, run), then the round resolves in one pass and returns *events* (`Turn`, `Attack`, `Damage`, `Miss`, `Died`, ...) that say what happened. The fight's state after the round is what you get by applying its events in order (`terraforma.fights.replay.apply_events`), so a stored fight can be replayed and shown to spectators.

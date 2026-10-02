@@ -10,6 +10,7 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .economy import Economy, TeamGold
 from .fights.rules import Rules
 
 
@@ -21,3 +22,5 @@ class Game:
     assets_dir: Path | None = None
     # How fights are played: the stats, the resources and every formula. Override Rules to change them.
     rules: Rules = field(default_factory=Rules)
+    # Where gold lives and how it moves (on the team, DragonStar's way, unless the game says otherwise).
+    economy: Economy = field(default_factory=TeamGold)
