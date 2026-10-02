@@ -1,0 +1,11 @@
+name: Set up TerraForma tests
+description: Install Python 3.14 and the engine with its test tools (check the code out first: a local action must be there to be found).
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v7
+      with:
+        python-version: "3.14"
+        cache: pip
+    - run: pip install -e ".[dev]"
+      shell: bash

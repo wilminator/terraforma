@@ -47,3 +47,12 @@ testpaths = ["tests"]
 addopts = "-ra --dist worksteal"
 # A test stuck for two minutes dumps every thread's stack, so a hang names itself instead of waiting forever.
 faulthandler_timeout = 120
+markers = [
+    "db: runs against a database (once per database under test); the rest need none",
+    "accounts: category, see tests/conftest.py",
+    "platform: category, see tests/conftest.py",
+    "heroes: category, see tests/conftest.py",
+    "fights: category, see tests/conftest.py",
+    "social: category, see tests/conftest.py",
+    "uncategorized: a test file missing from CATEGORIES in tests/conftest.py (CI would not run it)",
+]
