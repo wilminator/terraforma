@@ -16,6 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..content.models import Job
 from ..models import Account, Map
 from ..world.start import ensure_start
+from ..fights.rules import Rules
+from ..parties import service as parties
 from . import inventory
 from .models import Hero, HeroAbility, HeroEquipment, HeroItem, Team, TeamMember
 
@@ -161,13 +163,15 @@ async def rename_team(session: AsyncSession, account: Account, team_id: int, nam
 
 async def delete_team(session: AsyncSession, account: Account, team_id: int) -> None:
     team = await own_team(session, account, team_id)
+    await parties.leave_party(session, team.id)
     await session.execute(delete(TeamMember).where(TeamMember.team_id == team.id))
     await session.delete(team)
     await session.flush()
 
 
-async def add_to_team(session: AsyncSession, account: Account, team_id: int, hero_id: int) -> TeamMember:
-    """Puts the hero in the team's first free slot. A hero on another team must leave it first."""
+async def add_to_team(session: AsyncSession, account: Account, team_id: int, hero_id: int, party_size: int = Rules.party_size) -> TeamMember:
+    """Puts the hero in the team's first free slot. A hero on another team must leave it first, and if the team is
+    in a party the party needs a place for the hero ($party_size is the game's: ``Rules.party_size``)."""
     team = await own_team(session, account, team_id)
     hero = await own_hero(session, account, hero_id)
     if await session.scalar(select(TeamMember.id).where(TeamMember.hero_id == hero.id)):
@@ -176,6 +180,10 @@ async def add_to_team(session: AsyncSession, account: Account, team_id: int, her
     free = [slot for slot in range(TEAM_SIZE) if slot not in taken]
     if not free:
         raise HeroError(f"a team has room for {TEAM_SIZE} heroes")
+    try:
+        await parties.check_room(session, team.id, party_size)
+    except parties.PartyError as error:
+        raise HeroError(str(error)) from error
     member = TeamMember(team_id=team.id, hero_id=hero.id, slot=free[0])
     session.add(member)
     await session.flush()

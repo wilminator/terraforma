@@ -66,16 +66,22 @@ def _fighter(fighter: Combatant) -> dict:
         "inventory": [[_item(item), qty] for item, qty in fighter.inventory],
         "equipment": dict(fighter.equipment),
         "command": int(fighter.command), "using": fighter.using, "target": list(fighter.target),
+        "ai": [fighter.ai_action, fighter.ai_goal, fighter.ai_target, fighter.ai_experience],
+        "progress": {
+            "level": fighter.level, "exp": fighter.exp, "job_need": fighter.job_need, "growth": dict(fighter.growth),
+            "gold": fighter.gold, "xp_debts": [list(debt) for debt in fighter.xp_debts],
+        },
         "tokens": [_token(token) for token in fighter.tokens],
     }
 
 
 def dehydrate(fight: Fight) -> dict:
-    return {"statuses": {key: _status(spec) for key, spec in fight.statuses.items()}, "parties": [
+    return {"over": fight.over, "statuses": {key: _status(spec) for key, spec in fight.statuses.items()}, "parties": [
         {
             "index": party_index,
             "allies": None if party.allies is None else sorted(party.allies),
             "enemies": None if party.enemies is None else sorted(party.enemies),
+            "teams": {str(team): list(members) for team, members in party.teams.items()},
             "groups": [
                 {"index": group_index, "characters": [
                     {"index": character_index, **_fighter(fighter)} for character_index, fighter in group.characters.items()
@@ -96,6 +102,13 @@ def _build_item(raw: dict) -> ItemSpec:
     )
 
 
+def _progress(raw: dict) -> dict:
+    return {
+        "level": raw.get("level", 1), "exp": raw.get("exp", 0), "job_need": raw.get("job_need", 0),
+        "growth": dict(raw.get("growth", {})), "gold": raw.get("gold", 0), "xp_debts": [list(debt) for debt in raw.get("xp_debts", [])],
+    }
+
+
 def _build_fighter(raw: dict, statuses: dict[str, StatusSpec]) -> Combatant:
     return Combatant(
         name=raw["name"], base=dict(raw["base"]), current=dict(raw["current"]),
@@ -103,6 +116,8 @@ def _build_fighter(raw: dict, statuses: dict[str, StatusSpec]) -> Combatant:
         inventory=[[_build_item(item), qty] for item, qty in raw["inventory"]],
         equipment=dict(raw["equipment"]), charid=raw["charid"], monster=raw.get("monster"),
         command=raw["command"], using=raw["using"], target=tuple(raw["target"]),
+        **dict(zip(("ai_action", "ai_goal", "ai_target", "ai_experience"), raw.get("ai", (0, 0, 0, 0)), strict=True)),
+        **_progress(raw.get("progress", {})),
         tokens=[
             StatusToken(statuses[token["status"]], tuple(token["source"]), token["duration"], token["rounds"], token["turns"])
             for token in raw.get("tokens", [])
@@ -121,5 +136,6 @@ def hydrate(raw: dict) -> Fight:
         parties[party["index"]] = Party(
             groups, None if party["allies"] is None else set(party["allies"]),
             None if party["enemies"] is None else set(party["enemies"]),
+            {int(team): list(members) for team, members in party.get("teams", {}).items()},
         )
-    return Fight(parties, statuses)
+    return Fight(parties, statuses, over=raw.get("over", False))

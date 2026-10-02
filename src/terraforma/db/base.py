@@ -5,6 +5,7 @@ on Postgres, MySQL and SQLite. Constraint names follow one convention so
 Alembic produces the same schema changes on each database.
 """
 
+import json
 from datetime import UTC, datetime
 
 from sqlalchemy import DateTime, MetaData
@@ -30,3 +31,8 @@ def utcnow() -> datetime:
 class Timestamps:
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+def canonical_json(value) -> str:
+    """The same text for the same data on every database and every run: sorted keys, no spaces, ASCII only."""
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)

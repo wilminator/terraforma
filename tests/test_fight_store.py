@@ -8,15 +8,16 @@ from sqlalchemy import func, select, update
 from terraforma.accounts.service import create_account
 from terraforma.content.loader import load_content
 from terraforma.fights import store
-from terraforma.fights.build import hero_fighter, monster_fighter
+from terraforma.fights.build import hero_fighter, monster_fighter, team_party
 from terraforma.fights.combatant import Command
 from terraforma.fights.fight import build_fight
 from terraforma.fights.models import FightActionRecord, FightParticipant, FightRecord
 from terraforma.fights.resolve import fight_stream
 from terraforma.fights.rules import Rules
 from terraforma.fights.state import dehydrate, hydrate
-from terraforma.fights.store import FightLogError, SequenceConflict, command_record
+from terraforma.fights.store import FightLogError, FightNotOver, FightOver, SequenceConflict, command_record
 from terraforma.heroes import inventory, service
+from terraforma.models import Account, World
 from terraforma.world.rng import WorldRng
 from terraforma.world.start import ensure_start
 
@@ -35,6 +36,7 @@ def attack(source, target):
 async def start(db, **stats):
     """A duel on the hub: a sturdy fighter against another with a sword."""
     hub = await ensure_start(db)
+    (await db.get(World, hub.world_id)).seed = 20261002  # a world's seed is random: fix it so a duel always plays out the same
     knight = fighter("Knight", HP=80, Strength=18, Accuracy=14, Speed=11)
     knight.inventory = [[sword(), 1]]
     knight.equipment = {"lhand": 0}
@@ -215,15 +217,21 @@ async def test_two_players_cannot_play_the_same_round(db, monkeypatch):
 # --- heroes and monsters ------------------------------------------------------------------------------------------------------
 
 SEED = {
-    "abilities": [{"key": "slash", "name": "Slash", "kind": "skill", "effect": {"effect": "hurt", "base": 4}}],
+    "abilities": [
+        {"key": "slash", "name": "Slash", "kind": "skill", "effect": {"effect": "hurt", "base": 4}},
+        {"key": "rend", "name": "Rend", "kind": "skill", "effect": {"effect": "hurt", "base": 9}},
+    ],
     "items": [
         {"key": "sword", "name": "Sword", "equip_slots": ["hand"], "stat_bonus": {"Strength": 3}},
         {"key": "potion", "name": "Potion", "one_use": True, "use_effect": {"effect": "heal", "base": 10}},
     ],
-    "jobs": [{"key": "fighter", "name": "Fighter", "stat_growth": {"HP": 40, "MP": 5, "Speed": 10, "Accuracy": 12, "Strength": 12, "Dodge": 4, "Block": 6}, "abilities": ["slash"]}],
+    "jobs": [{"key": "fighter", "name": "Fighter", "xp_needed": 5, "abilities": [{"ability": "slash", "level": 1}, {"ability": "rend", "level": 2}],
+              "stat_growth": {"HP": 40, "MP": 5, "Speed": 10, "Accuracy": 12, "Strength": 12, "Dodge": 4, "Block": 6}}],
     "personalities": [{"key": "plain", "name": "Plain"}],
     "monsters": [{"key": "ogre", "name": "Ogre", "personality": "plain", "stats": {"HP": 60, "MP": 0, "Speed": 8, "Accuracy": 10, "Strength": 14, "Dodge": 2, "Block": 5},
-                  "items": ["potion"], "equipment": ["sword"]}],
+                  "items": ["potion"], "equipment": ["sword"]},
+                 {"key": "rat", "name": "Rat", "personality": "plain", "gold_reward": 12,
+                  "stats": {"HP": 1, "MP": 0, "Speed": 4, "Accuracy": 4, "Strength": 2, "Dodge": 1, "Block": 1}}],
 }
 
 
@@ -264,10 +272,109 @@ async def test_a_hero_and_a_monster_fight_a_logged_verified_fight(db):
     record = await store.create_fight(db, hub, fight)
     rows = (await db.scalars(select(FightParticipant).where(FightParticipant.fight_id == record.id).order_by(FightParticipant.party))).all()
     assert (rows[0].hero_id, rows[0].monster_key, rows[1].hero_id, rows[1].monster_key) == (hero.id, None, None, "ogre")
+    rounds = 0
     for _ in range(4):
-        await store.play_round(db, record, [command_record((0, 0, 0), Command.ATTACK_RIGHT, 0, (1, 0, 0)),
-                                            command_record((1, 0, 0), Command.ATTACK_LEFT, 0, (0, 0, 0))], RULES, snapshot=True)
-    assert await store.verify(db, record, RULES, deep=True) == 4
+        try:
+            await store.play_round(db, record, [command_record((0, 0, 0), Command.ATTACK_RIGHT, 0, (1, 0, 0)),
+                                                command_record((1, 0, 0), Command.ATTACK_LEFT, 0, (0, 0, 0))], RULES, snapshot=True)
+        except FightOver:
+            break
+        rounds += 1
+    assert await store.verify(db, record, RULES, deep=True) == rounds
     state, played = await store.load_state(db, record, RULES)
-    assert played == 4 and (state.get((0, 0, 0)).current["HP"] < 40 or state.get((1, 0, 0)).current["HP"] < 60)
-    assert await db.scalar(select(func.count()).select_from(FightActionRecord).where(FightActionRecord.fight_id == record.id)) == 4
+    assert played == rounds and (state.get((0, 0, 0)).current["HP"] < 40 or state.get((1, 0, 0)).current["HP"] < 60)
+    assert await db.scalar(select(func.count()).select_from(FightActionRecord).where(FightActionRecord.fight_id == record.id)) == rounds
+
+
+# --- the end of a fight: experience, gold, and saving the result ----------------------------------------------------------------
+
+async def a_team_fights_a_rat(db):
+    hero = await a_hero(db)
+    account = await db.get(Account, hero.account_id)
+    team = await service.create_team(db, account, "Alpha")
+    await service.add_to_team(db, account, team.id, hero.id)
+    hub = await ensure_start(db)
+    heroes, teams = await team_party(db, team)
+    fight = build_fight({0: {0: heroes}, 1: {0: [await monster_fighter(db, "rat")]}})
+    fight.parties[0].teams = teams
+    return hero, await store.create_fight(db, hub, fight)
+
+
+async def play_to_the_end(db, record, limit=30):
+    commands = [command_record((0, 0, 0), Command.ATTACK_RIGHT, 0, (1, 0, 0)), command_record((1, 0, 0), Command.ATTACK_LEFT, 0, (0, 0, 0))]
+    events = []
+    for _ in range(limit):
+        try:
+            events.extend(await store.play_round(db, record, commands, RULES))
+        except FightOver:
+            return events
+    raise AssertionError("the fight went on too long")
+
+
+async def test_a_team_of_heroes_fights_to_the_end_and_is_paid_in_the_log(db):
+    hero, record = await a_team_fights_a_rat(db)
+    events = await play_to_the_end(db, record)
+    kinds_seen = [each.type.value for each in events]
+    assert "FightOver" in kinds_seen and "XpEarned" in kinds_seen and "LevelUp" in kinds_seen
+    gold = [each for each in events if each.type.value == "Gold"]
+    assert gold and gold[0].data[2] == 12, "the rat's gold goes to the team"
+    state, _played = await store.load_state(db, record, RULES)
+    assert state.over and state.get((0, 0, 0)).exp > 0 and state.get((0, 0, 0)).level >= 2
+    assert await store.verify(db, record, RULES, deep=True) > 0, "the payout and the level-up dice replay exactly"
+
+
+async def test_a_finished_fight_plays_no_more_rounds(db):
+    _hero, record = await a_team_fights_a_rat(db)
+    await play_to_the_end(db, record)
+    before = len(await store.actions(db, record))
+    with pytest.raises(FightOver):
+        await store.play_round(db, record, [], RULES)
+    assert len(await store.actions(db, record)) == before
+
+
+async def test_the_result_is_saved_to_the_hero_with_the_abilities_its_new_level_earns(db):
+    hero, record = await a_team_fights_a_rat(db)
+    assert [ability.key for ability in await inventory.known_abilities(db, hero)] == ["slash"]
+    with pytest.raises(FightNotOver):
+        await store.apply_results(db, record, RULES)
+    await play_to_the_end(db, record)
+    updated = await store.apply_results(db, record, RULES)
+    assert [each.id for each in updated] == [hero.id]
+    state, _played = await store.load_state(db, record, RULES)
+    fighter_ = state.get((0, 0, 0))
+    assert (hero.xp, hero.level, hero.stats) == (fighter_.exp, fighter_.level, fighter_.base)
+    assert hero.level >= 2 and hero.stats["Strength"] > 12, "levelling grew its stats"
+    assert sorted(ability.key for ability in await inventory.known_abilities(db, hero)) == ["rend", "slash"], "level 2 earns Rend"
+    await store.apply_results(db, record, RULES)
+    assert (hero.xp, hero.level) == (fighter_.exp, fighter_.level), "saving twice changes nothing"
+
+
+async def test_the_fights_gold_is_paid_to_the_team_once(db):
+    from terraforma.heroes.models import Team, TeamMember
+
+    hero, record = await a_team_fights_a_rat(db)
+    await play_to_the_end(db, record)
+    team_id = await db.scalar(select(TeamMember.team_id).where(TeamMember.hero_id == hero.id))
+    payments = await store.gold_payments(db, record)
+    assert [team for team, _amount in payments] == [team_id] and payments[0][1] > 0, "the rat's gold, to the team that won it"
+    await store.apply_results(db, record, RULES)
+    assert (await db.get(Team, team_id)).gold == payments[0][1] and record.gold_paid is True
+    await store.apply_results(db, record, RULES)
+    assert (await db.get(Team, team_id)).gold == payments[0][1], "paid once, however often the result is saved"
+
+
+# --- exact storage --------------------------------------------------------------------------------------------------------------
+
+async def test_the_log_reads_back_exactly_what_was_written_floats_included(db):
+    """MySQL's own JSON type turns 0.11666666666666667 into 0.11666666666666668: the log must not use it."""
+    _hub, record = await start(db)
+    await store.play_round(db, record, DUEL, RULES)
+    await db.commit()
+    row = (await store.actions(db, record))[0]
+    tricky = {"ratio": 0.11666666666666667, "third": 1 / 3, "whole": 40.0, "small": 1e-7, "big": 12345678.9, "nested": [0.1 + 0.2, None, True, "é"]}
+    await db.execute(update(FightActionRecord).where(FightActionRecord.fight_id == record.id).values(events=[tricky], final_state=tricky))
+    await db.commit()
+    await db.refresh(row)
+    assert row.events == [tricky] and row.final_state == tricky
+    assert [type(value) for value in row.events[0]["nested"]] == [float, type(None), bool, str]
+    assert row.events[0]["whole"] == 40.0 and isinstance(row.events[0]["whole"], float), "a float stays a float"

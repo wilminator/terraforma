@@ -84,7 +84,10 @@ def participants(fight: Fight, rules: Rules, rng: random.Random) -> list[Address
 
 
 def do_combat(fight: Fight, rules: Rules, rng: random.Random) -> list[Event]:
-    """Plays one round and returns its events. Stops early once only one party is left standing."""
+    """Plays one round and returns its events. Stops early once only one party is left standing, and then pays the
+    fight out (once: a finished fight plays no more rounds)."""
+    if fight.over:
+        return []
     log = Log(fight, rules)
     for address in fight.addresses():
         fire(fight, rules, rng, address, status.ROUND_START, log)
@@ -98,6 +101,10 @@ def do_combat(fight: Fight, rules: Rules, rng: random.Random) -> list[Event]:
     for address in fight.addresses():
         fire(fight, rules, rng, address, status.ROUND_END, log)
     end_round(fight, rules, log)
+    if rules.fight_is_over(fight):
+        fight.over = True
+        log.add(EventType.FIGHT_OVER)
+        log.extend(rules.on_fight_end(fight, rng))
     return log.events
 
 

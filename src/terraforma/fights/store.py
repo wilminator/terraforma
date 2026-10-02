@@ -21,10 +21,14 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..db.base import canonical_json
+from ..economy import Economy, TeamGold, credit_fight_gold
+from ..heroes import inventory
+from ..heroes.models import Hero
 from ..models import Map, World
 from ..world.rng import WorldRng
 from .combatant import Address, Command
-from .events import Event
+from .events import Event, EventType
 from .fight import Fight
 from .models import FightActionRecord, FightParticipant, FightRecord
 from .replay import apply_events
@@ -42,13 +46,19 @@ class FightLogError(ValueError):
         self.reason = reason
 
 
+class FightOver(RuntimeError):
+    """The fight has ended and been paid out: it plays no more rounds."""
+
+
+class FightNotOver(RuntimeError):
+    """The fight is still being played: there is no result to save yet."""
+
+
 class SequenceConflict(RuntimeError):
     """Someone else played the same round first."""
 
 
-def canonical(data) -> str:
-    """The same text for the same data on every database and every run."""
-    return json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+canonical = canonical_json  # the text the database stores, so a hash covers exactly what is kept
 
 
 def initial_hash(initial_state: dict) -> str:
@@ -124,10 +134,12 @@ async def play_round(session: AsyncSession, record: FightRecord, commands: list[
     """Plays the next round with $commands (see ``command_record``), logs it, and returns its events.
 
     $snapshot also keeps the fight as it stands after the round, for ``verify`` to compare replays against.
-    Raises SequenceConflict if another call played the same round first.
+    Raises SequenceConflict if another call played the same round first, and FightOver if the fight has ended.
     """
     logged = await actions(session, record)
     fight = _replayed(record.initial_state, rules, logged)
+    if fight.over:
+        raise FightOver(f"fight {record.id} is over")
     sequence = len(logged) + 1
     _set_commands(fight, commands)
     events = do_combat(fight, rules, await _stream(session, record, sequence))
@@ -176,3 +188,43 @@ async def verify(session: AsyncSession, record: FightRecord, rules: Rules, *, de
             if action.final_state is not None and dehydrate(fight) != action.final_state:
                 raise FightLogError(number, "playing it again gave a different fight")
     return len(logged)
+
+
+# --- the result -------------------------------------------------------------------------------------------------------
+
+async def apply_results(session: AsyncSession, record: FightRecord, rules: Rules, economy: Economy | None = None) -> list[Hero]:
+    """Saves a finished fight's result: to its heroes, the experience, level and stats they ended with and the
+    abilities their job grants at that level; and the gold its ``Gold`` events name, paid to the teams through the
+    game's $economy (``terraforma.economy``; the team's gold, DragonStar's way, if none is given). Returns the heroes
+    it updated.
+
+    Safe to call again: the heroes get what the fight says rather than more of it, and the gold is paid once (the
+    fight records that it has been). Raises FightNotOver if the fight is still going.
+    """
+    fight, _played = await load_state(session, record, rules)
+    if not fight.over:
+        raise FightNotOver(f"fight {record.id} is not over")
+    updated = []
+    for address in fight.addresses():
+        fighter = fight.get(address)
+        hero = await session.get(Hero, fighter.charid) if fighter.charid is not None else None
+        if hero is None:  # a monster, or a hero deleted since the fight began
+            continue
+        hero.xp, hero.level, hero.stats = fighter.exp, fighter.level, dict(fighter.base)
+        await session.flush()
+        await inventory.grant_abilities(session, hero)
+        updated.append(hero)
+    await credit_fight_gold(session, economy or TeamGold(), record, await gold_payments(session, record))
+    return updated
+
+
+async def gold_payments(session: AsyncSession, record: FightRecord) -> list[tuple[int, int]]:
+    """What the fight's ``Gold`` events pay, as ``(team id, amount)``, a team's shares added up."""
+    paid: dict[int, int] = {}
+    for action in await actions(session, record):
+        for raw in action.events:
+            each = Event.from_list(raw)
+            if each.type is EventType.GOLD:
+                _party, team, amount = each.data
+                paid[team] = paid.get(team, 0) + amount
+    return sorted(paid.items())

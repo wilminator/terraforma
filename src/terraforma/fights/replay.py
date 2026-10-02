@@ -27,6 +27,18 @@ def apply_events(fight: Fight, rules: Rules, events: list[Event]) -> None:
             fight.get(tuple(data[:3])).current[data[3]] += data[4]
         elif kind is EventType.DIED:
             fight.get(tuple(data[:3])).current[rules.vital] = 0
+        elif kind is EventType.FIGHT_OVER:
+            fight.over = True
+        elif kind is EventType.XP_DEBT:
+            fight.get(tuple(data[:3])).xp_debts.append(list(data[3:]))
+        elif kind is EventType.XP_EARNED:
+            fight.get(tuple(data[:3])).exp += data[3]
+        elif kind is EventType.LEVEL_UP:
+            fighter = fight.get(tuple(data[:3]))
+            fighter.level = data[3]
+            for stat, gain in data[4].items():
+                fighter.base[stat] += gain
+            fighter.reset_stats(rules)
         elif kind in (EventType.USE_ITEM, EventType.EXPEND_AMMO):
             actor.remove_item(data[0], 1)
         elif kind is EventType.EQUIP_SLOT:

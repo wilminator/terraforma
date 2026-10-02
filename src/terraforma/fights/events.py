@@ -37,6 +37,11 @@ class EventType(StrEnum):
     EXPEND_AMMO = "ExpendAmmo"  # [inventory index]
     EQUIP_SLOT = "EquipSlot"  # [inventory index, slot]
     UNEQUIP_SLOT = "UnequipSlot"  # [slot]
+    XP_DEBT = "XpDebt"  # [party, group, character, creditor party, group, character, ratio, pxp]: what it now owes
+    XP_EARNED = "XpEarned"  # [party, group, character, amount]
+    GOLD = "Gold"  # [party, team, amount]: a team's share of the gold dropped
+    FIGHT_OVER = "FightOver"  # []: the fight has ended and been paid out; nothing more is played
+    LEVEL_UP = "LevelUp"  # [party, group, character, level, {stat: gain}]
     STATUS_APPLIED = "StatusApplied"  # [party, group, character, status key, source party, group, character, duration or None]
     STATUS_TICK = "StatusTick"  # [party, group, character, status key, source party, group, character, intensity, when]
     STATUS_REMOVED = "StatusRemoved"  # [party, group, character, status key, source party, group, character, reason]

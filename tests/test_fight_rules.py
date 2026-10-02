@@ -204,6 +204,7 @@ def test_a_blow_that_lands_is_a_turn_an_attack_a_target_and_damage():
     # A 50% chance and a roll of 10: hit_damage(10, 10, 50, 10) is 4, halved by defending.
     assert listing(events) == [
         ("Turn", 0, 0, 0), ("Attack", None, "left", 0), ("Target", 1, 0, 0, 0), ("Damage", 1, 0, 0, 2, False),
+        ("XpDebt", 1, 0, 0, 0, 0, 0, 0.1, RULES.pxp(defender)),  # 2 of 20 life: it owes the attacker for it
     ]
     assert defender.current["HP"] == 18
 
@@ -454,7 +455,9 @@ def test_nothing_to_hit_means_no_action_at_all():
         foe.current["HP"] = 0
     fight = build_fight({0: {0: [hero]}, 1: {0: foes[:1]}, 2: {0: foes[1:]}})
     hero.command, hero.target = Command.ATTACK_LEFT, (1, 0, 0)
-    assert do_combat(fight, RULES, Scripted(100)) == [], "only one party has anyone alive: the fight is already over"
+    first = do_combat(fight, RULES, Scripted(100))
+    assert types(first) == [EventType.FIGHT_OVER], "only one party has anyone alive: nobody acts, the fight is declared over"
+    assert do_combat(fight, RULES, Scripted(100)) == [], "and a finished fight plays no more rounds"
 
 
 # --- changing gear in a fight ---------------------------------------------------------------------------------------------
