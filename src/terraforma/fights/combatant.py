@@ -47,6 +47,11 @@ class Combatant:
     command: int = Command.DEFEND
     using: int = 0
     target: Address = (0, 0, 0)
+    #: How the computer plays it (``fights.ai``): the numbers of a monster's ``ai`` block in the seed.
+    ai_action: int = 0
+    ai_goal: int = 0
+    ai_target: int = 0
+    ai_experience: int = 0
 
     # --- stats ----------------------------------------------------------------------------
     def alive(self, rules: Rules) -> bool:

@@ -145,6 +145,12 @@ class Rules:
         enemies = set(mine.enemies) if mine.enemies is not None else everyone - allies
         return allies, enemies - allies
 
+    def pxp(self, fighter) -> int:
+        """How strong a fighter is, as one number (its potential experience): see ``fights.potential``."""
+        from .potential import potential  # here, since potential reads Rules
+
+        return potential(self, fighter)
+
     # --- hooks ---------------------------------------------------------------------------------
     def gauge_moved(self, fight, actor: tuple, target: tuple, resource: str, before: int, after: int, maximum: int) -> list:
         """Called whenever one fighter moves another's resource (damage, healing, restoring): the place for

@@ -37,6 +37,7 @@ def _fighter(fighter: Combatant) -> dict:
         "inventory": [[_item(item), qty] for item, qty in fighter.inventory],
         "equipment": dict(fighter.equipment),
         "command": int(fighter.command), "using": fighter.using, "target": list(fighter.target),
+        "ai": [fighter.ai_action, fighter.ai_goal, fighter.ai_target, fighter.ai_experience],
     }
 
 
@@ -73,6 +74,7 @@ def _build_fighter(raw: dict) -> Combatant:
         inventory=[[_build_item(item), qty] for item, qty in raw["inventory"]],
         equipment=dict(raw["equipment"]), charid=raw["charid"], monster=raw.get("monster"),
         command=raw["command"], using=raw["using"], target=tuple(raw["target"]),
+        **dict(zip(("ai_action", "ai_goal", "ai_target", "ai_experience"), raw.get("ai", (0, 0, 0, 0)), strict=True)),
     )
 
 
