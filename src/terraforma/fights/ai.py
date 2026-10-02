@@ -56,6 +56,7 @@ from .specs import (
     NONE,
     ONLY_LIVING,
     PARTY,
+    RANDOM_PARTY,
     RESTORE_MP,
     REVIVE,
     SLAY,
@@ -384,6 +385,9 @@ def combine_on_reach(command: int, using: int, reach: int, values: Values) -> di
     if reach in (ALL_PARTIES, ALL_ENEMIES, ALL_ALLIES, ALL_NOT_ENEMIES, ALL_NOT_ALLIES):
         total = sum(value for party in values.values() for group in party.values() for value in group.values())
         return {(command, using, 0, 0, 0): total}
+    if reach == RANDOM_PARTY:  # one party at random: the average of what each would bring
+        totals = [sum(value for group in groups.values() for value in group.values()) for groups in values.values()]
+        return {(command, using, 0, 0, 0): sum(totals) / len(totals) if totals else 0.0}
     if reach == PARTY:
         return {
             (command, using, party, 0, 0): sum(value for group in groups.values() for value in group.values())

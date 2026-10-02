@@ -132,6 +132,13 @@ class Rules:
         """The base amount of an effect plus a random share of the extra."""
         return rng.randint(0, effect.added) + effect.base
 
+    def random_party_pool(self, fight, actor_party: int) -> list[int]:
+        """The parties a ``random_party`` effect (a seed target scope) may land on, in the fight's order: one of them
+        is drawn from the fight's stream. The default is every party with someone still alive, the actor's own
+        included (a wild spell does not care whose side it is on). A game narrows it: ``[p for p in super()... if p
+        not in allies]`` for a curse that spares friends, say."""
+        return [index for index, party in fight.parties.items() if not party.dead(self)]
+
     def rest(self, vitals: dict[str, int], maximums: dict[str, int]) -> dict[str, int]:
         """What a hero's resources stand at after it rests (an inn, a camp, a revive between fights): $vitals is where
         they stand now (the vital resource at 0 means the hero is dead) and $maximums the most each can hold; returns
