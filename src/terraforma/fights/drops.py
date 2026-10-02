@@ -8,7 +8,8 @@ no item means nothing drops). A monster names the tables it rolls when it dies (
 
 ``settle`` runs when a fight ends, after the experience and the gold: for each party of players that won, it rolls the
 tables of the monsters that died, and the area tables (once per fight, unless ``Rules.map_drops_once_per_fight`` is
-off), from the fight's own stream, so it replays. Who receives each item is the game's rule
+off), from the fight's own stream, so it replays. A game may *hold* a drop instead (``Rules.drop_mode``): a ``DropHeld`` event, and
+the party's players settle it later (``fights.pending``). Who receives each item is the game's rule
 (``Rules.drop_recipients``). What lands is a ``Drop`` event and the item is added to the hero's inventory in the
 fight; what does not fit is a ``DropLost`` event, never lost silently.
 """
@@ -25,6 +26,13 @@ ONE = "one"
 EACH_TEAM = "each_team"
 EACH_MEMBER = "each_member"
 SHARES = (ONE, EACH_TEAM, EACH_MEMBER)
+
+#: How a drop is given out (``Rules.drop_mode``): at once by the recipient rule, or held as a *pending drop* until the
+#: party's players settle it (``fights.pending``): a need or want roll, or the party's leader choosing.
+AUTO = "auto"
+NEED_WANT = "need_want"
+ASSIGN = "assign"
+MODES = (AUTO, NEED_WANT, ASSIGN)
 
 
 @dataclass(frozen=True)
@@ -136,6 +144,10 @@ def settle(rules, fight, rng: random.Random) -> list[Event]:
             for table in area:
                 rolls.extend((dead, roll) for roll in roll_table(rules.drop_chance_scale, table, rng))
         for monsters, roll in rolls:
+            mode = rules.drop_mode(fight, index, monsters, roll.share, rng)
+            if mode != AUTO:
+                events.append(event(EventType.DROP_HELD, index, roll.item.key, roll.quantity, mode))
+                continue
             for address in rules.drop_recipients(fight, index, monsters, roll.share, rng):
                 events.extend(give(rules, fight, address, roll.item, roll.quantity))
     return events
