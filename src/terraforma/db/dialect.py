@@ -4,14 +4,18 @@ Everything outside this module (and the migrations) is plain SQLAlchemy
 that runs the same on Postgres, MySQL and SQLite.
 """
 
+import json
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from sqlalchemy import Table, func, text
+from sqlalchemy import Table, Text, func, text
 from sqlalchemy.dialects import mysql, postgresql, sqlite
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.sql.elements import ColumnElement
+from sqlalchemy.types import TypeDecorator
+
+from .base import canonical_json
 
 
 async def upsert(
@@ -97,3 +101,26 @@ async def ensure_database(url: str) -> None:
                 raise NotImplementedError(f"ensure_database() doesn't know the {backend} database yet")
     finally:
         await engine.dispose()
+
+
+class ExactJSON(TypeDecorator):
+    """JSON kept as its exact text, for data that must read back bit for bit (a hash covers it, or a replay depends on it).
+
+    The databases' own JSON types re-format what they store: MySQL, for one, turns the float 0.11666666666666667
+    into 0.11666666666666668. This stores canonical JSON text in a text column (LONGTEXT on MySQL, which would
+    otherwise cut it at 64 KB), so every database returns exactly what was written. Not queryable by key.
+    """
+
+    impl = Text
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name in ("mysql", "mariadb"):
+            return dialect.type_descriptor(mysql.LONGTEXT())
+        return dialect.type_descriptor(Text())
+
+    def process_bind_param(self, value, dialect):
+        return None if value is None else canonical_json(value)
+
+    def process_result_value(self, value, dialect):
+        return None if value is None else json.loads(value)

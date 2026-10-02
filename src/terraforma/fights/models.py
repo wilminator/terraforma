@@ -7,13 +7,16 @@ nothing is ever stored twice and any moment of a fight can be rebuilt. Each
 round also records the commands that led to it, so it can be played again from
 the dice to check it (fights.store.verify), and a hash of the round before it,
 so a changed or missing round shows (a chain of hashes: tamper-evident, nothing
-more is needed because the server is the only authority).
+more is needed because the server is the only authority). The snapshots, commands and events are
+stored as exact text (``ExactJSON``), because a database's own JSON type may re-format a float and
+a hash covers every digit.
 """
 
-from sqlalchemy import JSON, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db.base import Base, Timestamps
+from ..db.dialect import ExactJSON
 from ..world.location import Located
 
 
@@ -25,7 +28,7 @@ class FightRecord(Located, Timestamps, Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     guid: Mapped[str] = mapped_column(String(32), unique=True)
     # The fight as it began, as fights.state.dehydrate writes it. Written once, never changed.
-    initial_state: Mapped[dict] = mapped_column(JSON)
+    initial_state: Mapped[dict] = mapped_column(ExactJSON)
 
 
 class FightParticipant(Base):
@@ -51,10 +54,10 @@ class FightActionRecord(Base):
 
     fight_id: Mapped[int] = mapped_column(ForeignKey("fights.id"), primary_key=True, autoincrement=False)
     sequence: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
-    commands: Mapped[list] = mapped_column(JSON)
-    events: Mapped[list] = mapped_column(JSON)
+    commands: Mapped[list] = mapped_column(ExactJSON)
+    events: Mapped[list] = mapped_column(ExactJSON)
     # The hash of the round before (of the initial state, for the first), and this round's own.
     previous_hash: Mapped[str] = mapped_column(String(64))
     hash: Mapped[str] = mapped_column(String(64))
     # The fight after the round, kept only when asked (to check replays against).
-    final_state: Mapped[dict | None] = mapped_column(JSON)
+    final_state: Mapped[dict | None] = mapped_column(ExactJSON)

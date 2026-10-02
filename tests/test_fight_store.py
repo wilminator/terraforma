@@ -346,3 +346,20 @@ async def test_the_result_is_saved_to_the_hero_with_the_abilities_its_new_level_
     assert sorted(ability.key for ability in await inventory.known_abilities(db, hero)) == ["rend", "slash"], "level 2 earns Rend"
     await store.apply_results(db, record, RULES)
     assert (hero.xp, hero.level) == (fighter_.exp, fighter_.level), "saving twice changes nothing"
+
+
+# --- exact storage --------------------------------------------------------------------------------------------------------------
+
+async def test_the_log_reads_back_exactly_what_was_written_floats_included(db):
+    """MySQL's own JSON type turns 0.11666666666666667 into 0.11666666666666668: the log must not use it."""
+    _hub, record = await start(db)
+    await store.play_round(db, record, DUEL, RULES)
+    await db.commit()
+    row = (await store.actions(db, record))[0]
+    tricky = {"ratio": 0.11666666666666667, "third": 1 / 3, "whole": 40.0, "small": 1e-7, "big": 12345678.9, "nested": [0.1 + 0.2, None, True, "é"]}
+    await db.execute(update(FightActionRecord).where(FightActionRecord.fight_id == record.id).values(events=[tricky], final_state=tricky))
+    await db.commit()
+    await db.refresh(row)
+    assert row.events == [tricky] and row.final_state == tricky
+    assert [type(value) for value in row.events[0]["nested"]] == [float, type(None), bool, str]
+    assert row.events[0]["whole"] == 40.0 and isinstance(row.events[0]["whole"], float), "a float stays a float"

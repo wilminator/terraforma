@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..db.base import canonical_json
 from ..heroes import inventory
 from ..heroes.models import Hero
 from ..models import Map, World
@@ -56,9 +57,7 @@ class SequenceConflict(RuntimeError):
     """Someone else played the same round first."""
 
 
-def canonical(data) -> str:
-    """The same text for the same data on every database and every run."""
-    return json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+canonical = canonical_json  # the text the database stores, so a hash covers exactly what is kept
 
 
 def initial_hash(initial_state: dict) -> str:
