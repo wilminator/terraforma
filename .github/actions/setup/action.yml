@@ -1,5 +1,5 @@
 name: Set up TerraForma tests
-description: Install Python 3.14 and the engine with its test tools (check the code out first: a local action must be there to be found).
+description: Install Python 3.14 and the engine with its test tools. Check the code out first, or a local action cannot be found.
 runs:
   using: composite
   steps:
