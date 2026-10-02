@@ -115,3 +115,6 @@ class Fighter(Located, Timestamps, Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), index=True)
     name: Mapped[str] = mapped_column(String(64))
+
+# The content tables register with the rest.
+from .content import models as _content  # noqa: E402,F401

@@ -24,10 +24,12 @@ from .api.deps import ActingAccount
 from .api.security import SESSION_ACCOUNT, SESSION_VERSION, same_origin
 from .db.session import make_engine, make_sessionmaker
 from .fights.channels import FightChannels
+from .content.loader import load_content
 from .game import Game
 from .keys import KeyRing
 from .mail import Mailer, OutboxMailer, SmtpMailer
 from .models import Account
+from .seed import load_seed
 from .settings import Settings
 
 
@@ -71,6 +73,10 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
         app.state.keys = KeyRing.load(settings.key_dir)
         engine = make_engine(settings.database_url)
         app.state.sessionmaker = make_sessionmaker(engine)
+        if game and game.seed_dir:
+            # A seed that doesn't check out stops the server here, naming what's wrong.
+            async with app.state.sessionmaker() as session, session.begin():
+                await load_content(session, load_seed(game.seed_dir))
         yield
         await engine.dispose()
 
