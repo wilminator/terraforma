@@ -13,45 +13,20 @@ The limits are plain numbers for now; the fight rules framework will let
 a game set them.
 """
 
-import math
-from dataclasses import dataclass
-from enum import Enum
-
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..content.models import Ability, Item, Job
+from ..fights.gear import AMMO_SLOTS, SIDED, EquipOutcome, EquipResult, equipment_bonus, find_slot, round_half_up
 from .models import Hero, HeroAbility, HeroEquipment, HeroItem
 
 MAX_ITEMS = 12
 MAX_ITEM_QTY = 250
 
-SIDED = ("hand", "ammo", "arm")
-AMMO_SLOTS = ("ammo", "lammo", "rammo")
-
+php_round = round_half_up  # the name the tests and callers already use
 
 class InventoryError(ValueError):
     """Something the player can fix: the message says what."""
-
-
-class EquipOutcome(Enum):
-    NOT_FOUND = "not_found"  # no stack at that position
-    NOT_EQUIPABLE = "not_equipable"  # the item takes no slot
-    NEEDS_UNEQUIPPING = "needs_unequipping"  # something is in the way: take occupying_position off first
-    INCOMPATIBLE_AMMO = "incompatible_ammo"  # ammo with no weapon that takes it
-    SUCCESS = "success"  # equipped in .slots
-
-
-@dataclass(frozen=True)
-class EquipResult:
-    outcome: EquipOutcome
-    occupying_position: int | None = None
-    slots: tuple[str, ...] = ()
-
-
-def find_slot(slot: str, side: int) -> str:
-    """The concrete slot for $slot: a sided slot becomes "l" or "r" plus its name (side 0 is left)."""
-    return ("l" if side == 0 else "r") + slot if slot in SIDED else slot
 
 
 def stackable(item: Item) -> bool:
@@ -60,19 +35,6 @@ def stackable(item: Item) -> bool:
 
 def ammo_type(item: Item) -> str:
     return (item.attack or {}).get("ammo_type", "")
-
-
-def php_round(value: float) -> int:
-    """Halves round away from zero, as DragonStar's rounding does (Python's round() goes to even)."""
-    return int(math.copysign(math.floor(abs(value) + 0.5), value))
-
-
-def equipment_bonus(items: list[Item], stat: str, base: int) -> int:
-    """$base for $stat with the worn $items' bonuses: all the percentages first, then the flat amounts."""
-    percent = sum(item.stat_percent.get(stat, 0) for item in items)
-    value = base * (percent / 100.0 + 1.0)
-    value += sum(item.stat_bonus.get(stat, 0) for item in items)
-    return php_round(value)
 
 
 # --- loading -----------------------------------------------------------------------
