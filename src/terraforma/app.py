@@ -29,6 +29,7 @@ from .content.loader import load_content
 from .game import Game
 from .heroes.inventory_routes import router as inventory_router
 from .heroes.routes import router as heroes_router
+from .relations.routes import router as relations_router
 from .trading.routes import router as trading_router
 from .keys import KeyRing
 from .mail import Mailer, OutboxMailer, SmtpMailer
@@ -92,6 +93,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(heroes_router)
     app.include_router(inventory_router)
     app.include_router(trading_router)
+    app.include_router(relations_router)
 
     @app.get("/api/about")
     async def about(request: Request) -> dict:
