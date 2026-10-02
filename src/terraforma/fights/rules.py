@@ -232,6 +232,13 @@ class Rules:
 
         return default_recipients(fight, party, monsters, share, rng)
 
+    def status_worth(self, statuses: dict, target, effect) -> float | None:
+        """What a status or stat effect is worth to the monster AI aiming it at $target, in hit points (zero or more);
+        None for any other effect. See ``fights.ai_status`` for how it is reckoned, and override this for your own way."""
+        from .ai_status import effect_worth  # here, since ai_status reads Rules
+
+        return effect_worth(self, statuses, target, effect)
+
     # --- hooks ---------------------------------------------------------------------------------
     def gauge_moved(self, fight, actor: tuple, target: tuple, resource: str, before: int, after: int, maximum: int) -> list:
         """Called whenever one fighter moves another's resource (damage, healing, restoring): the place for
