@@ -124,3 +124,4 @@ from .parties import models as _parties  # noqa: E402,F401
 from .alliances import models as _alliances  # noqa: E402,F401
 from .relations import models as _relations  # noqa: E402,F401
 from .trading import models as _trading  # noqa: E402,F401
+from .profiles import models as _profiles  # noqa: E402,F401

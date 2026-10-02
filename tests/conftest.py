@@ -36,7 +36,7 @@ CATEGORIES = {
     "platform": ["app", "categories", "content", "database", "migrations", "parallel", "seed", "world"],
     "heroes": ["heroes", "inventory", "parties", "economy", "trading", "drops"],
     "fights": ["fight_rules", "fight_store", "live_fights", "experience", "rewards", "ai", "ai_statuses", "statuses"],
-    "social": ["relations", "alliances", "ballots", "ratings"],
+    "social": ["relations", "alliances", "ballots", "ratings", "profiles"],
 }
 CATEGORY_OF_FILE = {f"test_{name}": category for category, names in CATEGORIES.items() for name in names}
 
