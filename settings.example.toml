@@ -22,6 +22,11 @@ key_dir = "keys"
 # How often the server tidies up what has gone stale (finished rate-limit windows, say), in seconds.
 # housekeeping_seconds = 3600.0
 
+# Housekeeping removes closed ballots (with their votes) and answered or dismissed rating prompts older than
+# this many days. 0 keeps them for good, which is the default.
+# ballot_retention_days = 0
+# rating_prompt_retention_days = 0
+
 # Outgoing mail. Leave this section out for development: messages are then
 # written as .eml files to outbox_dir (default "outbox") instead of sent.
 # Cloudflare: port 465 with implicit TLS; the API key is both username and password.

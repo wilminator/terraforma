@@ -63,6 +63,9 @@ class Settings(BaseModel):
     fight_timer_seconds: float = Field(default=1.0, ge=0)
     # How often the server tidies up what has gone stale (housekeeping jobs), in seconds (0: never, for tests).
     housekeeping_seconds: float = Field(default=3600.0, ge=0)
+    # Housekeeping removes closed ballots and settled rating prompts older than this many days (0: keep them for good).
+    ballot_retention_days: int = Field(default=0, ge=0)
+    rating_prompt_retention_days: int = Field(default=0, ge=0)
 
 
 def load_settings(path: str | os.PathLike | None = None) -> Settings:
