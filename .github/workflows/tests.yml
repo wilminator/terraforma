@@ -1,4 +1,7 @@
-# Every push and pull request: the whole test suite on SQLite, Postgres and MySQL.
+# Every push and pull request: the test suite as small jobs that run side by side, so a failure names
+# where it is. One dimension is the database (none, SQLite, Postgres, MySQL), the other the category
+# of test (tests/conftest.py lists which file is in which). Tests that need no database run once, in
+# "no database"; each database runs only the tests that use one.
 name: tests
 
 on:
@@ -7,8 +10,35 @@ on:
   pull_request:
 
 jobs:
-  test:
+  no-database:
+    name: no database
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - run: pytest -n auto -m "not db"
+
+  sqlite:
+    name: sqlite (${{ matrix.category }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        category: [accounts, platform, heroes, fights, social]
+    env:
+      TERRAFORMA_TEST_DATABASES: "sqlite+aiosqlite:///{tmp}/test.db"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - run: pytest -n auto -m "db and ${{ matrix.category }}"
+
+  postgres:
+    name: postgres (${{ matrix.category }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        category: [accounts, platform, heroes, fights, social]
     services:
       postgres:
         image: postgres:17
@@ -21,6 +51,21 @@ jobs:
           --health-cmd "pg_isready -U terraforma"
           --health-interval 2s --health-retries 30
           --tmpfs /var/lib/postgresql/data
+    env:
+      TERRAFORMA_TEST_DATABASES: "postgresql+asyncpg://terraforma:terraforma@127.0.0.1:5432/terraforma_test"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - run: pytest -n auto -m "db and ${{ matrix.category }}"
+
+  mysql:
+    name: mysql (${{ matrix.category }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        category: [accounts, platform, heroes, fights, social]
+    services:
       mysql:
         image: mysql:8.4
         env:
@@ -34,17 +79,10 @@ jobs:
           --health-interval 2s --health-retries 60
           --tmpfs /var/lib/mysql
     env:
-      TERRAFORMA_TEST_DATABASES: >-
-        sqlite+aiosqlite:///{tmp}/test.db,
-        postgresql+asyncpg://terraforma:terraforma@127.0.0.1:5432/terraforma_test,
-        mysql+aiomysql://terraforma:terraforma@127.0.0.1:3306/terraforma_test
+      TERRAFORMA_TEST_DATABASES: "mysql+aiomysql://terraforma:terraforma@127.0.0.1:3306/terraforma_test"
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.14"
-          cache: pip
-      - run: pip install -e ".[dev]"
+      - uses: ./.github/actions/setup
       # Each pytest worker makes its own databases (terraforma_test_gw0, ...): MySQL's
       # test user needs the right to, as docker/mysql-test-init.sql gives it in compose.
       - name: Let the MySQL test user make per-worker databases
@@ -56,4 +94,19 @@ jobs:
               cursor.execute("GRANT ALL PRIVILEGES ON `terraforma\\_test\\_%`.* TO 'terraforma'@'%'")
           connection.close()
           PY
-      - run: pytest -n auto
+      - run: pytest -n auto -m "db and ${{ matrix.category }}"
+
+  # The one check to require in branch protection: it passes only when every job above did.
+  # (A skipped or cancelled job counts as a failure, so nothing slips through.)
+  test:
+    name: test
+    if: always()
+    needs: [no-database, sqlite, postgres, mysql]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every test job must have passed
+        run: |
+          test "${{ needs.no-database.result }}" = success
+          test "${{ needs.sqlite.result }}" = success
+          test "${{ needs.postgres.result }}" = success
+          test "${{ needs.mysql.result }}" = success

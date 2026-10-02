@@ -26,3 +26,25 @@ def later(monkeypatch):
         moved = START + timedelta(seconds=seconds)
 
     return move
+
+
+# --- test categories (CI runs each category on each database as its own job) ---------------------------------------------------
+
+#: Which category every test file belongs to. A new test file must be listed here (a test checks that).
+CATEGORIES = {
+    "accounts": ["accounts", "handles", "keys", "twofa", "mail", "logscrub", "settings"],
+    "platform": ["app", "categories", "content", "database", "migrations", "parallel", "seed", "world"],
+    "heroes": ["heroes", "inventory", "parties", "economy", "trading", "drops"],
+    "fights": ["fight_rules", "fight_store", "live_fights", "experience", "rewards", "ai", "ai_statuses", "statuses"],
+    "social": ["relations", "alliances", "ballots", "ratings"],
+}
+CATEGORY_OF_FILE = {f"test_{name}": category for category, names in CATEGORIES.items() for name in names}
+
+
+def pytest_collection_modifyitems(items):
+    """Marks every test with its category, and with `db` when it runs against a database (so `-m "not db"` is the pure ones)."""
+    for item in items:
+        category = CATEGORY_OF_FILE.get(item.path.stem)
+        item.add_marker(getattr(pytest.mark, category or "uncategorized"))
+        if "database_url" in item.fixturenames:
+            item.add_marker(pytest.mark.db)
