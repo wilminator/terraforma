@@ -335,3 +335,12 @@ def test_ratings():
     assert half_life(0, None) == 2
     assert half_life(0, 3) == 2 - 0.25
     assert half_life(2, None) == 0.5
+
+
+@pytest.mark.parametrize("action", [Action.FIGHTER, Action.MAGE, Action.SHARP])
+def test_the_better_half_of_the_targets_is_kept_not_the_first_half(action):
+    # Half of a two-name list is its first name, which is the fighter's own side: it must still go for the enemy.
+    me = fighter(ai_action=action, ai_goal=Goal.DESTRUCTOR)
+    fight = fight_of([[me]], [[fighter()]])
+    for n in range(10):
+        assert play(fight, (0, 0, 0), n).target == (1, 0, 0)

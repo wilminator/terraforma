@@ -39,11 +39,17 @@ def parties_reached(fight: Fight, rules: Rules, actor_party: int, scope: int) ->
     return [index for index in everyone if index in wanted]
 
 
-def expand(fight: Fight, rules: Rules, actor: Address, target: Address, effect: EffectSpec) -> Iterator[tuple]:
+def expand(fight: Fight, rules: Rules, actor: Address, target: Address, effect: EffectSpec, rng: random.Random | None = None) -> Iterator[tuple]:
     """Every fighter the effect reaches, as (address, fighter, intensity, divisor): (0, 0) for an unscaled hit, or
-    (distance, range) for one that falls off with distance from the centre of a ranged attack."""
+    (distance, range) for one that falls off with distance from the centre of a ranged attack. A ``random_party``
+    scope draws its party from $rng (the fight's stream, so the fight replays); without one it reaches no one."""
     scope = effect.targets
     party, group_index, character_index = target
+    if scope == specs.RANDOM_PARTY:
+        pool = rules.random_party_pool(fight, actor[0])
+        if pool and rng is not None:
+            yield from _whole_party(fight, rng.choice(pool), rules, effect)
+        return
     if scope in specs.BY_ALIGNMENT:
         for each in parties_reached(fight, rules, actor[0], scope):
             yield from _whole_party(fight, each, rules, effect)
@@ -83,7 +89,7 @@ def lost_target(fight: Fight, rules: Rules, rng: random.Random, fighter: Combata
         return False
     scope = effect.targets
     party, group_index, character_index = fighter.target
-    if scope in specs.BY_ALIGNMENT:
+    if scope in specs.NOT_AIMED:
         return False
     if scope == specs.PARTY:
         return party not in fight.parties or fight.parties[party].dead(rules)

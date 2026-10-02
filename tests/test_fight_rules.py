@@ -639,11 +639,11 @@ def four_parties(alignment=None):
     return fight
 
 
-def reached(fight, scope, rules=RULES):
+def reached(fight, scope, rules=RULES, rng=None):
     from terraforma.fights.targets import expand
 
     effect = EffectSpec(specs.HURT, scope, base=1)
-    return sorted({address[0] for address, *_ in expand(fight, rules, (0, 0, 0), (1, 0, 0), effect)})
+    return sorted({address[0] for address, *_ in expand(fight, rules, (0, 0, 0), (1, 0, 0), effect, rng)})
 
 
 def test_by_default_each_party_is_for_itself_and_every_other_party_is_an_enemy():
@@ -712,3 +712,75 @@ def test_the_new_scopes_are_valid_in_a_seed():
         checked = check_seed({"abilities": [{"key": "a", "name": "A", "kind": "skill", "effect": {"effect": "hurt", "targets": name}}]})
         assert checked["abilities"][0].effect.targets == name
         assert EffectSpec.from_dict({"effect": "hurt", "targets": name}).targets in specs.BY_ALIGNMENT
+
+
+# --- random_party ----------------------------------------------------------------------------------------
+
+class Picks(Scripted):
+    """Scripted rolls where ``choice`` takes the next roll as the index to pick (plain Scripted always picks the first)."""
+
+    def choice(self, items):
+        return items[self.randint(0, len(items) - 1)]
+
+
+def test_a_random_party_effect_reaches_one_whole_party_drawn_from_the_stream():
+    fight = four_parties()
+    assert reached(fight, specs.RANDOM_PARTY, rng=Picks(0)) == [0], "the actor's own party is in the pool"
+    assert reached(fight, specs.RANDOM_PARTY, rng=Picks(2)) == [2]
+    assert reached(fight, specs.RANDOM_PARTY, rng=Picks(3)) == [3]
+    assert reached(fight, specs.RANDOM_PARTY) == [], "no stream, no draw, no one is reached"
+
+
+def test_every_party_can_be_drawn_and_the_same_stream_draws_the_same_party():
+    from terraforma.world.rng import WorldRng
+    from terraforma.fights.resolve import fight_stream
+
+    fight = four_parties()
+    drawn = {tuple(reached(fight, specs.RANDOM_PARTY, rng=fight_stream(WorldRng(seed), "hub", 1))) for seed in range(60)}
+    assert drawn == {(0,), (1,), (2,), (3,)}
+    first = reached(fight, specs.RANDOM_PARTY, rng=fight_stream(WorldRng(7), "hub", 1))
+    assert reached(fight, specs.RANDOM_PARTY, rng=fight_stream(WorldRng(7), "hub", 1)) == first
+
+
+def test_a_party_with_no_one_left_alive_is_not_in_the_pool():
+    fight = four_parties()
+    fight.get((2, 0, 0)).current["HP"] = 0
+    assert RULES.random_party_pool(fight, 0) == [0, 1, 3]
+    assert reached(fight, specs.RANDOM_PARTY, rng=Picks(2)) == [3]
+
+
+def test_a_game_can_narrow_the_random_party_pool():
+    class Spares(Rules):
+        def random_party_pool(self, fight, actor_party):
+            allies, _enemies = self.alignment(fight, actor_party)
+            return [index for index in super().random_party_pool(fight, actor_party) if index not in allies]
+
+    fight = four_parties()
+    assert Spares().random_party_pool(fight, 0) == [1, 2, 3]
+    assert reached(fight, specs.RANDOM_PARTY, Spares(), Picks(0)) == [1]
+
+
+def test_a_random_party_blast_hurts_everyone_on_the_party_that_was_drawn():
+    blast = AbilitySpec("blast", "Blast", "skill", 0, EffectSpec(specs.HURT, specs.RANDOM_PARTY, base=5))
+    fight = four_parties()
+    caster = fight.get((0, 0, 0))
+    caster.abilities, caster.command, caster.using, caster.target = [blast], Command.SKILL, 0, (1, 0, 0)
+    for address in fight.addresses():
+        if address != (0, 0, 0):
+            fight.get(address).command = Command.DEFEND
+    # Two speed rolls, the party drawn (index 2 of the four), a hit roll for its one fighter, then the amount.
+    do_combat(fight, RULES, Picks(100, 100, 2, 1, 0))
+    assert [fight.get((party, 0, 0)).current["HP"] for party in range(4)] == [20, 20, 15, 20]
+
+
+def test_random_party_is_a_valid_scope_in_a_seed_and_is_valued_like_a_party():
+    from terraforma.fights.ai import combine_on_reach
+    from terraforma.fights.potential import target_rating
+
+    checked = check_seed({"abilities": [{"key": "a", "name": "A", "kind": "skill", "effect": {"effect": "hurt", "targets": "random_party"}}]})
+    assert checked["abilities"][0].effect.targets == "random_party"
+    assert EffectSpec.from_dict({"effect": "hurt", "targets": "random_party"}).targets == specs.RANDOM_PARTY
+    assert specs.RANDOM_PARTY in specs.NOT_AIMED and specs.RANDOM_PARTY not in specs.BY_ALIGNMENT
+    assert target_rating(specs.RANDOM_PARTY) == target_rating(specs.PARTY)
+    values = {0: {0: {0: 4.0}}, 1: {0: {0: 8.0}}}
+    assert combine_on_reach(1, 0, specs.RANDOM_PARTY, values) == {(1, 0, 0, 0, 0): 6.0}, "the average of the parties it might land on"

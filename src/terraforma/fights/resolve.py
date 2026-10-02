@@ -199,7 +199,7 @@ def act(fight: Fight, rules: Rules, rng: random.Random, address: Address, fighte
     if not may_affect:
         return
 
-    for target_address, target, intensity, divisor in list(expand(fight, rules, address, fighter.target, effect)):
+    for target_address, target, intensity, divisor in list(expand(fight, rules, address, fighter.target, effect, rng)):
         affected_by(fight, rules, rng, fighter, address, effect, target, target_address, intensity, divisor, log)
     if command == Command.ITEM and item.one_use:
         fighter.remove_item(fighter.using, 1)

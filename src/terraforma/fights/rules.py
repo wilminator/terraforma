@@ -140,6 +140,13 @@ class Rules:
         """The base amount of an effect plus a random share of the extra."""
         return rng.randint(0, effect.added) + effect.base
 
+    def random_party_pool(self, fight, actor_party: int) -> list[int]:
+        """The parties a ``random_party`` effect (a seed target scope) may land on, in the fight's order: one of them
+        is drawn from the fight's stream. The default is every party with someone still alive, the actor's own
+        included (a wild spell does not care whose side it is on). A game narrows it: ``[p for p in super()... if p
+        not in allies]`` for a curse that spares friends, say."""
+        return [index for index, party in fight.parties.items() if not party.dead(self)]
+
     def rest(self, vitals: dict[str, int], maximums: dict[str, int]) -> dict[str, int]:
         """What a hero's resources stand at after it rests (an inn, a camp, a revive between fights): $vitals is where
         they stand now (the vital resource at 0 means the hero is dead) and $maximums the most each can hold; returns
@@ -231,6 +238,13 @@ class Rules:
         from .drops import default_recipients
 
         return default_recipients(fight, party, monsters, share, rng)
+
+    def status_worth(self, statuses: dict, target, effect) -> float | None:
+        """What a status or stat effect is worth to the monster AI aiming it at $target, in hit points (zero or more);
+        None for any other effect. See ``fights.ai_status`` for how it is reckoned, and override this for your own way."""
+        from .ai_status import effect_worth  # here, since ai_status reads Rules
+
+        return effect_worth(self, statuses, target, effect)
 
     # --- hooks ---------------------------------------------------------------------------------
     def gauge_moved(self, fight, actor: tuple, target: tuple, resource: str, before: int, after: int, maximum: int) -> list:

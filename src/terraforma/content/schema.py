@@ -58,7 +58,7 @@ Stats = Annotated[dict[str, int], AfterValidator(_stats)]
 Growth = Annotated[dict[str, float], AfterValidator(_stats)]
 # A name for one target or a whole group, party and so on; or a number n for the target and n neighbours each way along its group.
 Targets = (
-    Literal["individual", "group", "party", "all_parties", "all_enemies", "all_allies", "all_not_enemies", "all_not_allies"]
+    Literal["individual", "group", "party", "all_parties", "all_enemies", "all_allies", "all_not_enemies", "all_not_allies", "random_party"]
     | Annotated[int, Field(ge=0)]
 )
 Effect = Literal[
