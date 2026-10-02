@@ -27,7 +27,7 @@ class HeroRef(Strict):
     hero_id: int = Field(ge=1)
 
 
-def refuse(error: service.HeroError) -> HTTPException:
+def refuse(error: ValueError) -> HTTPException:
     if isinstance(error, service.NotFound):
         return HTTPException(status.HTTP_404_NOT_FOUND, str(error))
     if isinstance(error, service.NameTaken):

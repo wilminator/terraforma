@@ -78,11 +78,12 @@ A game's starting content is JSON in its `seed/` folder (`Game(seed_dir=...)`): 
 |---|---|
 | `abilities.json` | `key`, `name`, `kind` (`spell` or `skill`), `mp_cost`, `description`, `icon`, `effect`, `presentation` |
 | `items.json` | `key`, `name`, `price`, `one_use`, `description`, `icon`, `use_effect`, `equip_slots`, `stat_bonus`, `stat_percent`, `attack`, `use_presentation`, `fight_presentation` |
-| `jobs.json` | `key`, `name`, `xp_needed`, `stat_growth` (stats per level), `abilities` (keys) |
+| `jobs.json` | `key`, `name`, `xp_needed`, `stat_growth` (stats per level), `abilities` (each `{"ability": key, "level": n}`, the level a hero gets it at; a bare key means level 1) |
 | `personalities.json` | `key`, `name`, an animation for each of `base equip flee hit die attack_close attack_throw attack_shoot skill spell item`, and `overworld` (`stand` and `move`, each facing `up down left right`) |
 | `monsters.json` | `key`, `name`, `personality` (key), `xp_reward`, `gold_reward`, `stats`, `abilities`, `items`, `equipment` (keys), `ai` |
 
 - **Keys.** Every row has a `key` (1-64 lowercase letters, digits, `_` or `-`) that the game picks and never reuses. Rows name each other by key. Only `key` and `name` are required; the rest have defaults.
+- **Equipment slots.** An item's `equip_slots` lists the slots it takes. The engine's slots are `rhand rammo rarm lhand lammo larm body head back feet`; `hand`, `ammo` and `arm` are *sided* (the player picks left or right when equipping), and a two-handed weapon lists `lhand` and `rhand`. A weapon's `attack.ammo_type` has to match its ammunition's. Gear never stacks; ammunition and non-equipment stack to 250, in at most 12 stacks (for now these limits are constants in `heroes/inventory.py`).
 - **Stats** are `HP MP Speed Accuracy Strength Dodge Block Power Resistance Focus`; a stat left out is 0, and any other name is refused.
 - **An effect** is `{"effect", "targets", "base", "added", "attribute"}`: `effect` is one of `none heal hurt revive slay increase_stats decrease_stats steal_stats cause_good_status remove_good_status cause_bad_status remove_bad_status restore_mp`, `targets` one of `individual group party all_parties all_enemies all_allies`, and `attribute` is the game's own kind of damage.
 - **An animation** is `{"animation", "images", "sounds", "times"}`; pictures and sounds are plain file names under the game's assets folder (no absolute paths, no `..`).
