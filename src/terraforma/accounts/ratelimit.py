@@ -32,6 +32,7 @@ RESET_BY_EMAIL = Limit("reset-email", 3, 60 * 60)
 TWOFA_CODE_BY_ACCOUNT = Limit("2fa-code", 10, 15 * 60)
 TWOFA_CHANGE_BY_ACCOUNT = Limit("2fa-change", 5, 60 * 60)
 EMAIL_CHANGE_BY_ACCOUNT = Limit("email-change", 5, 60 * 60)
+TRADE_BY_ACCOUNT = Limit("trade", 120, 60 * 60)
 
 
 class RateLimited(Exception):
