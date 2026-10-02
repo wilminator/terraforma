@@ -1,7 +1,7 @@
 """ballots in alliances
 
-Revision ID: 0020
-Revises: 0018
+Revision ID: 0021
+Revises: 0020
 Created: 2026-10-02
 """
 from collections.abc import Sequence
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from alembic import op
 
 
-revision: str = '0020'
-down_revision: str | None = '0018'
+revision: str = '0021'
+down_revision: str | None = '0020'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -63,16 +63,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    with op.batch_alter_table('alliance_ballot_votes', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_alliance_ballot_votes_ballot_id'))
-
+    # (Dropping a table drops its indexes with it: MySQL will not drop an index a foreign key needs.)
     op.drop_table('alliance_ballot_votes')
-    with op.batch_alter_table('alliance_ballot_voters', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_alliance_ballot_voters_team_id'))
-        batch_op.drop_index(batch_op.f('ix_alliance_ballot_voters_ballot_id'))
-
     op.drop_table('alliance_ballot_voters')
-    with op.batch_alter_table('alliance_ballots', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_alliance_ballots_alliance_id'))
-
     op.drop_table('alliance_ballots')
