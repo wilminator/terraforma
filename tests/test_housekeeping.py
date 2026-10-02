@@ -130,21 +130,23 @@ async def closed_ballot(db, alliance, lead, others, closed_at):
 
 
 @pytest.mark.anyio
-async def test_old_closed_ballots_go_with_their_votes_and_newer_and_open_ones_stay(db, later):
+async def test_old_closed_ballots_go_with_their_votes_and_newer_and_open_ones_stay(db, later, monkeypatch):
     later(0)
+    monkeypatch.setattr(housekeeping, "BATCH", 1)  # two old ballots, so the removal crosses a batch
     now = wallclock.timestamp()
     _mike, alliance, lead, others = await alliance_of(db, members=2)
     old = await closed_ballot(db, alliance, lead, others, now - 31 * DAY)
+    older = await closed_ballot(db, alliance, lead, others, now - 40 * DAY)
     recent = await closed_ballot(db, alliance, lead, others, now - 29 * DAY)
     still_open = await ballots.open_ballot(db, RULES, alliance, lead.id, "Open", ["A", "B"])
     await db.flush()
-    assert await count(db, BallotVote) == 6 and await count(db, BallotVoter) == 6
+    assert await count(db, BallotVote) == 9 and await count(db, BallotVoter) == 9
 
     removed = await housekeeping.old_closed_ballots(db, now, keeping(ballot_retention_days=30))
-    assert removed == 1
+    assert removed == 2
     assert sorted((await db.scalars(select(Ballot.id))).all()) == sorted([recent.id, still_open.id])
-    assert await count(db, BallotVote) == 3 and await count(db, BallotVoter) == 3, "only the old ballot's votes went"
-    assert old.id not in (await db.scalars(select(BallotVote.ballot_id))).all()
+    assert await count(db, BallotVote) == 3 and await count(db, BallotVoter) == 3, "only the old ballots' votes went"
+    assert {old.id, older.id}.isdisjoint((await db.scalars(select(BallotVote.ballot_id))).all())
 
 
 @pytest.mark.anyio

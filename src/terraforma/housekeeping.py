@@ -23,6 +23,7 @@ from .settings import Settings
 log = logging.getLogger(__name__)
 
 DAY = 24 * 60 * 60
+BATCH = 500
 
 Job = Callable[[AsyncSession, int, Settings], Awaitable[int]]
 
@@ -48,10 +49,15 @@ async def old_closed_ballots(session: AsyncSession, now: int, settings: Settings
     """Ballots closed longer ago than ``ballot_retention_days``, with their votes (0 days: kept for good)."""
     if not settings.ballot_retention_days:
         return 0
-    old = select(Ballot.id).where(Ballot.closed_at.is_not(None), Ballot.closed_at <= now - settings.ballot_retention_days * DAY)
-    await session.execute(delete(BallotVote).where(BallotVote.ballot_id.in_(old)))
-    await session.execute(delete(BallotVoter).where(BallotVoter.ballot_id.in_(old)))
-    return (await session.execute(delete(Ballot).where(Ballot.id.in_(old)))).rowcount
+    old = (await session.scalars(select(Ballot.id).where(Ballot.closed_at.is_not(None), Ballot.closed_at <= now - settings.ballot_retention_days * DAY))).all()
+    removed = 0
+    # Ids first, in batches: MySQL refuses a DELETE whose subquery reads the table it deletes from.
+    for start in range(0, len(old), BATCH):
+        ids = old[start : start + BATCH]
+        await session.execute(delete(BallotVote).where(BallotVote.ballot_id.in_(ids)))
+        await session.execute(delete(BallotVoter).where(BallotVoter.ballot_id.in_(ids)))
+        removed += (await session.execute(delete(Ballot).where(Ballot.id.in_(ids)))).rowcount
+    return removed
 
 
 @job
