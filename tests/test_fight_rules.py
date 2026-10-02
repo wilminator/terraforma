@@ -868,3 +868,33 @@ def test_a_partymate_on_another_team_counts_but_ones_own_team_does_not():
     own.get((1, 0, 0)).charid = 101
     own.parties[0].teams = {10: [100, 101]}
     assert changes(do_combat(own, Grudge(), Lucky())) == [], "harming your own team is not a relationship"
+
+
+def prompts(events):
+    return [list(each.data) for each in events if each.type is EventType.RELATION_PROMPT]
+
+
+def test_a_game_can_ask_the_player_instead_of_changing_the_relationship_itself():
+    from terraforma.fights.rules import AskPlayer
+
+    class Courtesy(Rules):
+        def relation_moved(self, fight, actor, target, resource, before, after, maximum):
+            return AskPlayer(-5, "you hurt them") if after < before else 0
+
+    fight = teamed_fight({0: (set(), {2})})
+    events = do_combat(fight, Courtesy(), Lucky())
+    assert prompts(events) == [[10, 11, -5, "you hurt them"]], "the owner of the actor's team is to be asked"
+    assert changes(events) == [], "and nothing moves until they answer"
+
+
+def test_asking_is_not_done_for_an_enemy_or_a_fighter_without_a_team():
+    from terraforma.fights.rules import AskPlayer
+
+    class Courtesy(Rules):
+        def relation_moved(self, fight, actor, target, resource, before, after, maximum):
+            return AskPlayer(-5)
+
+    assert prompts(do_combat(teamed_fight({}), Courtesy(), Lucky())) == [], "an enemy"
+    fight = teamed_fight({0: (set(), {2})})
+    fight.get((0, 0, 0)).charid = None
+    assert prompts(do_combat(fight, Courtesy(), Lucky())) == []
