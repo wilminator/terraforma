@@ -114,8 +114,8 @@ def test_team_pages_are_off_until_the_player_turns_them_on_and_name_alliances_on
 def test_the_alliances_link_to_their_pages_and_switch_off_again(pact):
     client, ids = pact
     call(client, "PUT", "Mike", "/api/profile/team-pages", {"enabled": True})
-    call(client, "PUT", "Mike", "/api/profile/team-alliances", {"enabled": True})
-    team_token = {team["name"]: team["token"] for team in call(client, "GET", "Mike", "/api/profile")["teams"]}["Vanguard"]
+    mine = call(client, "PUT", "Mike", "/api/profile/team-alliances", {"enabled": True})
+    team_token = {team["name"]: team["token"] for team in mine["teams"]}["Vanguard"]
     alliance_token = call(client, "POST", "Mike", f"/api/alliances/{ids['alliance']}/profile/token")["token"]
     assert public(client, f"/api/p/team/{team_token}")["alliances"] == [{"name": "Iron Pact", "page": alliance_token}]
     call(client, "PUT", "Mike", "/api/profile/team-alliances", {"enabled": False})
