@@ -1,7 +1,7 @@
 """a fight's relationship changes are applied once
 
-Revision ID: 0018
-Revises: 0017
+Revision ID: 0019
+Revises: 0018
 Created: 2026-10-02
 """
 from collections.abc import Sequence
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from alembic import op
 
 
-revision: str = '0018'
-down_revision: str | None = '0017'
+revision: str = '0019'
+down_revision: str | None = '0018'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
