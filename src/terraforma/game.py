@@ -13,6 +13,7 @@ from pathlib import Path
 from .economy import Economy, TeamGold
 from .fights.rules import Rules
 from .alliances.hooks import Alliances
+from .market.hooks import Market
 from .relations.hooks import Relations
 from .pvp.hooks import PvpZones
 from .towns.hooks import Towns
@@ -36,3 +37,5 @@ class Game:
     towns: Towns = field(default_factory=Towns)
     # Where a party may pick a fight with another party (nowhere, by default); see ``Rules.may_start_pvp`` for the range window.
     pvp: PvpZones = field(default_factory=PvpZones)
+    # What shops sell and pay (a function of the place's economy level), for the shops a game stands on its maps.
+    market: Market = field(default_factory=Market)
