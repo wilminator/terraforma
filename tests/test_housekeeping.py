@@ -195,3 +195,12 @@ def test_retention_is_off_by_default_and_never_negative():
     assert (settings.ballot_retention_days, settings.rating_prompt_retention_days) == (0, 0)
     with pytest.raises(ValueError):
         keeping(ballot_retention_days=-1)
+
+
+def test_every_housekeeping_job_is_registered_and_so_runs():
+    assert list(housekeeping.JOBS) == [
+        "finished_rate_limit_windows",
+        "stale_pending_drops",
+        "old_closed_ballots",
+        "old_settled_rating_prompts",
+    ]

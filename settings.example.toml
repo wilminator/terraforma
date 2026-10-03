@@ -22,6 +22,10 @@ key_dir = "keys"
 # How often the server tidies up what has gone stale (finished rate-limit windows, say), in seconds.
 # housekeeping_seconds = 3600.0
 
+# How long a held drop (need/want roll, hand-out) waits for its players before housekeeping settles it with the answers
+# so far (nobody answered: it is left unclaimed), in seconds. 0 means it waits for ever.
+# pending_drop_timeout_seconds = 0
+
 # Housekeeping removes closed ballots (with their votes) and answered or dismissed rating prompts older than
 # this many days. 0 keeps them for good, which is the default.
 # ballot_retention_days = 0
