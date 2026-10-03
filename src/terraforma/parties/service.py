@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..heroes.models import Hero, Team, TeamMember
 from ..world.start import ensure_start
 from ..towns.models import TownTeam, TownVisit
-from ..standing.models import PARTY, StandingStatus
+from ..standing.models import PARTY, TEAM, StandingStatus
 from .models import Party, PartyRequest, PartyTeam
 
 
@@ -180,6 +180,7 @@ async def leave_party(session: AsyncSession, team_id: int) -> int | None:
     if await session.scalar(select(TownTeam.id).where(TownTeam.team_id == team_id)) is not None:
         raise PartyError("that team is in a town with its party: it leaves with the town's own call")
     await session.delete(row)
+    await session.execute(delete(StandingStatus).where(StandingStatus.target_kind == TEAM, StandingStatus.target_id == team_id, StandingStatus.ends_party.is_(True)))  # a guest pass is for this party
     await session.flush()
     if not await session.scalar(select(func.count()).select_from(PartyTeam).where(PartyTeam.party_id == party_id)):
         visits = select(TownVisit.id).where(TownVisit.party_id == party_id)  # (a party apart in a town goes with its visit)

@@ -10,6 +10,7 @@ is the game's: ``ended`` lists the rows a sweep removed so a caller can tell it.
 """
 
 from datetime import datetime, timedelta
+from typing import NamedTuple
 
 from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,11 +20,24 @@ from ..content.models import Status
 from ..fights.build import known_statuses
 from ..fights.fight import Fight
 from ..fights.status import StatusToken
+from ..heroes.field import in_running_fight
 from ..heroes.models import Hero, TeamMember
 from ..parties import service as parties
+from ..parties.service import PartyError
+from ..towns import service as towns
+from ..towns.models import TownTeam
 from .models import HERO, KINDS, PARTY, TEAM, StandingStatus
 
 MAX_SECONDS = 10 * 365 * 24 * 3600
+
+
+class Ended(NamedTuple):
+    """A standing status a sweep removed."""
+
+    kind: str
+    target_id: int
+    status: str
+    left_party: bool  # a guest pass: the team went out of its party with it
 
 
 class StandingError(ValueError):
@@ -34,11 +48,14 @@ def _live():
     return or_(StandingStatus.ends_at.is_(None), StandingStatus.ends_at > wallclock.now())
 
 
-async def place(session: AsyncSession, kind: str, target_id: int, status: str, seconds: int | None, unremovable: bool = False) -> StandingStatus:
+async def place(session: AsyncSession, kind: str, target_id: int, status: str, seconds: int | None, unremovable: bool = False, ends_party: bool = False) -> StandingStatus:
     """Puts the status on the target for $seconds from now (None: until removed), renewing it if it is there already.
-    Raises StandingError for a status the content does not have."""
+    $ends_party (a team only) makes it a guest pass: the team leaves its party when it ends. Raises StandingError for a status the
+    content does not have."""
     if kind not in KINDS:
         raise StandingError(f"a standing status goes on one of {', '.join(KINDS)}")
+    if ends_party and (kind != TEAM or seconds is None):
+        raise StandingError("a guest pass is a team's status with an end time")
     if seconds is not None and not 1 <= seconds <= MAX_SECONDS:
         raise StandingError("a status lasts at least a second and at most ten years")
     if await session.scalar(select(Status.id).where(Status.key == status, Status.active.is_(True))) is None:
@@ -48,7 +65,7 @@ async def place(session: AsyncSession, kind: str, target_id: int, status: str, s
     if row is None:
         row = StandingStatus(target_kind=kind, target_id=target_id, status=status)
         session.add(row)
-    row.ends_at, row.unremovable = ends, unremovable
+    row.ends_at, row.unremovable, row.ends_party = ends, unremovable, ends_party
     await session.flush()
     return row
 
@@ -90,13 +107,36 @@ async def forget(session: AsyncSession, kind: str, target_id: int) -> None:
     await session.execute(delete(StandingStatus).where(StandingStatus.target_kind == kind, StandingStatus.target_id == target_id))
 
 
-async def sweep(session: AsyncSession, now: datetime | None = None) -> list[tuple[str, int, str]]:
-    """Removes the standing statuses that have ended, and returns them as ``(kind, target id, status)``."""
+async def _send_home(session: AsyncSession, team_id: int) -> bool:
+    """A guest team leaves its party (and the town visit it is in). False if it cannot now (a hero of it is in a running fight):
+    the sweep tries again next time."""
+    for hero in (await session.scalars(select(Hero).join(TeamMember, TeamMember.hero_id == Hero.id).where(TeamMember.team_id == team_id))).all():
+        if await in_running_fight(session, hero):
+            return False
+    try:
+        async with session.begin_nested():
+            if await session.scalar(select(TownTeam.id).where(TownTeam.team_id == team_id)) is not None:
+                await towns.leave_party(session, team_id)
+            else:
+                await parties.leave_party(session, team_id)
+    except (PartyError, towns.TownError):
+        return False
+    return True
+
+
+async def sweep(session: AsyncSession, now: datetime | None = None) -> list[Ended]:
+    """Removes the standing statuses that have ended, and returns them. A guest pass also takes its team out of its party; if
+    the team cannot leave yet its row stays (it has already stopped counting) and the next sweep tries again."""
     cutoff = now or wallclock.now()
     rows = (await session.scalars(select(StandingStatus).where(StandingStatus.ends_at.is_not(None), StandingStatus.ends_at <= cutoff).order_by(StandingStatus.id))).all()
-    gone = [(row.target_kind, row.target_id, row.status) for row in rows]
+    gone = []
     for row in rows:
-        await session.delete(row)
+        guest = row.ends_party and row.target_kind == TEAM
+        if guest and not await _send_home(session, row.target_id):
+            continue
+        gone.append(Ended(row.target_kind, row.target_id, row.status, guest))
+        await session.execute(delete(StandingStatus).where(StandingStatus.id == row.id))  # (leaving may have deleted it already)
+        session.expunge(row)
     await session.flush()
     return gone
 

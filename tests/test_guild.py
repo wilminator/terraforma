@@ -7,7 +7,7 @@ from terraforma.accounts.service import create_account
 from terraforma.alliances.models import Alliance, AllianceMember
 from terraforma.content.loader import load_content
 from terraforma.guild import service
-from terraforma.guild.hooks import Guild
+from terraforma.guild.hooks import GuestPass, Guild
 from terraforma.heroes import service as heroes
 from terraforma.heroes.models import Hero
 from terraforma.npcs import service as npcs
@@ -16,6 +16,8 @@ from terraforma.npcs.state import DialogState
 from terraforma.parties import service as parties
 from terraforma.parties.models import Party, PartyRequest
 from terraforma.profiles.models import TeamProfile
+from terraforma.standing import service as standing
+from terraforma.standing.models import StandingStatus
 from terraforma.testing import in_app_db
 from terraforma.towns import service as towns
 from terraforma.towns.hooks import Towns
@@ -25,7 +27,7 @@ from .helpers import expect
 pytestmark = pytest.mark.anyio
 
 PASSWORD = "correct horse battery"
-SEED = {"jobs": [{"key": "fighter", "name": "Fighter", "stat_growth": {"HP": 20}}]}
+SEED = {"jobs": [{"key": "fighter", "name": "Fighter", "stat_growth": {"HP": 20}}], "statuses": [{"key": "guest", "name": "Guest", "kind": "good"}]}
 SIZE = 20
 NPCS, GUILD = Npcs(), Guild()
 
@@ -257,3 +259,46 @@ def test_the_calls_add_a_team_through_the_conversation(app_client):
     assert done["result"]["team"] == ids["Rearguard"][0]
     assert done["dialog"]["events"][0]["text"] == "Done." and done["dialog"]["ended"]
     assert client.post(f"{guild}/add-team", json={"team_id": ids["Rearguard"][0]}, headers=headers).status_code == 409, "one use per payment"
+
+
+# --- the guest pass --------------------------------------------------------------------------------------------------------------
+
+class Hourly(Guild):
+    async def guest_pass(self, session, team_id):
+        return GuestPass("guest", 3600)
+
+
+async def test_a_team_without_a_guest_pass_stays_until_it_leaves(db):
+    w = await a_world(db)
+    await service.add_team(db, w.hero["Vanguard"], w.team["Rearguard"], SIZE, GUILD)
+    assert await db.scalar(select(func.count()).select_from(StandingStatus)) == 0
+
+
+async def test_a_guest_team_leaves_the_party_when_its_pass_runs_out_and_the_others_stay(db, later):
+    later(0)
+    w = await a_world(db)
+    await service.add_team(db, w.hero["Vanguard"], w.team["Rearguard"], SIZE, Hourly())
+    assert await standing.remaining(db, "team", w.team["Rearguard"], "guest") == 3600
+    later(3599)
+    assert await standing.sweep(db) == []
+    assert await parties.team_ids(db, w.party["Vanguard"]) == [w.team["Vanguard"], w.team["Rearguard"]]
+    later(3600)
+    assert await standing.sweep(db) == [("team", w.team["Rearguard"], "guest", True)]
+    assert await parties.team_ids(db, w.party["Vanguard"]) == [w.team["Vanguard"]]
+    assert await parties.party_of(db, w.team["Rearguard"]) is None
+    assert await db.scalar(select(func.count()).select_from(StandingStatus)) == 0
+
+
+async def test_a_guest_who_leaves_early_takes_the_pass_along(db):
+    w = await a_world(db)
+    await service.add_team(db, w.hero["Vanguard"], w.team["Rearguard"], SIZE, Hourly())
+    await parties.leave_party(db, w.team["Rearguard"])
+    assert await db.scalar(select(func.count()).select_from(StandingStatus)) == 0
+
+
+async def test_a_pass_is_a_teams_status_with_an_end_time(db):
+    w = await a_world(db)
+    with pytest.raises(standing.StandingError, match="guest pass"):
+        await standing.place(db, "hero", w.hero["Vanguard"].id, "guest", 60, ends_party=True)
+    with pytest.raises(standing.StandingError, match="guest pass"):
+        await standing.place(db, "team", w.team["Vanguard"], "guest", None, ends_party=True)
