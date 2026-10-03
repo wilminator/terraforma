@@ -349,7 +349,7 @@ def do_effect(fight, rules, rng, effect, actor, target, target_address, impact, 
             return False
         kind = status.GOOD if effect.effect == specs.REMOVE_GOOD_STATUS else status.BAD
         for token in list(target.tokens):
-            if token.spec.kind == kind and effect.status in ("", token.spec.key):
+            if token.spec.kind == kind and effect.status in ("", token.spec.key) and not token.unremovable:
                 remove_token(target, target_address, token, status.REMOVED, log)
     return True
 

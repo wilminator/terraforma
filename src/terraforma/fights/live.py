@@ -28,6 +28,7 @@ from ..parties import service as parties
 from ..parties.models import Party
 from ..relations import ratings
 from ..relations.hooks import Relations
+from ..standing import service as standing
 from ..world.rng import WorldRng
 from . import ai, store, timing
 from .build import known_drop_tables, known_statuses, monster_fighter, team_party
@@ -106,6 +107,7 @@ async def start_team_fight(session: AsyncSession, team: Team, monster_keys: list
         raise Refused(f"there is no drop table {sorted(missing)[0]!r}")
     fight = build_fight({0: _groups(heroes, rules.group_size), 1: _groups(monsters, rules.group_size)}, await known_statuses(session), tables, list(area_drops or ()))
     fight.parties[0].teams = teams
+    await standing.attach(session, fight)
     first = await session.get(Hero, heroes[0].charid)
     record = await store.create_fight(session, await session.get(Map, first.map_id), fight, first.x, first.y)
     record.time_multiplier = multiplier
@@ -144,6 +146,7 @@ async def start_party_fight(session: AsyncSession, party_id: int, monster_keys: 
         raise Refused(f"there is no drop table {sorted(missing)[0]!r}")
     fight = build_fight({0: _groups(heroes, rules.group_size), 1: _groups(monsters, rules.group_size)}, await known_statuses(session), tables, list(area_drops or ()))
     fight.parties[0].teams = teams
+    await standing.attach(session, fight)
     record = await store.create_fight(session, await session.get(Map, party.map_id), fight, party.x, party.y)
     record.time_multiplier = multiplier
     record.round_deadline = wallclock.now() + timedelta(seconds=rules.round_length(multiplier))

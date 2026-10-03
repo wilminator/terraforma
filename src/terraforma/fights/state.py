@@ -65,7 +65,10 @@ def _build_drop_table(raw: dict) -> DropTable:
 
 
 def _token(token: StatusToken) -> dict:
-    return {"status": token.spec.key, "source": list(token.source), "duration": token.duration, "rounds": token.rounds, "turns": token.turns}
+    raw = {"status": token.spec.key, "source": list(token.source), "duration": token.duration, "rounds": token.rounds, "turns": token.turns}
+    if token.unremovable:  # (only written when set, so a stored fight's state reads back exactly as it was written)
+        raw["unremovable"] = True
+    return raw
 
 
 def _item(item: ItemSpec) -> dict:
@@ -144,7 +147,7 @@ def _build_fighter(raw: dict, statuses: dict[str, StatusSpec]) -> Combatant:
         **_progress(raw.get("progress", {})),
         drops=tuple(raw.get("drops", ())), buffed_by=[tuple(address) for address in raw.get("buffed_by", ())],
         tokens=[
-            StatusToken(statuses[token["status"]], tuple(token["source"]), token["duration"], token["rounds"], token["turns"])
+            StatusToken(statuses[token["status"]], tuple(token["source"]), token["duration"], token["rounds"], token["turns"], token.get("unremovable", False))
             for token in raw.get("tokens", [])
         ],
     )

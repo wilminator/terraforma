@@ -135,6 +135,8 @@ class StatusToken:
     #: Rounds that have gone by since it was placed, and turns its bearer has taken.
     rounds: int = 0
     turns: int = 0
+    #: A token buff-cancelling effects cannot take off (``remove_good_status`` and ``remove_bad_status`` skip it).
+    unremovable: bool = False
 
     @property
     def remaining(self) -> int | None:
