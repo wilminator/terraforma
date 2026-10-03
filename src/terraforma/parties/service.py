@@ -5,6 +5,11 @@ most one party, and the smallest party is one team. How many heroes a party hold
 (``Rules.party_size``, 20 by default: four groups of five). A team joins only if there is a place for every
 one of its heroes, and a hero added to a team that is in a party needs a place too (``check_room``).
 
+A party has a leader, a player (account) rather than a team: the player who founded it, then whoever accepts another party
+into theirs (``accepted_by`` on ``join_party`` and ``merge_parties``). When the leader's last team leaves, the leadership goes
+to the owner of the party's first team. Nothing else follows from leading in the engine except who hands out the party's
+``assign`` drops (``is_leader``, ``Rules.may_assign_drop``).
+
 These are service functions, not calls: the map drives them later (an interaction on the map forms and merges
 parties), so they take ids rather than an account, and whoever calls them decides who may. They count first,
 so two calls at the same instant could each slip past the size limit; the database does refuse a team in two
@@ -95,7 +100,7 @@ async def create_party(session: AsyncSession, team_id: int, party_size: int) -> 
         where = {"map_id": first.map_id, "x": first.x, "y": first.y}
     else:
         where = {"map_id": (await ensure_start(session)).id, "x": 0, "y": 0}
-    party = Party(**where)
+    party = Party(leader_account_id=team.account_id, **where)
     session.add(party)
     await session.flush()
     session.add(PartyTeam(party_id=party.id, team_id=team.id, position=0))
@@ -117,8 +122,19 @@ async def _flush(session: AsyncSession) -> None:
         raise PartyError("that team is already in a party") from error
 
 
-async def join_party(session: AsyncSession, party_id: int, team_id: int, party_size: int) -> Party:
-    """The team joins the party whole, if there is a place for every one of its heroes."""
+async def _accept(session: AsyncSession, party: Party, accepted_by: int | None) -> None:
+    """The player who accepted a team or party into this one leads it from now on (they must have a team in it)."""
+    if accepted_by is None:
+        return
+    owns = select(PartyTeam.id).join(Team, Team.id == PartyTeam.team_id).where(PartyTeam.party_id == party.id, Team.account_id == accepted_by)
+    if await session.scalar(owns.limit(1)) is None:
+        raise PartyError("only a player with a team in the party can accept another party into it")
+    party.leader_account_id = accepted_by
+
+
+async def join_party(session: AsyncSession, party_id: int, team_id: int, party_size: int, accepted_by: int | None = None) -> Party:
+    """The team joins the party whole, if there is a place for every one of its heroes. $accepted_by, the account of the
+    player who accepted it, becomes the party's leader."""
     party = await get_party(session, party_id)
     await _check_whole(session, party.id)
     team = await _team(session, team_id)
@@ -127,6 +143,7 @@ async def join_party(session: AsyncSession, party_id: int, team_id: int, party_s
     have, coming = await size(session, party.id), await team_size(session, team.id)
     if have + coming > party_size:
         raise PartyError(f"a party has room for {party_size} heroes: it has {have} and that team has {coming}")
+    await _accept(session, party, accepted_by)
     session.add(PartyTeam(party_id=party.id, team_id=team.id, position=await _next_position(session, party.id)))
     await _flush(session)
     return party
@@ -147,12 +164,15 @@ async def leave_party(session: AsyncSession, team_id: int) -> int | None:
         await session.execute(delete(TownTeam).where(TownTeam.visit_id.in_(visits)))
         await session.execute(delete(TownVisit).where(TownVisit.party_id == party_id))
         await session.execute(delete(Party).where(Party.id == party_id))
+    else:
+        await leader_account(session, party_id)  # (settles the leadership if the leaver was the last of the leader's teams)
     return party_id
 
 
-async def merge_parties(session: AsyncSession, keep_id: int, absorb_id: int, party_size: int) -> Party:
+async def merge_parties(session: AsyncSession, keep_id: int, absorb_id: int, party_size: int, accepted_by: int | None = None) -> Party:
     """Every team of the second party joins the first, in the order they were in; the second party is gone.
-    Both must fit together: parties never merge in part."""
+    Both must fit together: parties never merge in part. $accepted_by, the account of the player who accepted the
+    second party into theirs, becomes the leader (else the first party keeps its own)."""
     if keep_id == absorb_id:
         raise PartyError("a party can't merge with itself")
     keep, absorb = await get_party(session, keep_id), await get_party(session, absorb_id)
@@ -161,6 +181,7 @@ async def merge_parties(session: AsyncSession, keep_id: int, absorb_id: int, par
     have, coming = await size(session, keep.id), await size(session, absorb.id)
     if have + coming > party_size:
         raise PartyError(f"a party has room for {party_size} heroes: they have {have} and {coming} between them")
+    await _accept(session, keep, accepted_by)
     position = await _next_position(session, keep.id)
     moving = (await session.scalars(select(PartyTeam).where(PartyTeam.party_id == absorb.id).order_by(PartyTeam.position))).all()
     # Moved in one go after taking the first party's end positions, so no two ever clash.
@@ -169,6 +190,30 @@ async def merge_parties(session: AsyncSession, keep_id: int, absorb_id: int, par
     await session.flush()
     await session.execute(delete(Party).where(Party.id == absorb.id))
     return keep
+
+
+async def leader_account(session: AsyncSession, party_id: int) -> int | None:
+    """The account of the party's leader. If the stored leader has no team in the party any more (it left, or the party
+    has none recorded), the owner of the party's first team leads, and that is stored."""
+    party = await get_party(session, party_id)
+    owners = (await session.scalars(
+        select(Team.account_id).join(PartyTeam, PartyTeam.team_id == Team.id).where(PartyTeam.party_id == party.id).order_by(PartyTeam.position)
+    )).all()
+    if party.leader_account_id not in owners:
+        party.leader_account_id = owners[0] if owners else None
+        await session.flush()
+    return party.leader_account_id
+
+
+async def is_leader(session: AsyncSession, hero: Hero) -> bool:
+    """Whether the hero's player leads the party the hero's team is in. A team in no party stands alone, led by its owner."""
+    team = await session.scalar(select(Team).join(TeamMember, TeamMember.team_id == Team.id).where(TeamMember.hero_id == hero.id))
+    if team is None:
+        return False
+    party = await party_of(session, team.id)
+    if party is None:
+        return team.account_id == hero.account_id
+    return await leader_account(session, party.id) == hero.account_id
 
 
 async def check_room(session: AsyncSession, team_id: int, party_size: int) -> None:
