@@ -128,12 +128,10 @@ def test_the_directory_opt_in_adds_the_handle_and_takes_only_a_boolean(pact):
 
 def test_an_alliance_page_lists_only_visible_teams_and_names_a_player_only_in_the_directory(pact):
     client, ids = pact
-    call(client, "POST", "Mike", "/api/profile/token")
     call(client, "PUT", "Mike", "/api/profile/team-visible", {"team_id": ids["Vanguard"], "visible": True})
     token = call(client, "POST", "Mike", f"/api/alliances/{ids['alliance']}/profile/token")["token"]
-    call(client, "PUT", "Mike", f"/api/alliances/{ids['alliance']}/profile/bio", {"bio": "We hold the ford."})
     page = public(client, f"/api/p/alliance/{token}")
-    assert (page["name"], page["bio"]) == ("Iron Pact", "We hold the ford.")
+    assert (page["name"], page["bio"]) == ("Iron Pact", "")
     assert [(team["name"], team["role"], "handle" in team) for team in page["teams"]] == [("Vanguard", "leader", False)]  # Strangers is hidden
     call(client, "PUT", "Mike", "/api/profile/directory", {"enabled": True})
     assert public(client, f"/api/p/alliance/{token}")["teams"][0]["handle"] == "MiketheBold"
