@@ -10,6 +10,7 @@ from ..economy import Economy, TeamGold
 from ..alliances.hooks import Alliances
 from ..relations.hooks import Relations
 from ..pvp.hooks import PvpZones
+from ..npcs.hooks import Npcs
 from ..towns.hooks import Towns
 from ..fights.rules import Rules
 from ..models import Account
@@ -104,3 +105,12 @@ ActingAccount = Annotated[Account, Depends(acting_account)]
 def client_address(request: Request) -> str:
     """The caller's IP (behind the NAS's proxy, uvicorn's --proxy-headers sets it from X-Forwarded-For)."""
     return request.client.host if request.client else "unknown"
+
+
+def get_npcs(request: Request) -> Npcs:
+    """The game's rules for talking to NPCs (the engine's counter rule when the app runs without a game)."""
+    game = request.app.state.game
+    return game.npcs if game else Npcs()
+
+
+GameNpcs = Annotated[Npcs, Depends(get_npcs)]
