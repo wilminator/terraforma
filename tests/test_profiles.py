@@ -68,21 +68,26 @@ def pact(app_client):
     return app_client, ids
 
 
+def teams_of(mine):
+    return {team["name"]: team for team in mine["teams"]}
+
+
 def test_there_is_no_page_until_the_player_makes_one(pact):
     client, _ = pact
     mine = call(client, "GET", "Mike", "/api/profile")
-    assert mine["token"] is None and mine["bio"] == "" and mine["handle"] == "MiketheBold" and mine["team_pages"] is False
-    assert [team["name"] for team in mine["teams"]] == ["Vanguard", "Rivals"]
+    assert mine["token"] is None and mine["bio"] == "" and mine["handle"] == "MiketheBold" and mine["directory"] is False
+    assert [(team["name"], team["visible"]) for team in mine["teams"]] == [("Vanguard", False), ("Rivals", False)]
     public(client, "/api/p/doesnotexist1234", 404)
 
 
-def test_the_players_page_shows_the_handle_the_bio_and_the_teams_chosen_and_nothing_else(pact):
+def test_the_players_page_shows_the_handle_the_bio_and_the_visible_teams_and_nothing_else(pact):
     client, ids = pact
     token = call(client, "POST", "Mike", "/api/profile/token")["token"]
     call(client, "PUT", "Mike", "/api/profile/bio", {"bio": "  Hello, travellers.  "})
-    call(client, "PUT", "Mike", "/api/profile/team-listed", {"team_id": ids["Rivals"], "listed": False})
+    assert public(client, f"/api/p/{token}")["teams"] == []  # every team is hidden until shown
+    mine = call(client, "PUT", "Mike", "/api/profile/team-visible", {"team_id": ids["Vanguard"], "visible": True})
     page = public(client, f"/api/p/{token}")  # no login
-    assert page == {"handle": "MiketheBold", "bio": "Hello, travellers.", "teams": [{"name": "Vanguard", "page": None}]}
+    assert page == {"handle": "MiketheBold", "bio": "Hello, travellers.", "teams": [{"name": "Vanguard", "page": teams_of(mine)["Vanguard"]["token"]}]}
     assert "mike" not in json.dumps(page).lower().replace("miketheb", "")  # not the username or email
 
 
@@ -95,58 +100,57 @@ def test_a_new_token_replaces_the_old_for_good(pact):
     assert public(client, f"/api/p/{new}")["handle"] == "MiketheBold"
 
 
-def test_team_pages_are_off_until_the_player_turns_them_on_and_name_alliances_only_on_a_second_opt_in(pact):
-    client, ids = pact
-    token = call(client, "POST", "Mike", "/api/profile/token")["token"]
-    team_token = {team["name"]: team["token"] for team in call(client, "GET", "Mike", "/api/profile")["teams"]}["Vanguard"]
-    public(client, f"/api/p/team/{team_token}", 404)  # off
-    call(client, "PUT", "Mike", "/api/profile/team-pages", {"enabled": True})
-    assert public(client, f"/api/p/{token}")["teams"][0]["page"] == team_token
-    # Team pages on is not enough: the alliances stay out of the page until the player says so.
-    assert call(client, "GET", "Mike", "/api/profile")["team_alliances"] is False
-    assert public(client, f"/api/p/team/{team_token}") == {"name": "Vanguard", "handle": "MiketheBold"}
-    assert call(client, "PUT", "Mike", "/api/profile/team-alliances", {"enabled": True})["team_alliances"] is True
-    # The alliance has no page yet, so the team page names it with no link.
-    assert public(client, f"/api/p/team/{team_token}") == {
-        "name": "Vanguard", "handle": "MiketheBold", "alliances": [{"name": "Iron Pact", "page": None}]}
-
-
-def test_the_alliances_link_to_their_pages_and_switch_off_again(pact):
-    client, ids = pact
-    call(client, "PUT", "Mike", "/api/profile/team-pages", {"enabled": True})
-    mine = call(client, "PUT", "Mike", "/api/profile/team-alliances", {"enabled": True})
-    team_token = {team["name"]: team["token"] for team in mine["teams"]}["Vanguard"]
-    alliance_token = call(client, "POST", "Mike", f"/api/alliances/{ids['alliance']}/profile/token")["token"]
-    assert public(client, f"/api/p/team/{team_token}")["alliances"] == [{"name": "Iron Pact", "page": alliance_token}]
-    call(client, "PUT", "Mike", "/api/profile/team-alliances", {"enabled": False})
-    assert "alliances" not in public(client, f"/api/p/team/{team_token}")
-    call(client, "PUT", "Mike", "/api/profile/team-pages", {"enabled": False})
-    public(client, f"/api/p/team/{team_token}", 404)  # team pages off hides the page whatever the alliances switch says
-
-
-def test_the_alliances_switch_makes_the_page_by_itself_and_takes_only_a_boolean(pact):
-    client, _ = pact
-    assert call(client, "PUT", "Mike", "/api/profile/team-alliances", {"enabled": True})["token"] is not None
-    call(client, "PUT", "Mike", "/api/profile/team-alliances", {"enabled": "yes"}, 422)
-    call(client, "PUT", "Mike", "/api/profile/team-alliances", {"enabled": True, "extra": 1}, 422)
-
-
-def test_an_alliance_page_lists_every_team_but_links_only_those_with_team_pages(pact):
+def test_a_team_page_exists_only_while_the_team_is_visible_and_names_its_alliances(pact):
     client, ids = pact
     call(client, "POST", "Mike", "/api/profile/token")
-    call(client, "PUT", "Mike", "/api/profile/team-pages", {"enabled": True})  # Mike on, Zed off (never made one)
+    team_token = teams_of(call(client, "GET", "Mike", "/api/profile"))["Vanguard"]["token"]
+    public(client, f"/api/p/team/{team_token}", 404)  # hidden
+    call(client, "PUT", "Mike", "/api/profile/team-visible", {"team_id": ids["Vanguard"], "visible": True})
+    # The alliance has no page yet, so the team page names it with no link. The handle waits on the directory.
+    assert public(client, f"/api/p/team/{team_token}") == {"name": "Vanguard", "alliances": [{"name": "Iron Pact", "page": None}]}
+    alliance_token = call(client, "POST", "Mike", f"/api/alliances/{ids['alliance']}/profile/token")["token"]
+    assert public(client, f"/api/p/team/{team_token}")["alliances"] == [{"name": "Iron Pact", "page": alliance_token}]
+    call(client, "PUT", "Mike", "/api/profile/team-visible", {"team_id": ids["Vanguard"], "visible": False})
+    public(client, f"/api/p/team/{team_token}", 404)
+
+
+def test_the_directory_opt_in_adds_the_handle_and_takes_only_a_boolean(pact):
+    client, ids = pact
+    assert call(client, "PUT", "Mike", "/api/profile/directory", {"enabled": True})["token"] is not None  # makes the page
+    mine = call(client, "PUT", "Mike", "/api/profile/team-visible", {"team_id": ids["Vanguard"], "visible": True})
+    team_token = teams_of(mine)["Vanguard"]["token"]
+    assert public(client, f"/api/p/team/{team_token}")["handle"] == "MiketheBold"
+    assert call(client, "PUT", "Mike", "/api/profile/directory", {"enabled": False})["directory"] is False
+    assert "handle" not in public(client, f"/api/p/team/{team_token}")
+    call(client, "PUT", "Mike", "/api/profile/directory", {"enabled": "yes"}, 422)
+    call(client, "PUT", "Mike", "/api/profile/directory", {"enabled": True, "extra": 1}, 422)
+
+
+def test_an_alliance_page_names_every_team_but_links_and_names_a_player_only_for_visible_ones(pact):
+    client, ids = pact
+    call(client, "PUT", "Mike", "/api/profile/team-visible", {"team_id": ids["Vanguard"], "visible": True})
     token = call(client, "POST", "Mike", f"/api/alliances/{ids['alliance']}/profile/token")["token"]
-    call(client, "PUT", "Mike", f"/api/alliances/{ids['alliance']}/profile/bio", {"bio": "We hold the ford."})
     page = public(client, f"/api/p/alliance/{token}")
-    assert (page["name"], page["bio"]) == ("Iron Pact", "We hold the ford.")
-    assert [(team["name"], team["page"] is not None) for team in page["teams"]] == [("Vanguard", True), ("Strangers", False)]
+    assert (page["name"], page["bio"]) == ("Iron Pact", "")
+    assert [(team["name"], team["role"], "handle" in team) for team in page["teams"]] == [("Vanguard", "leader", False), ("Strangers", "member", False)]
+    assert page["teams"][0]["page"] is not None and page["teams"][1]["page"] is None  # a hidden team's name shows, with no link
+    call(client, "PUT", "Mike", "/api/profile/directory", {"enabled": True})
+    assert public(client, f"/api/p/alliance/{token}")["teams"][0]["handle"] == "MiketheBold"
+    call(client, "PUT", "Zed", "/api/profile/team-visible", {"team_id": ids["Strangers"], "visible": True})
+    assert [team["page"] is not None for team in public(client, f"/api/p/alliance/{token}")["teams"]] == [True, True]
+    call(client, "PUT", "Mike", "/api/profile/team-visible", {"team_id": ids["Vanguard"], "visible": False})
+    hidden = public(client, f"/api/p/alliance/{token}")["teams"][0]
+    assert hidden == {"name": "Vanguard", "role": "leader", "page": None}  # the name stays, with no link and no handle
 
 
-def test_members_open_member_team_pages_even_when_the_player_turned_them_off_and_outsiders_cannot(pact):
+def test_members_open_a_visible_member_team_and_reach_the_player_only_in_the_directory(pact):
     client, ids = pact
     url = f"/api/alliances/{ids['alliance']}/teams/{ids['Vanguard']}/profile"
-    page = call(client, "GET", "Zed", url)  # Mike has made no page at all
-    assert page == {"name": "Vanguard", "handle": "MiketheBold", "alliances": [{"name": "Iron Pact", "page": None}]}
+    call(client, "GET", "Zed", url, status=404)  # Mike has made nothing visible
+    call(client, "PUT", "Mike", "/api/profile/team-visible", {"team_id": ids["Vanguard"], "visible": True})
+    assert call(client, "GET", "Zed", url) == {"name": "Vanguard", "alliances": [{"name": "Iron Pact", "page": None}]}
+    token = call(client, "PUT", "Mike", "/api/profile/directory", {"enabled": True})["token"]
+    assert call(client, "GET", "Zed", url) == {"name": "Vanguard", "handle": "MiketheBold", "player": token, "alliances": [{"name": "Iron Pact", "page": None}]}
     call(client, "GET", "Yan", url, status=404)  # not in the alliance: it does not exist to Yan
     call(client, "GET", "Zed", f"/api/alliances/{ids['alliance']}/teams/{ids['Rivals']}/profile", status=404)  # Rivals is not in it
 
@@ -160,13 +164,13 @@ def test_only_a_role_that_may_speak_writes_the_alliance_page(pact):
     assert call(client, "GET", "Zed", f"/api/alliances/{ids['alliance']}/profile")["bio"] == "We hold the ford."
 
 
-def test_a_player_hides_one_team_and_gives_it_a_new_address_and_cannot_touch_anothers(pact):
+def test_a_player_shows_one_team_and_gives_it_a_new_address_and_cannot_touch_anothers(pact):
     client, ids = pact
     call(client, "POST", "Mike", "/api/profile/token")
     before = {team["name"]: team["token"] for team in call(client, "GET", "Mike", "/api/profile")["teams"]}
     after = call(client, "POST", "Mike", "/api/profile/team-token", {"team_id": ids["Vanguard"]})
     assert {team["name"]: team["token"] for team in after["teams"]}["Vanguard"] != before["Vanguard"]
-    call(client, "PUT", "Mike", "/api/profile/team-listed", {"team_id": ids["Strangers"], "listed": False}, 404)  # Zed's
+    call(client, "PUT", "Mike", "/api/profile/team-visible", {"team_id": ids["Strangers"], "visible": True}, 404)  # Zed's
     call(client, "POST", "Mike", "/api/profile/team-token", {"team_id": ids["Strangers"]}, 404)
 
 
@@ -175,7 +179,7 @@ def test_the_calls_take_only_what_they_define_and_a_long_bio_is_refused(pact):
     call(client, "PUT", "Mike", "/api/profile/bio", {"bio": "x", "extra": 1}, 422)
     call(client, "PUT", "Mike", "/api/profile/bio", {"bio": "x" * 501}, 422)
     call(client, "PUT", "Mike", "/api/profile/bio", {"bio": "bad\x00text"}, 422)
-    call(client, "PUT", "Mike", "/api/profile/team-pages", {"enabled": "yes"}, 422)
+    call(client, "PUT", "Mike", "/api/profile/team-visible", {"team_id": 1, "visible": "yes"}, 422)
     public(client, "/api/p/short", 422)  # not even shaped like a token
 
 

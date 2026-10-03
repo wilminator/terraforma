@@ -1,7 +1,8 @@
 """Profiles: what each page shows, and who may change it.
 
 The owner's calls (``profiles.routes``) use the first half; the public pages are built by the second half from a token and
-show only what the owner chose: never an account id, a username or an email. Tokens are random and unguessable, and a
+show only what the owner chose (a team's page and link exist only while its player has made it visible; its name is on its alliance's page
+either way; the player's handle is in the roster only for a visible team whose player is in the directory): never an account id, a username or an email. Tokens are random and unguessable, and a
 new one replaces the old for good."""
 
 import secrets
@@ -55,7 +56,7 @@ async def _team_rows(session: AsyncSession, teams: list[Team]) -> dict[int, Team
 
 async def publish(session: AsyncSession, account: Account) -> PlayerProfile:
     """Makes the player's page (or gives it a new address: the old one stops working at once). Every team gets a row, so
-    each can be listed or hidden."""
+    each can be shown or hidden (hidden until the player shows it)."""
     profile = await player(session, account)
     if profile is None:
         profile = PlayerProfile(account_id=account.id, token=new_token())
@@ -86,17 +87,11 @@ async def set_bio(session: AsyncSession, account: Account, bio: str) -> PlayerPr
     return profile
 
 
-async def set_team_pages(session: AsyncSession, account: Account, enabled: bool) -> PlayerProfile:
+async def set_directory(session: AsyncSession, account: Account, enabled: bool) -> PlayerProfile:
+    """Opts the player in or out of the directory (out by default): in, their handle appears in the rosters of their teams'
+    alliances and alliance members can go from a team's page to the player's page."""
     profile = await player(session, account) or await publish(session, account)
-    profile.team_pages = enabled
-    await _ensure_teams(session, account)
-    await session.flush()
-    return profile
-
-
-async def set_team_alliances(session: AsyncSession, account: Account, enabled: bool) -> PlayerProfile:
-    profile = await player(session, account) or await publish(session, account)
-    profile.team_alliances = enabled
+    profile.directory = enabled
     await session.flush()
     return profile
 
@@ -108,13 +103,14 @@ async def _own_team(session: AsyncSession, account: Account, team_id: int) -> Te
     return team
 
 
-async def set_listed(session: AsyncSession, account: Account, team_id: int, listed: bool) -> TeamProfile:
+async def set_visible(session: AsyncSession, account: Account, team_id: int, visible: bool) -> TeamProfile:
+    """Shows or hides one team: a visible team's page is reachable from the player's page and the alliances' pages."""
     team = await _own_team(session, account, team_id)
     if await player(session, account) is None:
         await publish(session, account)
     await _ensure_teams(session, account)
     row = (await _team_rows(session, [team]))[team.id]
-    row.listed = listed
+    row.visible = visible
     await session.flush()
     return row
 
@@ -138,10 +134,9 @@ async def mine(session: AsyncSession, account: Account) -> dict:
         "token": profile.token if profile else None,
         "bio": profile.bio if profile else "",
         "handle": account.handle,
-        "team_pages": bool(profile and profile.team_pages),
-        "team_alliances": bool(profile and profile.team_alliances),
+        "directory": bool(profile and profile.directory),
         "teams": [
-            {"id": team.id, "name": team.name, "listed": rows[team.id].listed if team.id in rows else True,
+            {"id": team.id, "name": team.name, "visible": rows[team.id].visible if team.id in rows else False,
              "token": rows[team.id].token if team.id in rows else None}
             for team in teams
         ],
@@ -179,84 +174,87 @@ async def alliance_set_bio(session: AsyncSession, alliance: Alliance, bio: str) 
 # --- the public pages -------------------------------------------------------------------------------------------------------------
 
 async def player_page(session: AsyncSession, token: str) -> dict:
-    """What anyone with the link sees: the handle, the bio and the teams the player chose to show (each with a link only
-    while the player has team pages on)."""
+    """What anyone with the link sees: the handle, the bio and the player's visible teams, each with the token of its page."""
     profile = await session.scalar(select(PlayerProfile).where(PlayerProfile.token == token))
     if profile is None:
         raise NotFound("there's no such page")
     account = await session.get(Account, profile.account_id)
-    listed = (await session.execute(
+    shown = (await session.execute(
         select(Team, TeamProfile).join(TeamProfile, TeamProfile.team_id == Team.id)
-        .where(Team.account_id == profile.account_id, TeamProfile.listed.is_(True)).order_by(Team.id)
+        .where(Team.account_id == profile.account_id, TeamProfile.visible.is_(True)).order_by(Team.id)
     )).all()
-    return {
-        "handle": account.handle,
-        "bio": profile.bio,
-        "teams": [{"name": team.name, "page": row.token if profile.team_pages else None} for team, row in listed],
-    }
+    return {"handle": account.handle, "bio": profile.bio, "teams": [{"name": team.name, "page": row.token} for team, row in shown]}
 
 
-async def _team_page(session: AsyncSession, team: Team, show_alliances: bool) -> dict:
-    """A team's page: its name, its player's handle, and, when $show_alliances, the alliances it is in (each with a link
-    once it has a page). The public page shows them only if the player opted in; the alliance's own members always see them."""
+async def _team_page(session: AsyncSession, team: Team, members: bool) -> dict:
+    """A visible team's page: its name and the alliances it is in (each with a link once it has a page). The player's
+    handle is on it only if the player is in the directory, and an alliance's $members (reading it as one) also get the
+    token of the player's page (``player``)."""
     owner = await session.get(Account, team.account_id)
-    if not show_alliances:
-        return {"name": team.name, "handle": owner.handle}
+    profile = await session.scalar(select(PlayerProfile).where(PlayerProfile.account_id == team.account_id))
     rows = (await session.execute(
         select(Alliance, AllianceProfile).join(AllianceMember, AllianceMember.alliance_id == Alliance.id)
         .outerjoin(AllianceProfile, AllianceProfile.alliance_id == Alliance.id)
         .where(AllianceMember.team_id == team.id).order_by(Alliance.name)
     )).all()
-    return {
-        "name": team.name,
-        "handle": owner.handle,
-        "alliances": [{"name": alliance.name, "page": profile.token if profile else None} for alliance, profile in rows],
-    }
+    page = {"name": team.name}
+    if profile is not None and profile.directory:
+        page["handle"] = owner.handle
+        if members:
+            page["player"] = profile.token
+    page["alliances"] = [{"name": alliance.name, "page": row.token if row else None} for alliance, row in rows]
+    return page
+
+
+async def _visible_team(session: AsyncSession, team_id: int) -> Team | None:
+    """The team, if its player made it visible."""
+    row = await session.scalar(select(TeamProfile).where(TeamProfile.team_id == team_id, TeamProfile.visible.is_(True)))
+    return await session.get(Team, team_id) if row else None
 
 
 async def team_page(session: AsyncSession, token: str) -> dict:
-    """The page at a team's token; it is there only while its player has team pages on."""
+    """The page at a team's token; it is there only while the team is visible."""
     row = await session.scalar(select(TeamProfile).where(TeamProfile.token == token))
-    team = await session.get(Team, row.team_id) if row else None
-    profile = await session.scalar(select(PlayerProfile).where(PlayerProfile.account_id == team.account_id)) if team else None
-    if team is None or profile is None or not profile.team_pages:
+    team = await _visible_team(session, row.team_id) if row else None
+    if team is None:
         raise NotFound("there's no such page")
-    return await _team_page(session, team, profile.team_alliances)
+    return await _team_page(session, team, False)
 
 
 async def alliance_page(session: AsyncSession, token: str) -> dict:
-    """An alliance's page: its description and every team in it. A team links to its page only where its player has team
-    pages on."""
+    """An alliance's page: its description and every team in it, by name and role, so anyone can see which teams belong. A
+    team has a link to its page, and its player's handle if the player is in the directory, only while it is visible; a
+    hidden team shows its name alone (``page`` is None), never its members."""
     row = await session.scalar(select(AllianceProfile).where(AllianceProfile.token == token))
     if row is None:
         raise NotFound("there's no such page")
     alliance = await session.get(Alliance, row.alliance_id)
     found = (await session.execute(
-        select(Team, AllianceMember, TeamProfile, PlayerProfile)
+        select(Team, AllianceMember, TeamProfile, PlayerProfile, Account)
         .join(AllianceMember, AllianceMember.team_id == Team.id)
+        .join(Account, Account.id == Team.account_id)
         .outerjoin(TeamProfile, TeamProfile.team_id == Team.id)
         .outerjoin(PlayerProfile, PlayerProfile.account_id == Team.account_id)
         .where(AllianceMember.alliance_id == alliance.id).order_by(AllianceMember.id)
     )).all()
-    return {
-        "name": alliance.name,
-        "bio": row.bio,
-        "teams": [
-            {"name": team.name, "role": member.role,
-             "page": team_row.token if team_row and player_row and player_row.team_pages else None}
-            for team, member, team_row, player_row in found
-        ],
-    }
+    teams = []
+    for team, member, team_row, player_row, owner in found:
+        shown = team_row is not None and team_row.visible
+        entry = {"name": team.name, "role": member.role, "page": team_row.token if shown else None}
+        if shown and player_row is not None and player_row.directory:
+            entry["handle"] = owner.handle
+        teams.append(entry)
+    return {"name": alliance.name, "bio": row.bio, "teams": teams}
 
 
 async def member_team_page(session: AsyncSession, account: Account, alliance_id: int, team_id: int) -> dict:
-    """A team's page for a member of its alliance, whether or not the player has team pages on. There is no link to the
-    player's own page (that waits on the directory, where a player opts in)."""
+    """A visible team's page for a member of its alliance: like the public one, plus the token of the player's page when the
+    player is in the directory. A hidden team is not there, to its alliance either."""
     alliance = await alliances.get_alliance(session, alliance_id)
     await alliances.reading_team(session, account, alliance)  # NotFound unless one of the account's teams is a member
     if await alliances.member_row(session, alliance.id, team_id) is None:
         raise NotFound("there's no such team in this alliance")
-    team = await session.get(Team, team_id)
+    team = await _visible_team(session, team_id)
+    if team is None:
+        raise NotFound("there's no such team in this alliance")
     return await _team_page(session, team, True)
-
-
