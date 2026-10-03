@@ -8,7 +8,13 @@ calls: these take ids.
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..fights import live
+from ..fights.build import hero_fighter
+from ..fights.models import FightParticipant, FightRecord
+from ..fights.rules import Rules
 from ..heroes.models import Hero
+from ..models import Map, World
+from ..world.rng import WorldRng
 from ..parties import service as parties
 from ..parties.models import Party, PartyTeam
 from .hooks import Towns
@@ -48,6 +54,36 @@ async def enter_town(session: AsyncSession, towns: Towns, party_id: int) -> Town
             session.add(TownTeam(visit_id=visit.id, team_id=team_id, group=number, waiting=False))
     await session.flush()
     return visit
+
+
+async def settle(session: AsyncSession, towns: Towns, party_id: int) -> TownVisit | None:
+    """A party that stands in a town (``Towns.is_town``) and is not suspended yet comes apart there; the map calls this when a
+    party is formed or arrives. None if the party is not in a town (or already suspended)."""
+    party = await parties.get_party(session, party_id)
+    if await visit_of_party(session, party.id) is not None or not await towns.is_town(session, party.map_id, party.x, party.y):
+        return None
+    return await enter_town(session, towns, party.id)
+
+
+async def leave(session: AsyncSession, towns: Towns, rules: Rules, team_id: int) -> tuple[str, FightRecord | None]:
+    """The Leave Town button: ``ready``, and when that puts the party back together, the fight the game's ``Towns.encounter``
+    picks starts at once (None when it picks no monsters, or the fight is refused). Returns the result of ``ready`` and the fight."""
+    party = await parties.party_of(session, team_id)
+    result = await ready(session, towns, team_id)
+    if result != "reformed" or party is None:
+        return result, None
+    heroes = await parties.hero_ids(session, party.id)
+    fighters = [await hero_fighter(session, await session.get(Hero, hero)) for hero in heroes]
+    number = await session.scalar(select(func.count(func.distinct(FightParticipant.fight_id))).where(FightParticipant.hero_id.in_(heroes))) or 0
+    world = await session.get(World, (await session.get(Map, party.map_id)).world_id)
+    keys = await towns.encounter(session, rules, party.id, sum(rules.pxp(fighter) for fighter in fighters), WorldRng(world.seed), number)
+    if not keys:
+        return result, None
+    try:
+        async with session.begin_nested():
+            return result, await live.start_party_fight(session, party.id, keys, rules)
+    except live.Refused:
+        return result, None
 
 
 async def _group_of(session: AsyncSession, row: TownTeam) -> list[TownTeam]:

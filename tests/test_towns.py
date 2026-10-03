@@ -8,13 +8,17 @@ from sqlalchemy import func, select
 from terraforma.accounts.service import create_account
 from terraforma.content.loader import load_content
 from terraforma.content.models import Job
+from terraforma.fights import live
+from terraforma.fights.models import FightParticipant, FightRecord
+from terraforma.fights.rules import Rules
 from terraforma.game import Game
 from terraforma.heroes import service
-from terraforma.heroes.models import Hero, Team
+from terraforma.heroes.models import Hero, Team, TeamMember
 from terraforma.models import Account, Map
 from terraforma.parties import service as parties
 from terraforma.parties.models import Party
 from terraforma.testing import in_app_db
+from terraforma.world.rng import WorldRng
 from terraforma.towns import service as towns_service
 from terraforma.towns.hooks import Towns
 from terraforma.towns.models import TownNotice, TownTeam, TownVisit
@@ -197,8 +201,102 @@ async def test_what_makes_a_place_a_town_is_the_games_rule(db):
         async def is_town(self, session, map_id, x, y):
             return (x, y) == (0, 0)
 
-    assert await TOWNS.is_town(db, 1, 0, 0) is False
     assert await Hub().is_town(db, 1, 0, 0) is True and await Hub().is_town(db, 1, 3, 4) is False
+
+
+# --- the hub, and leaving town ---------------------------------------------------------------------------------------------
+
+MONSTERS = {
+    "personalities": [{"key": "plain", "name": "Plain"}],
+    "monsters": [{"key": key, "name": key.title(), "personality": "plain", "xp_reward": 3, "gold_reward": 1, "stats": {"HP": hp, "Strength": 2, "Speed": 1}}
+                 for key, hp in (("slime", 8), ("bat", 10), ("rat", 6))],
+}
+
+
+async def with_monsters(db):
+    await load_content(db, {**SEED, **MONSTERS})
+
+
+async def test_the_hub_is_a_town_by_default_and_a_party_formed_there_comes_apart(db):
+    party, teams = await party_of_three(db)
+    hub = await db.get(Party, party.id)
+    assert await TOWNS.is_town(db, hub.map_id, hub.x, hub.y) is True
+    assert await TOWNS.is_town(db, hub.map_id + 1000, 0, 0) is False
+    visit = await towns_service.settle(db, TOWNS, party.id)
+    assert visit is not None and await towns_service.is_suspended(db, party.id)
+    assert await towns_service.settle(db, TOWNS, party.id) is None, "already apart"
+    assert (await towns_service.view(db, teams[0]))["in_town"] is True
+
+
+async def test_a_party_outside_a_town_is_not_suspended(db):
+    class Nowhere(Towns):
+        async def is_town(self, session, map_id, x, y):
+            return False
+
+    party, _teams = await party_of_three(db)
+    assert await towns_service.settle(db, Nowhere(), party.id) is None
+
+
+async def test_leave_town_runs_a_fight_once_everyone_is_together(db):
+    await with_monsters(db)
+    party, teams = await party_of_three(db)
+    await towns_service.settle(db, TOWNS, party.id)
+    rules = Rules()
+    for team in teams[:2]:
+        assert await towns_service.leave(db, TOWNS, rules, team) == ("waiting", None)
+    assert await count(db, FightRecord) == 0, "not until the last team is ready"
+    result, fight = await towns_service.leave(db, TOWNS, rules, teams[2])
+    assert result == "reformed" and fight is not None
+    assert await count(db, FightRecord) == 1
+    heroes = set(await parties.hero_ids(db, party.id))
+    in_fight = set((await db.scalars(select(FightParticipant.hero_id).where(FightParticipant.fight_id == fight.id, FightParticipant.hero_id.is_not(None)))).all())
+    assert in_fight == heroes, "every hero of every team is in it"
+
+
+async def test_a_team_in_a_running_fight_cannot_leave_town(db):
+    await with_monsters(db)
+    party, teams = await party_of_three(db)
+    await towns_service.settle(db, TOWNS, party.id)
+    hero = (await parties.hero_ids(db, party.id))[0]
+    first_team = (await db.scalars(select(TeamMember.team_id).where(TeamMember.hero_id == hero))).first()
+    await live.start_party_fight(db, party.id, ["slime"], Rules())
+    with pytest.raises(TownError, match="in a fight"):
+        await towns_service.ready(db, TOWNS, first_team)
+    assert (await towns_service.view(db, first_team))["waiting"] is False
+
+
+async def test_the_default_encounter_is_repeatable_and_stays_near_the_party_strength(db):
+    await with_monsters(db)
+    party, _teams = await party_of_three(db)
+    rules, rng = Rules(), WorldRng(7)
+    weak = await TOWNS.encounter(db, rules, party.id, 1, rng, 0)
+    assert len(weak) == 1, "a party too weak for any still meets one monster"
+    strong = await TOWNS.encounter(db, rules, party.id, 10**9, rng, 0)
+    assert 1 < len(strong) <= rules.party_size and set(strong) <= {"slime", "bat", "rat"}
+    assert strong == await TOWNS.encounter(db, rules, party.id, 10**9, rng, 0), "the same world gives the same monsters"
+
+
+async def test_no_monsters_means_no_fight(db):
+    party, teams = await party_of_three(db)
+    await towns_service.settle(db, TOWNS, party.id)
+    for team in teams[:2]:
+        await towns_service.leave(db, TOWNS, Rules(), team)
+    assert await towns_service.leave(db, TOWNS, Rules(), teams[2]) == ("reformed", None)
+
+
+async def test_a_game_chooses_the_monsters(db):
+    class Rats(Towns):
+        async def encounter(self, session, rules, party_id, strength, rng, number):
+            return ["rat", "rat"]
+
+    await with_monsters(db)
+    party, teams = await party_of_three(db)
+    await towns_service.settle(db, Rats(), party.id)
+    for team in teams[:2]:
+        await towns_service.leave(db, Rats(), Rules(), team)
+    _result, fight = await towns_service.leave(db, Rats(), Rules(), teams[2])
+    names = (await db.scalars(select(FightParticipant.name).where(FightParticipant.fight_id == fight.id, FightParticipant.hero_id.is_(None)))).all()
+    assert sorted(names) == ["Rat", "Rat"]
 
 
 # --- the calls -------------------------------------------------------------------------------------------------------------
@@ -241,5 +339,6 @@ def test_a_teams_owner_reads_and_acts_in_a_town_and_nobody_else_does(app_client)
     assert expect(app_client.post(f"{url}/come-back", json={}, headers=mike), 200).json()["waiting"] is False
     expect(app_client.post(f"{url}/ready", json={}), 403)  # no CSRF token
     assert expect(app_client.post(f"{url}/leave-party", json={}, headers=mike), 200).json() == {"in_town": False}
-    assert expect(app_client.post(f"/api/teams/{teams[1]}/town/ready", json={}, headers=mike), 200).json()["result"] == "reformed"
+    last = expect(app_client.post(f"/api/teams/{teams[1]}/town/ready", json={}, headers=mike), 200).json()
+    assert last["result"] == "reformed" and last["fight"] is None, "this game has no monsters to meet"
     assert expect(app_client.get(f"/api/teams/{teams[1]}/town"), 200).json() == {"in_town": False}
