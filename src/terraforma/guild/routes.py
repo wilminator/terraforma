@@ -63,13 +63,13 @@ async def _then_on(db, hooks, inn, rules, economy, hero, result: dict) -> dict:
 
 
 @router.post("/add-team")
-async def add_team(hero_id: Id, body: AddTeam, request: Request, account: ActingAccount, db: Db, hooks: GameNpcs, inn: GameInn, rules: GameRules, economy: GameEconomy) -> dict:
+async def add_team(hero_id: Id, body: AddTeam, request: Request, account: ActingAccount, db: Db, hooks: GameNpcs, guild: GameGuild, inn: GameInn, rules: GameRules, economy: GameEconomy) -> dict:
     """Adds one of the player's own teams to the hero's party, and goes on with the dialog."""
     await limited(request, ratelimit.TRADE_BY_ACCOUNT, str(account.id))
     try:
         hero = await heroes.own_hero(db, account, hero_id)
         await npcs.activity(db, hooks, hero, ("add_team",))
-        result = await service.add_team(db, hero, body.team_id, rules.party_size)
+        result = await service.add_team(db, hero, body.team_id, rules.party_size, guild)
         return await _then_on(db, hooks, inn, rules, economy, hero, result)
     except (heroes.HeroError, npcs.NpcError, service.GuildError) as error:
         raise refuse(error) from error

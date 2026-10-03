@@ -134,7 +134,7 @@ async def test_the_sweep_removes_what_has_ended_and_says_what(db, later):
     await standing.place(db, TEAM, p.teams[0], "ward", 100)
     await standing.place(db, TEAM, p.teams[0], "hex", None)
     later(50)
-    assert await standing.sweep(db) == [(TEAM, p.teams[1], "ward")]
+    assert await standing.sweep(db) == [(TEAM, p.teams[1], "ward", False)]
     assert await rows(db) == 2
     assert await standing.sweep(db) == []
 

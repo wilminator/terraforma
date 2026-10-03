@@ -16,6 +16,7 @@ from ..npcs.state import DialogState
 from ..parties import service as parties
 from ..parties.models import Party, PartyRequest, PartyTeam
 from ..profiles.models import TeamProfile
+from ..standing import service as standing
 from ..towns import service as towns
 from ..towns.models import TownTeam
 from .hooks import Guild
@@ -66,9 +67,10 @@ async def teams_to_add(session: AsyncSession, hero: Hero) -> list[dict]:
     return out
 
 
-async def add_team(session: AsyncSession, hero: Hero, team_id: int, party_size: int) -> dict:
+async def add_team(session: AsyncSession, hero: Hero, team_id: int, party_size: int, guild: Guild | None = None) -> dict:
     """The hero's player adds one of their own teams to the hero's party, and its heroes stand where the hero does. A team in a
-    party of just itself leaves it first. All or nothing."""
+    party of just itself leaves it first. If the game gives the team a guest pass (``Guild.guest_pass``) it stays only that long.
+    All or nothing."""
     party_id = await _party_id(session, hero)
     if team_id not in {team["id"] for team in await teams_to_add(session, hero)}:
         raise GuildError("that team can't be added to this party")
@@ -77,6 +79,12 @@ async def add_team(session: AsyncSession, hero: Hero, team_id: int, party_size: 
         await _join(session, party_id, team_id, party_size, None)
         heroes = select(TeamMember.hero_id).where(TeamMember.team_id == team_id)
         await session.execute(update(Hero).where(Hero.id.in_(heroes)).values(map_id=hero.map_id, x=hero.x, y=hero.y))
+        guest = await guild.guest_pass(session, team_id) if guild is not None else None
+        if guest is not None:
+            try:
+                await standing.place(session, "team", team_id, guest.status, guest.seconds, ends_party=True)
+            except standing.StandingError as error:
+                raise GuildError(str(error)) from error
     return {"party": party_id, "team": team_id}
 
 
