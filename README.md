@@ -210,19 +210,21 @@ Challenge Tokens are a special currency: one balance per account (`ChallengeBala
 
 `Rules.challenge_earned`, `challenge_daily_cap`, `challenge_purse_cap`, the `challenge.service` functions and the purchase call are public interfaces (the license exception covers them). They replace `Rules.tokens_earned` and `terraforma.tokens` of the admin tokens: a game that overrode `tokens_earned` renames it to `challenge_earned`, and migration 0030 moves the balances and ledger over.
 
-A game's own rules set the limits and rates (the numbers below are placeholders, not DragonStar's):
+A game's own rules set the limits and rates. Example for Vanguard Tavern, which adopts DragonStar's numbers (from DragonStar's `MonsterToken`: in DragonStar tokens are earned by playing the monsters in a fight, 1 for playing it through and 1 more for winning it, with at most 3 earned in any 24 hours and no limit on how many are held):
 
 ```python
-class MyRules(Rules):
+class VanguardRules(Rules):
     def challenge_earned(self, fight, address):
-        return 1  # PLACEHOLDER: tokens per fight
+        return 1  # DragonStar: 1 for playing a fight through (a win earns 1 more: see the note below)
 
     def challenge_daily_cap(self, account_id):
-        return 10  # PLACEHOLDER: most earned per day
+        return 3  # DragonStar: at most 3 earned a day
 
     def challenge_purse_cap(self, account_id):
-        return 100  # PLACEHOLDER: most held at once
+        return None  # DragonStar has no limit on what is held
 ```
+
+The engine differs from DragonStar in three ways, so the example is close, not identical. (1) The engine pays the heroes' owners, as `challenge_earned` is called for hero fighters only; paying a player who controls the monsters, as DragonStar does, is for the game's own code (``challenge.service.change`` with `reason` ``fight``, which the daily cap counts) until the engine has a monster side. (2) The engine's day is the UTC day; DragonStar's is a rolling 24 hours. (3) DragonStar pays a fight's whole award to a player still under the limit when it ends (so a winning fight can carry them to 4); the engine cuts the award to fit the cap (to 3). A game that wants DragonStar's exact behaviour, a win's extra token included, would need hooks for these; say so and they can be added.
 
 ## Fight rules
 
