@@ -52,3 +52,51 @@ async def test_downgrading_to_the_start_removes_every_table(engine, database_url
     async with engine.connect() as connection:
         tables = await connection.run_sync(lambda sync: inspect(sync).get_table_names())
     assert set(tables) <= {"alembic_version"}
+
+
+async def test_team_visibility_carries_over_what_was_listed_with_team_pages_on(engine, database_url):
+    """0029: a team was seen when it was listed and its player had team pages on; that is what visible means now."""
+    from datetime import UTC, datetime
+
+    from sqlalchemy import Boolean, DateTime, Integer, MetaData, insert, select
+
+    from terraforma.db.migrate import upgrade
+
+    forget_schema(database_url)
+    await downgrade(engine, "0028")
+
+    def fill(connection):
+        metadata = MetaData()
+        metadata.reflect(connection)
+
+        def row(table, **given):
+            """A row with every column the table requires: a dummy for each the caller did not give."""
+            values = dict(given)
+            for column in metadata.tables[table].columns:
+                if column.name not in values and not column.nullable and column.server_default is None:
+                    kind = column.type
+                    values[column.name] = datetime.now(UTC) if isinstance(kind, DateTime) else 1 if isinstance(kind, (Integer, Boolean)) else f"{table}-{column.name}"[:20]
+            return values
+
+        for number in (1, 2, 3):
+            connection.execute(insert(metadata.tables["accounts"]).values(row("accounts", id=number, username=f"a{number}", username_key=f"a{number}")))
+            connection.execute(insert(metadata.tables["teams"]).values(row("teams", id=number, account_id=number, name=f"t{number}", name_key=f"t{number}")))
+        # Account 1 has pages on, 2 has them off, 3 never made a page; every team is listed except team 1's sibling case below.
+        for number, pages in ((1, True), (2, False)):
+            connection.execute(insert(metadata.tables["player_profiles"]).values(
+                row("player_profiles", id=number, account_id=number, token=f"p{number}-token", team_pages=pages, team_alliances=False)))
+        for number, listed in ((1, True), (2, True), (3, True)):
+            connection.execute(insert(metadata.tables["team_profiles"]).values(row("team_profiles", id=number, team_id=number, token=f"t{number}-token", listed=listed)))
+
+    async with engine.begin() as connection:
+        await connection.run_sync(fill)
+    await upgrade(engine)
+
+    def visible(connection):
+        metadata = MetaData()
+        metadata.reflect(connection)
+        table = metadata.tables["team_profiles"]
+        return {team: shown for team, shown in connection.execute(select(table.c.team_id, table.c.visible)).all()}
+
+    async with engine.connect() as connection:
+        assert await connection.run_sync(visible) == {1: True, 2: False, 3: False}

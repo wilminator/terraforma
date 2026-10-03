@@ -23,13 +23,13 @@ class Bio(Strict):
     bio: str = Field(max_length=BIO_MAX * 2)
 
 
-class TeamPages(Strict):
+class Directory(Strict):
     enabled: bool
 
 
-class Listed(Strict):
+class Visible(Strict):
     team_id: int = Field(ge=1)
-    listed: bool
+    visible: bool
 
 
 class OnTeam(Strict):
@@ -72,26 +72,20 @@ async def set_bio(body: Bio, request: Request, account: ActingAccount, db: Db) -
     return await service.mine(db, account)
 
 
-@router.put("/profile/team-pages")
-async def set_team_pages(body: TeamPages, request: Request, account: ActingAccount, db: Db) -> dict:
+@router.put("/profile/directory")
+async def set_directory(body: Directory, request: Request, account: ActingAccount, db: Db) -> dict:
+    """Opts the player in or out of the directory (out until the player says so): in, their handle appears in the rosters of
+    their teams' alliances and alliance members can go from a team's page to theirs."""
     await limited(request, ratelimit.PROFILE_BY_ACCOUNT, str(account.id))
-    await service.set_team_pages(db, account, body.enabled)
+    await service.set_directory(db, account, body.enabled)
     return await service.mine(db, account)
 
 
-@router.put("/profile/team-alliances")
-async def set_team_alliances(body: TeamPages, request: Request, account: ActingAccount, db: Db) -> dict:
-    """Whether the player's public team pages name the alliances the teams are in (off until the player says so)."""
-    await limited(request, ratelimit.PROFILE_BY_ACCOUNT, str(account.id))
-    await service.set_team_alliances(db, account, body.enabled)
-    return await service.mine(db, account)
-
-
-@router.put("/profile/team-listed")
-async def set_listed(body: Listed, request: Request, account: ActingAccount, db: Db) -> dict:
+@router.put("/profile/team-visible")
+async def set_visible(body: Visible, request: Request, account: ActingAccount, db: Db) -> dict:
     await limited(request, ratelimit.PROFILE_BY_ACCOUNT, str(account.id))
     try:
-        await service.set_listed(db, account, body.team_id, body.listed)
+        await service.set_visible(db, account, body.team_id, body.visible)
     except FAILURES as error:
         raise refuse(error) from error
     return await service.mine(db, account)
@@ -145,7 +139,7 @@ async def alliance_bio(alliance_id: Id, body: Bio, request: Request, account: Ac
 
 @router.get("/alliances/{alliance_id}/teams/{team_id}/profile")
 async def member_team_page(alliance_id: Id, team_id: Id, account: CurrentAccount, db: Db) -> dict:
-    """A team's page for the members of its alliance, which they can always open."""
+    """A visible team's page for the members of its alliance (with the player's page, if the player is in the directory)."""
     try:
         return await service.member_team_page(db, account, alliance_id, team_id)
     except FAILURES as error:
