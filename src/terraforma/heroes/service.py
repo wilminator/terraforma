@@ -9,7 +9,7 @@ refuses that.
 
 import re
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,14 +17,14 @@ from ..content.models import Job
 from ..models import Account, Map
 from ..profiles.models import TeamProfile
 from ..world.start import ensure_start
-from ..fights.models import PendingDrop, PendingDropChoice
+from ..fights import pending
 from ..fights.rules import Rules
 from ..parties import service as parties
 from ..alliances.hooks import Alliances
 from ..alliances.service import remove_team
 from ..relations.hooks import Ref
 from ..relations.service import forget
-from . import inventory
+from . import field, inventory
 from .models import Hero, HeroAbility, HeroEquipment, HeroItem, Team, TeamMember
 
 MAX_HEROES = 12
@@ -119,11 +119,12 @@ async def rename_hero(session: AsyncSession, account: Account, hero_id: int, nam
 
 async def delete_hero(session: AsyncSession, account: Account, hero_id: int) -> None:
     hero = await own_hero(session, account, hero_id)
+    if await field.in_running_fight(session, hero):
+        raise HeroError(f"{hero.name} is in a fight: delete them when it is over")
     await session.execute(delete(TeamMember).where(TeamMember.hero_id == hero.id))
-    for table in (HeroEquipment, HeroItem, HeroAbility, PendingDropChoice):
+    for table in (HeroEquipment, HeroItem, HeroAbility):
         await session.execute(delete(table).where(table.hero_id == hero.id))
-    # A drop the hero won stays on record (the fight's history) but no longer names them.
-    await session.execute(update(PendingDrop).where(PendingDrop.winner_id == hero.id).values(winner_id=None))
+    await pending.forget_hero(session, hero)  # their drop answers, wins and place in finished fights
     await session.delete(hero)
     await session.flush()
 
