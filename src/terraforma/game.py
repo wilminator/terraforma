@@ -44,3 +44,4 @@ class Game:
     npcs: Npcs = field(default_factory=Npcs)
     market: Market = field(default_factory=Market)
     inn: Inn = field(default_factory=Inn)
+    guild: Guild = field(default_factory=Guild)
