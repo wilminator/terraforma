@@ -126,19 +126,21 @@ def test_the_directory_opt_in_adds_the_handle_and_takes_only_a_boolean(pact):
     call(client, "PUT", "Mike", "/api/profile/directory", {"enabled": True, "extra": 1}, 422)
 
 
-def test_an_alliance_page_lists_only_visible_teams_and_names_a_player_only_in_the_directory(pact):
+def test_an_alliance_page_names_every_team_but_links_and_names_a_player_only_for_visible_ones(pact):
     client, ids = pact
     call(client, "PUT", "Mike", "/api/profile/team-visible", {"team_id": ids["Vanguard"], "visible": True})
     token = call(client, "POST", "Mike", f"/api/alliances/{ids['alliance']}/profile/token")["token"]
     page = public(client, f"/api/p/alliance/{token}")
     assert (page["name"], page["bio"]) == ("Iron Pact", "")
-    assert [(team["name"], team["role"], "handle" in team) for team in page["teams"]] == [("Vanguard", "leader", False)]  # Strangers is hidden
+    assert [(team["name"], team["role"], "handle" in team) for team in page["teams"]] == [("Vanguard", "leader", False), ("Strangers", "member", False)]
+    assert page["teams"][0]["page"] is not None and page["teams"][1]["page"] is None  # a hidden team's name shows, with no link
     call(client, "PUT", "Mike", "/api/profile/directory", {"enabled": True})
     assert public(client, f"/api/p/alliance/{token}")["teams"][0]["handle"] == "MiketheBold"
     call(client, "PUT", "Zed", "/api/profile/team-visible", {"team_id": ids["Strangers"], "visible": True})
-    assert [team["name"] for team in public(client, f"/api/p/alliance/{token}")["teams"]] == ["Vanguard", "Strangers"]
+    assert [team["page"] is not None for team in public(client, f"/api/p/alliance/{token}")["teams"]] == [True, True]
     call(client, "PUT", "Mike", "/api/profile/team-visible", {"team_id": ids["Vanguard"], "visible": False})
-    assert [team["name"] for team in public(client, f"/api/p/alliance/{token}")["teams"]] == ["Strangers"]  # hidden appears nowhere
+    hidden = public(client, f"/api/p/alliance/{token}")["teams"][0]
+    assert hidden == {"name": "Vanguard", "role": "leader", "page": None}  # the name stays, with no link and no handle
 
 
 def test_members_open_a_visible_member_team_and_reach_the_player_only_in_the_directory(pact):

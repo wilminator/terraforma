@@ -1,8 +1,8 @@
 """Profiles: what each page shows, and who may change it.
 
 The owner's calls (``profiles.routes``) use the first half; the public pages are built by the second half from a token and
-show only what the owner chose (a team is seen only while its player has made it visible; the player's handle is in an
-alliance's roster only while the player is in the directory): never an account id, a username or an email. Tokens are random and unguessable, and a
+show only what the owner chose (a team's page and link exist only while its player has made it visible; its name is on its alliance's page
+either way; the player's handle is in the roster only for a visible team whose player is in the directory): never an account id, a username or an email. Tokens are random and unguessable, and a
 new one replaces the old for good."""
 
 import secrets
@@ -222,8 +222,9 @@ async def team_page(session: AsyncSession, token: str) -> dict:
 
 
 async def alliance_page(session: AsyncSession, token: str) -> dict:
-    """An alliance's page: its description and its visible teams (a hidden team is not on it), each with its page and, if its
-    player is in the directory, the player's handle."""
+    """An alliance's page: its description and every team in it, by name and role, so anyone can see which teams belong. A
+    team has a link to its page, and its player's handle if the player is in the directory, only while it is visible; a
+    hidden team shows its name alone (``page`` is None), never its members."""
     row = await session.scalar(select(AllianceProfile).where(AllianceProfile.token == token))
     if row is None:
         raise NotFound("there's no such page")
@@ -231,15 +232,16 @@ async def alliance_page(session: AsyncSession, token: str) -> dict:
     found = (await session.execute(
         select(Team, AllianceMember, TeamProfile, PlayerProfile, Account)
         .join(AllianceMember, AllianceMember.team_id == Team.id)
-        .join(TeamProfile, TeamProfile.team_id == Team.id)
         .join(Account, Account.id == Team.account_id)
+        .outerjoin(TeamProfile, TeamProfile.team_id == Team.id)
         .outerjoin(PlayerProfile, PlayerProfile.account_id == Team.account_id)
-        .where(AllianceMember.alliance_id == alliance.id, TeamProfile.visible.is_(True)).order_by(AllianceMember.id)
+        .where(AllianceMember.alliance_id == alliance.id).order_by(AllianceMember.id)
     )).all()
     teams = []
     for team, member, team_row, player_row, owner in found:
-        entry = {"name": team.name, "role": member.role, "page": team_row.token}
-        if player_row is not None and player_row.directory:
+        shown = team_row is not None and team_row.visible
+        entry = {"name": team.name, "role": member.role, "page": team_row.token if shown else None}
+        if shown and player_row is not None and player_row.directory:
             entry["handle"] = owner.handle
         teams.append(entry)
     return {"name": alliance.name, "bio": row.bio, "teams": teams}
