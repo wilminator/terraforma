@@ -13,6 +13,7 @@ from ..pvp.hooks import PvpZones
 from ..market.hooks import Market
 from ..guild.hooks import Guild
 from ..npcs.hooks import Npcs
+from ..npcs.inn import Inn
 from ..towns.hooks import Towns
 from ..fights.rules import Rules
 from ..models import Account
@@ -134,3 +135,12 @@ def get_guild(request: Request) -> Guild:
 
 
 GameGuild = Annotated[Guild, Depends(get_guild)]
+
+
+def get_inn(request: Request) -> Inn:
+    """The game's rule for who pays at an inn (each team pays its own when the app runs without a game)."""
+    game = request.app.state.game
+    return game.inn if game else Inn()
+
+
+GameInn = Annotated[Inn, Depends(get_inn)]
