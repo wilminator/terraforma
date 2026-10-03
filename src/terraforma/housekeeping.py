@@ -58,6 +58,9 @@ async def stale_pending_drops(session: AsyncSession, now: int, settings: Setting
         await expire(session, pending)
         count += 1
     return count
+
+
+@job
 async def old_closed_ballots(session: AsyncSession, now: int, settings: Settings) -> int:
     """Ballots closed longer ago than ``ballot_retention_days``, with their votes (0 days: kept for good)."""
     if not settings.ballot_retention_days:
