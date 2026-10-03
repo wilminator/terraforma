@@ -15,6 +15,7 @@ from .fights.rules import Rules
 from .alliances.hooks import Alliances
 from .relations.hooks import Relations
 from .pvp.hooks import PvpZones
+from .market.hooks import Market
 from .npcs.hooks import Npcs
 from .towns.hooks import Towns
 
@@ -39,3 +40,4 @@ class Game:
     pvp: PvpZones = field(default_factory=PvpZones)
     # Who may talk to an NPC from where they stand, and what a game does with the dialog tags the engine leaves to it (heal, a shop...).
     npcs: Npcs = field(default_factory=Npcs)
+    market: Market = field(default_factory=Market)

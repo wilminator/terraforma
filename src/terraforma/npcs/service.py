@@ -146,6 +146,24 @@ async def answer(session: AsyncSession, hooks: Npcs, hero: Hero, choice: int | N
     return await _run(session, hooks, hero, npc, current, choice)
 
 
+async def activity(session: AsyncSession, hooks: Npcs, hero: Hero, commands: tuple[str, ...]) -> dict:
+    """The activity the hero's conversation is waiting on, when it is one of $commands: its prompt (``command``, ``parts``). An
+    activity such as a shop is run from the conversation, never from what the browser says, so the NPC's own text decides what
+    is sold and for how much. The hero must still be where they can talk, or the conversation ends."""
+    row = await _talk_of(session, hero)
+    if row is None:
+        raise NpcError("not in a conversation")
+    try:
+        await _may_talk(session, hooks, await session.get(Npc, row.npc_id), hero)
+    except NpcError:
+        await session.delete(row)
+        await session.flush()
+        raise
+    if row.prompt.get("type") != "activity" or row.prompt["command"] not in commands:
+        raise NpcError("there is nothing to do here")
+    return row.prompt
+
+
 async def current(session: AsyncSession, hero: Hero) -> dict:
     """The conversation the hero is in (what it last asked), or ``{"talking": False}``."""
     row = await _talk_of(session, hero)
