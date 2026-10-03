@@ -186,9 +186,30 @@ A player, a team and an alliance can each have a public page, reached by a **ran
 
 The owner's calls need a login and, to change anything, the CSRF token, and are limited to 60 an hour per account. The public pages need neither, and are limited per address (120 per 15 minutes) so a token can't be hunted for. Deleting a team or disbanding an alliance deletes its page. These routes and their response shapes are public interfaces (the license exception covers them).
 
-## Tokens
+## Challenge Tokens
 
-Tokens are a currency whose meaning the game decides; the engine keeps each account's balance (`TokenBalance`) and a ledger of every change (`TokenEntry`: who, how many, why, which fight), so a balance can always be re-derived (`tokens.service.audit`). `Rules.tokens_earned(fight, address)` says what a hero's fighter earns when a fight ends; it pays nothing by default, so a game opts in. `fights.store.apply_results` pays it, once per account per fight (the ledger holds a unique fight and account pair, so saving the result again pays nothing more). A game spends through `tokens.service.change(session, account_id, -amount, reason)`, which refuses to take the balance below zero. Tokens are only ever paid to the account that owns a hero in the fight, so an admin (`Account.is_admin`) earns only when fighting as a player, never for a monster or a fight they watched. No call sets `is_admin`: a game's own setup does, with `tokens.service.set_admin`. `Rules.tokens_earned` and the `tokens.service` functions are public interfaces (the license exception covers them).
+Challenge Tokens are a special currency: one balance per account (`ChallengeBalance`), with a ledger of every change (`ChallengeEntry`: who, how many, why, which fight or purchase) so a balance can always be re-derived (`challenge.service.audit`). The game decides what they are worth and what limits them; the engine keeps the books.
+
+- **Earning.** `Rules.challenge_earned(fight, address)` says what a hero's fighter earns when a fight ends (this is where a game sets its earning rates); it pays nothing by default, so a game opts in. `fights.store.apply_results` pays it, once per account per fight (the ledger holds a unique fight and account pair, so saving the result again pays nothing more). Tokens are only ever paid to the account that owns a hero in the fight, so an admin (`Account.is_admin`) earns only when fighting as a player, never for a monster or a fight they watched. No call sets `is_admin`: a game's own setup does, with `challenge.service.set_admin`.
+- **Limits** (both default to none; the game decides). `Rules.challenge_daily_cap(account_id)` is the most an account may *earn from fights* in a UTC day: what would go over is not paid. `Rules.challenge_purse_cap(account_id)` is the most an account may hold: earnings are cut to fit, and a purchase that would not fit is refused whole (nobody pays for tokens that are thrown away). The daily cap does not limit purchases or spending, and neither cap ever takes tokens away (a purse over a lowered cap keeps what it has and earns nothing until it is under). A fight whose pay was cut to nothing is still recorded as paid, so it does not pay again the next day. The daily total is read before it is paid, so two fights that end at the same instant for one account can overshoot the day's cap slightly; the purse cap is exact.
+- **Spending.** A game spends through `challenge.service.change(session, account_id, -amount, reason)`, which refuses to take the balance below zero (`NotEnoughTokens`).
+- **Buying.** A game that sells tokens sets `challenge_purchase_secret` in `settings.toml` (at least 32 characters; empty, the default, turns the call off and it answers 404). Its own backend (a shop or payment service, never a browser) then credits a purchase with `POST /api/server/challenge/purchase`, sending `Authorization: Bearer <secret>` and `{"account_id": 7, "amount": 50, "key": "order-1234"}`. There is no login, cookie or CSRF token for this call; the secret takes their place. `key` is the caller's idempotency key (8 to 64 letters, digits and `_.:-`): sending the same key again with the same account and amount (a retry) credits once and answers the same with `"duplicate": true`. The answer is `{"credited": 50, "balance": 120, "duplicate": false}`. 401: wrong or missing secret. 404: the call is off, or no such account. 409: the key was used for a different purchase, or the purse cap would be passed (nothing is credited). Every attempt counts against the caller's address (600 per 15 minutes), the secret is compared in constant time and logs scrub the header. The game's backend does the charging and credits only what was paid; the engine takes no payment.
+
+`Rules.challenge_earned`, `challenge_daily_cap`, `challenge_purse_cap`, the `challenge.service` functions and the purchase call are public interfaces (the license exception covers them). They replace `Rules.tokens_earned` and `terraforma.tokens` of the admin tokens: a game that overrode `tokens_earned` renames it to `challenge_earned`, and migration 0029 moves the balances and ledger over.
+
+A game's own rules set the limits and rates (the numbers below are placeholders, not DragonStar's):
+
+```python
+class MyRules(Rules):
+    def challenge_earned(self, fight, address):
+        return 1  # PLACEHOLDER: tokens per fight
+
+    def challenge_daily_cap(self, account_id):
+        return 10  # PLACEHOLDER: most earned per day
+
+    def challenge_purse_cap(self, account_id):
+        return 100  # PLACEHOLDER: most held at once
+```
 
 ## Fight rules
 

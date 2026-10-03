@@ -91,7 +91,7 @@ class Account(Timestamps, Base):
     recovery_codes: Mapped[list | None] = mapped_column(JSON)
     # Names the one emailed 2FA change that is still open (a newer request replaces it).
     twofa_change_nonce: Mapped[str | None] = mapped_column(String(43))
-    # Set only by a game's own setup (``tokens.service.set_admin``), never by a call a player can make.
+    # Set only by a game's own setup (``challenge.service.set_admin``), never by a call a player can make.
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
 
@@ -128,4 +128,4 @@ from .relations import models as _relations  # noqa: E402,F401
 from .towns import models as _towns  # noqa: E402,F401
 from .trading import models as _trading  # noqa: E402,F401
 from .profiles import models as _profiles  # noqa: E402,F401
-from .tokens import models as _tokens  # noqa: E402,F401
+from .challenge import models as _challenge  # noqa: E402,F401
