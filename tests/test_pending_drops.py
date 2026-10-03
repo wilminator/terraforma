@@ -8,7 +8,7 @@ from terraforma.fights import drops, live, pending, store
 from terraforma.fights.combatant import Command
 from terraforma.fights.drops import ASSIGN, NEED_WANT, DropEntry
 from terraforma.fights.events import Event
-from terraforma.fights.models import PendingDrop, PendingDropChoice
+from terraforma.fights.models import FightRecord, PendingDrop, PendingDropChoice
 from terraforma.fights.replay import apply_events
 from terraforma.fights.rules import Rules
 from terraforma.heroes import inventory, service
@@ -202,3 +202,30 @@ def test_the_calls_need_a_login_and_a_token_and_take_strict_bodies(pair):
     expect(client.get(f"/api/heroes/{zara}/pending-drops"), 404)  # not Mike's hero
     client.post("/api/logout", headers=mike)
     expect(client.get(base), 401)
+
+
+async def test_deleting_a_hero_clears_their_answers_and_leaves_the_drops_they_won_without_a_winner(db):
+    aria = await a_hero(db)
+    mike = await db.get(Account, aria.account_id)
+    bram = await service.create_hero(db, mike, "Bram", "fighter")
+    aria_id, bram_id = aria.id, bram.id
+    record = FightRecord(guid="d" * 32, initial_state={}, map_id=aria.map_id, finished=True)
+    db.add(record)
+    await db.flush()
+    won = PendingDrop(fight_id=record.id, number=0, party=0, item_key="potion", qty=1, mode="need_want", status="awarded", winner_id=bram_id, map_id=record.map_id)
+    open_one = PendingDrop(fight_id=record.id, number=1, party=0, item_key="potion", qty=1, mode="need_want", status="open", map_id=record.map_id)
+    db.add_all([won, open_one])
+    await db.flush()
+    db.add_all([PendingDropChoice(pending_id=won.id, hero_id=bram_id, choice="need", roll=7),
+                PendingDropChoice(pending_id=open_one.id, hero_id=bram_id, choice="want"),
+                PendingDropChoice(pending_id=open_one.id, hero_id=aria_id, choice="want")])
+    await db.flush()
+    won_id, open_id = won.id, open_one.id
+    await service.delete_hero(db, mike, bram_id)
+    db.expire_all()
+    assert await db.get(Hero, bram_id) is None
+    choices = (await db.scalars(select(PendingDropChoice))).all()
+    assert [(each.pending_id, each.hero_id) for each in choices] == [(open_id, aria_id)], "only the other hero's answer is left"
+    assert (await db.get(PendingDrop, won_id)).winner_id is None, "the drop stays on record, without its winner"
+    assert (await db.get(PendingDrop, won_id)).status == "awarded"
+    assert (await db.get(PendingDrop, open_id)).status == "open"

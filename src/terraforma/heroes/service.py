@@ -9,7 +9,7 @@ refuses that.
 
 import re
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +17,7 @@ from ..content.models import Job
 from ..models import Account, Map
 from ..profiles.models import TeamProfile
 from ..world.start import ensure_start
+from ..fights.models import PendingDrop, PendingDropChoice
 from ..fights.rules import Rules
 from ..parties import service as parties
 from ..alliances.hooks import Alliances
@@ -119,8 +120,10 @@ async def rename_hero(session: AsyncSession, account: Account, hero_id: int, nam
 async def delete_hero(session: AsyncSession, account: Account, hero_id: int) -> None:
     hero = await own_hero(session, account, hero_id)
     await session.execute(delete(TeamMember).where(TeamMember.hero_id == hero.id))
-    for table in (HeroEquipment, HeroItem, HeroAbility):
+    for table in (HeroEquipment, HeroItem, HeroAbility, PendingDropChoice):
         await session.execute(delete(table).where(table.hero_id == hero.id))
+    # A drop the hero won stays on record (the fight's history) but no longer names them.
+    await session.execute(update(PendingDrop).where(PendingDrop.winner_id == hero.id).values(winner_id=None))
     await session.delete(hero)
     await session.flush()
 
