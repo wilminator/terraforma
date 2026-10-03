@@ -16,6 +16,7 @@ from .alliances.hooks import Alliances
 from .relations.hooks import Relations
 from .pvp.hooks import PvpZones
 from .market.hooks import Market
+from .guild.hooks import Guild
 from .npcs.hooks import Npcs
 from .npcs.inn import Inn
 from .towns.hooks import Towns
@@ -43,3 +44,4 @@ class Game:
     npcs: Npcs = field(default_factory=Npcs)
     market: Market = field(default_factory=Market)
     inn: Inn = field(default_factory=Inn)
+    guild: Guild = field(default_factory=Guild)

@@ -4,12 +4,14 @@ Each answers with the label to go to when its test fails or its change cannot be
 at is the one the talking hero's team acts in right now (``towns.service.acting_party``); a hero on no team stands alone.
 """
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..content.models import Item
 from ..heroes import inventory
 from ..heroes.models import Hero, HeroItem, Team, TeamMember
+from ..parties import service as parties
+from ..parties.models import Party
 from ..quests import service as quests
 from ..towns import service as towns
 from .script import ScriptError
@@ -113,4 +115,14 @@ class DialogState:
         if team_id is None:
             raise ScriptError("a hero on no team has no quests: put them on a team")
         await quests.set_marker(self.session, team_id, quest, int(value))
+        return ""
+
+    # --- the guild --------------------------------------------------------------------------------------------------------
+
+    async def open_party(self, setting: str, label: str) -> str:
+        """Opens (``on``) or closes (``off``) the party to requests from allies; only its leader may. The label if not."""
+        party = await self.party()
+        if party is None or await parties.leader_account(self.session, party.party_id) != self.hero.account_id:
+            return label
+        await self.session.execute(update(Party).where(Party.id == party.party_id).values(open=setting == "on"))
         return ""
