@@ -2,16 +2,16 @@
 
 Pure code, no database or web. A status is a *definition* (``StatusSpec``, from the seed's ``statuses.json``);
 a fighter under one carries a *token* (``StatusToken``) that says who placed it, how long it has lasted and
-how long it has left. Two mechanisms live side by side:
+how long it has left. A stat is changed this way and no other:
 
-1. **Status tokens.** A status lists *ticks* (things it does when something happens: the start or end of the
+**Status tokens.** A status lists *ticks* (things it does when something happens: the start or end of the
    round, the start or end of its bearer's turn, when the bearer is helped or harmed, when it makes a saving
    throw; each every n-th time if it likes) and *modifiers* (things that hold while it lasts: damage of a kind
    taken or dealt changed, a stat raised or lowered). It may have a duration in rounds, and an intensity that
    follows the time left: flat, rising or falling. Everything it does is scaled by that intensity.
-2. **Direct stat adjustment.** Not a status at all: the effects ``increase_stats``, ``decrease_stats`` and
-   ``steal_stats`` move the *current* value of a stat (``AlterStat`` events), and every round it drifts back
-   towards the base (``Rules.stat_drift``).
+A stat that is not a resource has no current value of its own: it is its base, the worn gear and the bearer's tokens'
+modifiers, summed and clamped by ``Rules.stat_value``. Only the resources (HP and MP) keep a current value, which
+the ``AlterStat`` event moves.
 
 Every token records its *source*, the fighter who placed it. Whatever the token does, it does on the source's
 behalf: damage from a tick goes through the usual damage path with the source as the actor, so the experience

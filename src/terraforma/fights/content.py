@@ -48,8 +48,9 @@ def drop_table_spec(table, items: dict) -> DropTable:
 def monster_combatant(monster, items: dict, abilities: dict, rules: Rules | None = None) -> Combatant:
     """A fighter from a monster row, with its gear on. $items and $abilities map keys to content rows."""
     stats = dict(monster.stats)
+    resources = (rules or Rules()).resource_names
     fighter = Combatant(
-        name=monster.name, base=dict(stats), current=dict(stats),
+        name=monster.name, base=dict(stats), current={name: value for name, value in stats.items() if name in resources},
         abilities=[ability_spec(abilities[key]) for key in monster.abilities],
         inventory=[[item_spec(items[key]), 1] for key in monster.items],
         ai_action=monster.ai.get("action", 0), ai_goal=monster.ai.get("goal", 0),

@@ -37,7 +37,7 @@ class Market:
 
         total = 0
         for member in party:
-            total += rules.pxp(await hero_fighter(session, member))
+            total += rules.pxp(await hero_fighter(session, member, rules))
         return total
 
     async def stock(self, session: AsyncSession, shop: str, level: int) -> list[Item]:

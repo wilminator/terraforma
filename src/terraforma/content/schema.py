@@ -62,7 +62,7 @@ Targets = (
     | Annotated[int, Field(ge=0)]
 )
 Effect = Literal[
-    "none", "heal", "hurt", "revive", "slay", "increase_stats", "decrease_stats", "steal_stats",
+    "none", "heal", "hurt", "revive", "slay",
     "cause_good_status", "remove_good_status", "cause_bad_status", "remove_bad_status", "restore_mp",
 ]
 
@@ -71,7 +71,6 @@ class Strict(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid", frozen=True, validate_default=True)
 
 
-STAT_EFFECTS = ("increase_stats", "decrease_stats", "steal_stats")
 CAUSE_EFFECTS = {"cause_good_status": "good", "cause_bad_status": "bad"}
 REMOVE_EFFECTS = {"remove_good_status": "good", "remove_bad_status": "bad"}
 
@@ -79,31 +78,20 @@ REMOVE_EFFECTS = {"remove_good_status": "good", "remove_bad_status": "bad"}
 class EffectSpec(Strict):
     """What using an ability or item does. ``attribute`` is the game's own kind of damage (fire, holy...).
 
-    ``stats`` (the non-resource stats a stat effect moves; required for those) and ``status`` (the status a
-    ``cause_`` effect places, required; a ``remove_`` effect takes off that one, or every one of its kind if
-    left out) and ``duration`` (rounds a placed status lasts, over the status's own) are for those effects only."""
+    ``status`` (the status a ``cause_`` effect places, required; a ``remove_`` effect takes off that one, or every one of its
+    kind if left out) and ``duration`` (rounds a placed status lasts, over the status's own) are for those effects only. A
+    stat is raised or lowered by a status with a ``stat`` modifier, not by an effect of its own."""
 
     effect: Effect = "none"
     targets: Targets = "individual"
     base: int = Field(default=0, ge=0)
     added: int = Field(default=0, ge=0)
     attribute: str = Field(default="none", max_length=32)
-    stats: list[str] = Field(default=[], max_length=32)
     status: Key | None = None
     duration: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def _right_fields_for_the_effect(self, info: ValidationInfo):
-        context = info.context or {}
-        names, resources = context.get("stats", STATS), context.get("resources", RESOURCES)
-        if self.effect in STAT_EFFECTS:
-            if not self.stats:
-                raise ValueError(f"{self.effect} needs stats: the ones it moves")
-            for stat in self.stats:
-                if stat not in names or stat in resources:
-                    raise ValueError(f"stats: {stat!r} is not a stat that can be pushed (the stats are {', '.join(n for n in names if n not in resources)})")
-        elif self.stats:
-            raise ValueError(f"stats is only for {', '.join(STAT_EFFECTS)}")
         if self.effect in CAUSE_EFFECTS:
             if self.status is None:
                 raise ValueError(f"{self.effect} needs a status")

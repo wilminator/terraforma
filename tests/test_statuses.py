@@ -403,66 +403,63 @@ def test_slay_kills_on_a_roll_within_its_chance_and_otherwise_has_no_effect():
     assert slay(31)[-1] == ("NoEffect", 1, 0, 0)
 
 
-# --- direct stat adjustment -------------------------------------------------------------------------------------------------------------
+# --- stat values from tokens -------------------------------------------------------------------------------------------------------------
 
-def stat_fight(effect, **extra):
-    a, b = fighter("A", **extra), fighter("B")
-    a.inventory = [[item("tonic", effect), 1]]
+def test_a_stat_is_its_base_plus_what_the_tokens_add_and_nothing_stored():
+    weak = StatusSpec("weak", "Weak", BAD, 5, modifiers=(Modifier(status.STAT, stat="Strength", amount=-4),))
+    keen = StatusSpec("keen", "Keen", GOOD, 5, modifiers=(Modifier(status.STAT, stat="Strength", amount=3), Modifier(status.STAT, stat="Dodge", amount=2)))
+    a, b = fighter("A"), fighter("B")
+    assert b.get_current(RULES, "Strength") == 10
+    bear(b, weak, duration=5)
+    assert b.get_current(RULES, "Strength") == 6
+    bear(b, keen, duration=5)
+    assert (b.get_current(RULES, "Strength"), b.get_current(RULES, "Dodge")) == (9, b.base["Dodge"] + 2)
+    b.tokens.clear()
+    assert b.get_current(RULES, "Strength") == 10, "the tokens are gone and so is what they did: nothing drifts, nothing is left over"
+
+
+def test_a_stat_never_goes_below_zero_by_default_and_the_rules_decide_otherwise():
+    crush = StatusSpec("crush", "Crush", BAD, 5, modifiers=(Modifier(status.STAT, stat="Strength", amount=-50),))
+    b = fighter("B")
+    bear(b, crush, duration=5)
+    assert b.get_current(RULES, "Strength") == 0
+
+    class Negative(Rules):
+        def stat_value(self, stat, geared, bonus):
+            return geared + bonus
+
+    assert b.get_current(Negative(), "Strength") == -40
+
+
+def test_a_stat_has_no_current_value_of_its_own_only_the_resources_do():
+    a = fighter("A")
+    a.current["Strength"] = 999  # nothing reads it
+    assert a.get_current(RULES, "Strength") == a.base["Strength"]
+    a.current["HP"] = 7
+    assert a.get_current(RULES, "HP") == 7
+
+
+def test_a_modifier_never_touches_a_resource():
+    boost = StatusSpec("boost", "Boost", GOOD, 5, modifiers=(Modifier(status.STAT, stat="HP", amount=10),))
+    b = fighter("B")
+    bear(b, boost, duration=5)
+    assert b.get_current(RULES, "HP") == 20 and b.current["HP"] == 20
+
+
+def test_a_stat_status_acts_through_a_round_and_is_replayed_like_the_rest():
+    weak = StatusSpec("weak", "Weak", BAD, 2, modifiers=(Modifier(status.STAT, stat="Strength", amount=-4),))
+    a, b = fighter("A"), fighter("B")
+    a.inventory = [[item("hex", EffectSpec(specs.CAUSE_BAD_STATUS, status="weak")), 1]]
     use(a, 0, B)
-    return build_fight({0: {0: [a]}, 1: {0: [b]}}), a, b
-
-
-def test_a_decrease_pushes_the_current_value_down_and_it_drifts_back_to_the_base_over_the_rounds():
-    fight, _a, b = stat_fight(EffectSpec(specs.DECREASE_STATS, base=4, stats=("Strength",)))
-    events = play(fight, [100, 0])
-    assert listing(events)[-2:] == [("AlterStat", 1, 0, 0, "Strength", -4), ("AlterStat", 1, 0, 0, "Strength", 1)]
-    assert (b.current["Strength"], b.base["Strength"]) == (7, 10)
-    fight.get(A).command = Command.DEFEND
-    seen = []
-    for _ in range(4):
-        play(fight)
-        seen.append(b.current["Strength"])
-    assert seen == [8, 9, 10, 10], "a step of a quarter of the gap, at least 1, then rest"
-
-
-def test_a_big_gap_drifts_faster_and_a_drift_never_overshoots():
-    assert RULES.stat_drift("Strength", 0, 40) == 10
-    assert RULES.stat_drift("Strength", 39, 40) == 1
-    assert RULES.stat_drift("Strength", 50, 40) == -2
-    assert RULES.stat_drift("Strength", 40, 40) == 0
-
-
-def test_stats_are_pushed_only_within_their_range():
-    fight, a, _b = stat_fight(EffectSpec(specs.INCREASE_STATS, specs.INDIVIDUAL, base=50, stats=("Strength",)))
-    use(a, 0, A)
-    events = play(fight, [100, 0])
-    assert ("AlterStat", 0, 0, 0, "Strength", 10) in listing(events), "from 10 up to the ceiling of 20, no further"
-    assert a.current["Strength"] == 18, "and 20 drifts a quarter of the way back at the end of the round"
-    fight, _a, b = stat_fight(EffectSpec(specs.DECREASE_STATS, base=50, stats=("Strength",)))
-    events = play(fight, [100, 0])
-    assert ("AlterStat", 1, 0, 0, "Strength", -10) in listing(events), "down to zero and no further"
-    assert b.current["Strength"] == 2
-
-
-def test_a_stat_effect_never_touches_a_resource():
-    fight, _a, b = stat_fight(EffectSpec(specs.DECREASE_STATS, base=4, stats=("HP", "Strength")))
-    play(fight, [100, 0])
-    assert b.current["HP"] == 20 and b.current["Strength"] == 7
-
-
-def test_steal_takes_from_the_target_and_gives_to_the_user():
-    fight, a, b = stat_fight(EffectSpec(specs.STEAL_STATS, base=3, stats=("Strength",)))
-    play(fight, [100, 0])
-    # 3 stolen, then each drifts a step back towards its own base at the end of the round.
-    assert (b.current["Strength"], a.current["Strength"]) == (8, 12)
-
-
-def test_a_stat_pushed_in_one_round_is_replayed_like_the_rest():
-    fight, _a, _b = stat_fight(EffectSpec(specs.DECREASE_STATS, base=4, stats=("Strength",)))
+    fight = build_fight({0: {0: [a]}, 1: {0: [b]}}, {"weak": weak})
     before = copy.deepcopy(fight)
     events = play(fight, [100, 0])
+    assert b.get_current(RULES, "Strength") == 6
     apply_events(before, RULES, events)
     assert dehydrate(before) == dehydrate(fight)
+    fight.get(A).command = Command.DEFEND
+    play(fight)
+    assert b.get_current(RULES, "Strength") == 10, "two rounds later it has run out"
 
 
 # --- the log and the snapshot ---------------------------------------------------------------------------------------------------------------
@@ -476,7 +473,7 @@ def busy():
     a, b = fighter("A", HP=60, Speed=12), fighter("B", HP=60, Speed=10)
     a.inventory = [[sword(), 1], [item("fang", EffectSpec(specs.CAUSE_BAD_STATUS, status="venom")), 3],
                    [item("lullaby", EffectSpec(specs.CAUSE_BAD_STATUS, status="lull")), 3],
-                   [item("curse", EffectSpec(specs.DECREASE_STATS, base=3, added=2, stats=("Strength", "Dodge"))), 3]]
+                   [item("jab", EffectSpec(specs.HURT, base=3, added=2)), 3]]
     a.equipment = {"lhand": 0}
     b.inventory, b.equipment = [[sword(), 1]], {"lhand": 0}
     fight = build_fight({0: {0: [a]}, 1: {0: [b]}}, {each.key: each for each in (venom, regen, lull)})
@@ -519,7 +516,7 @@ def test_a_fight_stored_before_statuses_existed_still_loads():
             for each in group["characters"]:
                 each["tokens"] = []
                 for ability in each["abilities"]:
-                    for key in ("stats", "status", "duration"):
+                    for key in ("status", "duration"):
                         ability["effect"].pop(key)
     assert hydrate(raw).statuses == {}
 
@@ -595,15 +592,13 @@ def effect_in_ability(**effect):
     return {"abilities": [{"key": "a", "name": "A", "kind": "spell", "effect": effect}], **{"statuses": [STATUS]}}
 
 
-def test_effects_check_their_stats_and_statuses():
+def test_effects_check_their_statuses_and_no_longer_push_stats():
     ok = check_seed(effect_in_ability(effect="cause_bad_status", status="poison", duration=2))["abilities"][0].effect
     assert (ok.status, ok.duration) == ("poison", 2)
-    assert check_seed(effect_in_ability(effect="decrease_stats", stats=["Strength", "Dodge"]))["abilities"][0].effect.stats == ["Strength", "Dodge"]
     assert check_seed(effect_in_ability(effect="remove_bad_status"))["abilities"][0].effect.status is None
-    refused(effect_in_ability(effect="decrease_stats"), "needs stats")
-    refused(effect_in_ability(effect="decrease_stats", stats=["HP"]), "not a stat that can be pushed")
-    refused(effect_in_ability(effect="decrease_stats", stats=["Luck"]), "not a stat that can be pushed")
-    refused(effect_in_ability(effect="hurt", stats=["Strength"]), "stats is only for")
+    for gone in ("increase_stats", "decrease_stats", "steal_stats"):
+        refused(effect_in_ability(effect=gone), "Input should be")  # a stat is changed by a status's modifier now
+    refused(effect_in_ability(effect="hurt", stats=["Strength"]), "Extra inputs are not permitted")
     refused(effect_in_ability(effect="cause_bad_status"), "needs a status")
     refused(effect_in_ability(effect="hurt", status="poison"), "only for the status effects")
     refused(effect_in_ability(effect="remove_bad_status", duration=2), "only for the effects that place")

@@ -15,9 +15,8 @@ The estimate is deliberately plain, and a game that wants another overrides ``Ru
 * A damage or heal tick is worth its amount; a skip-turn tick costs what the bearer's best attack would have done,
   times its chance.
 * ``damage_taken`` of factor f is worth (1 - f) of a tenth of the bearer's life each round, ``damage_dealt`` of
-  factor f is worth (f - 1) of the bearer's Strength each round, and a stat change is worth ``STAT_POINT`` hit points
+  factor f is worth (f - 1) of the bearer's Strength each round, and a stat modifier is worth ``STAT_POINT`` hit points
   for each point.
-* A stat effect (increase, decrease, steal) is worth ``STAT_POINT`` for each point it moves, for each stat.
 """
 
 from . import status
@@ -26,12 +25,9 @@ from .rules import Rules
 from .specs import (
     CAUSE_BAD_STATUS,
     CAUSE_GOOD_STATUS,
-    DECREASE_STATS,
-    INCREASE_STATS,
     REMOVE_BAD_STATUS,
     REMOVE_GOOD_STATUS,
     SLAY,
-    STEAL_STATS,
     EffectSpec,
 )
 
@@ -83,10 +79,6 @@ def benefit(rules: Rules, spec: status.StatusSpec, bearer: Combatant, duration: 
 def effect_worth(rules: Rules, statuses: dict, target: Combatant, effect: EffectSpec) -> float | None:
     """What a status or stat effect is worth to the AI aiming it at ``target`` (always zero or more); None for any other effect."""
     kind = effect.effect
-    if kind in (INCREASE_STATS, DECREASE_STATS, STEAL_STATS):
-        amount = effect.base + effect.added / 2
-        worth = amount * len(effect.stats) * STAT_POINT
-        return worth * 2 if kind == STEAL_STATS else worth
     if kind in (CAUSE_GOOD_STATUS, CAUSE_BAD_STATUS):
         spec = statuses.get(effect.status)
         if spec is None:

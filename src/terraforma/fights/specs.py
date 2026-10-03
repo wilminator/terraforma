@@ -39,18 +39,15 @@ HEAL = "heal"
 HURT = "hurt"
 REVIVE = "revive"
 SLAY = "slay"
-INCREASE_STATS = "increase_stats"
-DECREASE_STATS = "decrease_stats"
-STEAL_STATS = "steal_stats"
 CAUSE_GOOD_STATUS = "cause_good_status"
 REMOVE_GOOD_STATUS = "remove_good_status"
 CAUSE_BAD_STATUS = "cause_bad_status"
 REMOVE_BAD_STATUS = "remove_bad_status"
 RESTORE_MP = "restore_mp"
 
-DETRIMENTAL = {HURT, SLAY, DECREASE_STATS, STEAL_STATS, REMOVE_GOOD_STATUS, CAUSE_BAD_STATUS}
+DETRIMENTAL = {HURT, SLAY, REMOVE_GOOD_STATUS, CAUSE_BAD_STATUS}
 ONLY_LIVING = {
-    HEAL, HURT, SLAY, INCREASE_STATS, DECREASE_STATS, STEAL_STATS, CAUSE_GOOD_STATUS,
+    HEAL, HURT, SLAY, CAUSE_GOOD_STATUS,
     REMOVE_GOOD_STATUS, CAUSE_BAD_STATUS, REMOVE_BAD_STATUS, RESTORE_MP,
 }
 
@@ -69,8 +66,6 @@ class EffectSpec:
     base: int = 0
     added: int = 0
     attribute: str = "none"
-    #: The stats a stat effect moves (increase_stats, decrease_stats, steal_stats).
-    stats: tuple[str, ...] = ()
     #: The status a status effect places or removes. Empty on a remove: every status of that kind.
     status: str = ""
     #: Rounds a placed status lasts, overriding the status's own. None: the status's own.
@@ -82,7 +77,7 @@ class EffectSpec:
             return cls()
         return cls(data.get("effect", NONE), scope_number(data.get("targets", INDIVIDUAL)),
                    data.get("base", 0), data.get("added", 0), data.get("attribute", "none"),
-                   tuple(data.get("stats") or ()), data.get("status") or "", data.get("duration"))
+                   data.get("status") or "", data.get("duration"))
 
     @property
     def detrimental(self) -> bool:

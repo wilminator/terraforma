@@ -23,18 +23,15 @@ from .specs import (
     ALL_PARTIES,
     CAUSE_BAD_STATUS,
     CAUSE_GOOD_STATUS,
-    DECREASE_STATS,
     GROUP,
     HEAL,
     HURT,
-    INCREASE_STATS,
     PARTY,
     RANDOM_PARTY,
     REMOVE_BAD_STATUS,
     REMOVE_GOOD_STATUS,
     REVIVE,
     SLAY,
-    STEAL_STATS,
     EffectSpec,
 )
 
@@ -50,10 +47,6 @@ def target_rating(targets: int) -> float:
     return targets * 0.5 + 1 if targets < 3 else 2.5
 
 
-def _stats_named(attribute: str) -> int:
-    return 0 if attribute in ("", "none") else len(attribute.split(","))
-
-
 def effect_rating(effect: EffectSpec) -> float:
     """How much an effect is worth."""
     kind, base, added = effect.effect, effect.base, effect.added
@@ -61,10 +54,6 @@ def effect_rating(effect: EffectSpec) -> float:
         return base + added / 2
     if kind in (REVIVE, SLAY):
         return base * 2.5 + added * 2.5
-    if kind in (INCREASE_STATS, DECREASE_STATS):
-        return (base + added / 2) * math.sqrt(_stats_named(effect.attribute) + 1)
-    if kind == STEAL_STATS:
-        return (base + added / 2) * math.sqrt(_stats_named(effect.attribute) + 1) * 2
     if kind in (CAUSE_GOOD_STATUS, REMOVE_GOOD_STATUS, CAUSE_BAD_STATUS, REMOVE_BAD_STATUS):
         return base * added
     return 0

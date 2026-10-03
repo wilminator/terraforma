@@ -17,12 +17,12 @@ from .status import Curve, Modifier, StatusSpec, StatusToken, Tick
 def _effect(effect: EffectSpec) -> dict:
     return {
         "effect": effect.effect, "targets": effect.targets, "base": effect.base, "added": effect.added, "attribute": effect.attribute,
-        "stats": list(effect.stats), "status": effect.status, "duration": effect.duration,
+        "status": effect.status, "duration": effect.duration,
     }
 
 
 def _build_effect(raw: dict) -> EffectSpec:
-    return EffectSpec(**{**raw, "stats": tuple(raw.get("stats", ()))})
+    return EffectSpec(**raw)
 
 
 def _status(spec: StatusSpec) -> dict:

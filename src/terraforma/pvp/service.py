@@ -62,7 +62,7 @@ async def start_pvp_fight(session: AsyncSession, zones: PvpZones, rules: Rules, 
     for party in (mine, theirs):
         fighters, teams = [], {}
         for each in await parties.team_ids(session, party.id):
-            members, ids = await team_party(session, await session.get(Team, each))
+            members, ids = await team_party(session, await session.get(Team, each), rules)
             fighters += members
             teams |= ids
         sides.append(fighters)
