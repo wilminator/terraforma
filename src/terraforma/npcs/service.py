@@ -14,6 +14,7 @@ from ..heroes.models import Hero, Team, TeamMember
 from ..parties import service as parties
 from .hooks import Npcs
 from .models import Npc, NpcTalk
+from .state import DialogState
 from .script import MAX_TEXT, BadAnswer, Script, ScriptError, Who, advance, parse
 
 MAX_COUNTER = 64
@@ -102,7 +103,7 @@ async def _run(session: AsyncSession, hooks: Npcs, hero: Hero, npc: Npc, talk: N
     script: Script = parse(npc.dialog)
     who = await who_is(session, hero)
     try:
-        result = await advance(script, talk.pos if talk else 0, talk.prompt if talk else None, choice, who, partial(hooks.tag, session, hero))
+        result = await advance(script, talk.pos if talk else 0, talk.prompt if talk else None, choice, who, partial(hooks.tag, session, hero), DialogState(session, hero))
     except ScriptError as error:
         if talk is not None and not isinstance(error, BadAnswer):
             await session.delete(talk)

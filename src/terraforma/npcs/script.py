@@ -15,12 +15,23 @@ its command, followed by comma separated parameters. Text outside tags is shown.
     hawk,margin,item1,price1,...[,cancel]  a sell-back menu likewise
     inn,price,label      after the text that follows: Yes or No; No (or cancelling) jumps to the label, Yes lets the game rest the party
     services,prompt1,price1,label1,...  a menu of paid services (the game answers it)
+    have_item,item,qty,scope,label    jump to the label unless the party has the item (at least qty, held by one hero)
+    add_item,item,qty,label   put qty of an item in the talking hero's pack; jump to the label if it does not all fit
+    remove_item,item,qty,label  take qty of an item from the talking hero; jump to the label if they do not have it
+    quests,category,level,op,n,scope,label  jump to the label unless the quests the team completed compare true with n
+    quest_marker,quest,op,value,scope,label  jump to the label unless the team's marker for the quest compares true with value
+    set_quest_marker,quest,value   set the talking hero's team's marker for a quest (0 clears it)
     heal, recharge, select_team         the game's actions
     resurrect,price,label  cure,price,label  uncurse,price,label   the game's paid actions (cancelling jumps to the label)
     pause,ms             wait this long (the browser does)
     sound,clip  music,clip  mute        sound cues (the browser plays them)
     ack                  wait until the player says to go on
     end                  leave the dialog here (the same as jumping to the end label)
+
+The scope of have_item, quests and quest_marker is ``any`` (it holds for any team of the party; for have_item, any hero of it),
+``lead`` (for the party's leading team) or ``each`` (for every team of the party; for have_item, a hero of every team). The
+level of ``quests`` is a whole number, or ``any`` to count every level. A comparison ``op`` is ``eq``, ``ne``, ``lt``,
+``le``, ``gt`` or ``ge``. A party is the one the team acts in right now (``towns.service.acting_party``).
 
 There is always an implicit ``end`` label that leaves the dialog, and running past the last text leaves it too. A label that
 is neither defined nor ``end`` is refused when the text is checked (DragonStar would silently leave). The tags the engine
@@ -31,6 +42,10 @@ finishes by calling ``next`` again.
 
 from dataclasses import dataclass
 
+SCOPES = ("any", "lead", "each")
+OPS = ("eq", "ne", "lt", "le", "gt", "ge")
+#: The tags that read or change the game's state, which the engine itself runs (through ``advance``'s $state).
+STATE_TAGS = ("have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker")
 MAX_TEXT = 20000
 MAX_STEPS = 10000  # tags run in one call: a text that jumps in a circle with nothing to show or ask is cut off
 
@@ -40,9 +55,19 @@ class ScriptError(ValueError):
 
 
 def _whole(command: str, value: str, what: str) -> int:
-    if not value.isascii() or not value.isdigit():
-        raise ScriptError(f"{command} tag: {what} must be a whole number, got {value!r}")
+    if not value.isascii() or not value.isdigit() or len(value) > 9:
+        raise ScriptError(f"{command} tag: {what} must be a whole number of at most 9 digits, got {value!r}")
     return int(value)
+
+
+def _name(command: str, value: str, what: str) -> None:
+    if not value or len(value) > 64:
+        raise ScriptError(f"{command} tag needs {what} (1 to 64 characters)")
+
+
+def _one_of(command: str, value: str, allowed: tuple[str, ...], what: str) -> None:
+    if value not in allowed:
+        raise ScriptError(f"{command} tag: {what} is one of {', '.join(allowed)}, got {value!r}")
 
 
 def _pairs(parts: list[str]) -> list[str]:
@@ -106,6 +131,35 @@ def check_tag(parts: list[str]) -> list[str]:
         count(2)
         _whole(command, args[0], "the price")
         return [args[1]]
+    elif command in ("have_item", "add_item", "remove_item"):
+        count(4 if command == "have_item" else 3)
+        _name(command, args[0], "an item")
+        if _whole(command, args[1], "the quantity") < 1:
+            raise ScriptError(f"{command} tag: the quantity is at least 1")
+        if command == "have_item":
+            _one_of(command, args[2], SCOPES, "a scope")
+        return [args[-1]]
+    elif command == "quests":
+        count(6)
+        _name(command, args[0], "a category")
+        if args[1] != "any":
+            _whole(command, args[1], "the level (or any)")
+        _one_of(command, args[2], OPS, "a comparison")
+        _whole(command, args[3], "the number")
+        _one_of(command, args[4], SCOPES, "a scope")
+        return [args[5]]
+    elif command == "quest_marker":
+        count(5)
+        _name(command, args[0], "a quest")
+        _one_of(command, args[1], OPS, "a comparison")
+        _whole(command, args[2], "the value")
+        _one_of(command, args[3], SCOPES, "a scope")
+        return [args[4]]
+    elif command == "set_quest_marker":
+        count(2)
+        _name(command, args[0], "a quest")
+        if _whole(command, args[1], "the value") > 1_000_000:
+            raise ScriptError("set_quest_marker tag: a marker is at most 1000000")
     elif command == "pause":
         count(1)
         _whole(command, args[0], "the wait in milliseconds")
@@ -179,10 +233,11 @@ def _activity(command: str, args: list[str]) -> dict:
     return {"type": "activity", "command": command, "parts": args, "cancel": cancel}
 
 
-async def advance(script: Script, pos: int, prompt: dict | None, choice: int | None, who: Who, tag) -> dict:
+async def advance(script: Script, pos: int, prompt: dict | None, choice: int | None, who: Who, tag, state=None) -> dict:
     """Runs the dialog on from $pos, which is where the last call stopped, answering the $prompt it stopped at with $choice
     (the index of an option, or None for Next or cancelling). $tag is the game's ``Npcs.tag`` (command, parts) -> a label,
-    "" to go on, or None for not handled. Returns ``{"events", "prompt", "pos"}``: what happened (text to show and cues to
+    "" to go on, or None for not handled. $state is the engine's own (command, parts) -> label for the tags that read or change the
+    game's state (``STATE_TAGS``): the label to go to when a test fails or a change cannot be made, "" to go on. Returns ``{"events", "prompt", "pos"}``: what happened (text to show and cues to
     play, in order), and the prompt the dialog stopped at (None when it ended). ``pos`` is where to resume."""
     text, events = script.text, []
 
@@ -227,7 +282,7 @@ async def advance(script: Script, pos: int, prompt: dict | None, choice: int | N
             _show(events, text[pos:end])
             pos = end
         if pending is not None:
-            return await _ask(pending, events, pos, tag, script, who)
+            return await _ask(pending, events, pos, tag, script, who, state)
         if start == -1:
             break
         end_tag = text.find("`", start + 1)
@@ -255,6 +310,12 @@ async def advance(script: Script, pos: int, prompt: dict | None, choice: int | N
             pending = _activity(command, args)
         elif command == "end":
             return {"events": events, "prompt": None, "pos": len(text)}
+        elif command in STATE_TAGS:
+            if state is None:
+                raise ScriptError(f"this dialog reads the game's state ({command}), and there is no one to ask")
+            failed = await state(command, args)
+            if failed:
+                pos = go(failed)
         elif command == "ack":
             return {"events": events, "prompt": {"type": "ack"}, "pos": pos}
         elif command == "pause":
@@ -270,16 +331,16 @@ async def advance(script: Script, pos: int, prompt: dict | None, choice: int | N
             if handled:
                 pos = go(handled)
     if pending is not None:
-        return await _ask(pending, events, pos, tag, script, who)
+        return await _ask(pending, events, pos, tag, script, who, state)
     return {"events": events, "prompt": None, "pos": len(text)}
 
 
-async def _ask(pending: dict, events: list, pos: int, tag, script: Script, who: Who) -> dict:
+async def _ask(pending: dict, events: list, pos: int, tag, script: Script, who: Who, state) -> dict:
     """A vend or hawk goes to the game first (it may deal with it); everything else is shown as the prompt."""
     if pending["type"] == "activity":
         handled = await tag(pending["command"], pending["parts"])
         if handled is not None:  # it was dealt with: go where it says, or on with the text for ""
-            rest = await advance(script, script.labels.get(handled, len(script.text)) if handled else pos, None, None, who, tag)
+            rest = await advance(script, script.labels.get(handled, len(script.text)) if handled else pos, None, None, who, tag, state)
             return {**rest, "events": events + rest["events"]}
     return {"events": events, "prompt": pending, "pos": pos}
 
