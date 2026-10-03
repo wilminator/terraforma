@@ -14,6 +14,7 @@ from terraforma.fights.rules import Rules
 from terraforma.heroes import inventory, service
 from terraforma.heroes.models import Hero
 from terraforma.models import Account
+from terraforma.parties import service as parties
 
 pytestmark = pytest.mark.anyio
 
@@ -38,8 +39,14 @@ class Leading(Holding):
 
     mode = ASSIGN
 
-    def may_assign_drop(self, hero_ids, hero_id):
+    def may_assign_drop(self, hero_ids, hero_id, is_leader=False):
         return hero_id == min(hero_ids)
+
+
+class Assigning(Holding):
+    """A game that hands drops out and keeps the engine's rule: the party's leader does it."""
+
+    mode = ASSIGN
 
 
 # --- the rules: a drop is held instead of given -------------------------------------------------------------------
@@ -49,7 +56,7 @@ def test_the_engine_gives_every_drop_at_once_and_a_game_can_hold_them():
     fight = hero_fight([table])
     kill(fight, (1, 0, 0))
     assert Rules().drop_mode(fight, 0, [(1, 0, 0)], "one", Scripted()) == drops.AUTO
-    assert not Rules().may_assign_drop([1, 2], 1), "the engine has no party leader"
+    assert not Rules().may_assign_drop([1, 2], 1) and Rules().may_assign_drop([1, 2], 1, is_leader=True), "by default the leader may"
     events = Holding().roll_drops(fight, Scripted(1))
     assert listing(events) == [("DropHeld", 0, "potion", 2, "need_want")]
     assert fight.get((0, 0, 0)).inventory == [] and fight.get((0, 0, 1)).inventory == [], "nobody was given it"
@@ -80,6 +87,10 @@ async def pair_fight(db, rules):
 
 async def held(db, record):
     return list((await db.scalars(select(PendingDrop).where(PendingDrop.fight_id == record.id))).all())
+
+
+async def held_in(db, fight_id):
+    return list((await db.scalars(select(PendingDrop).where(PendingDrop.fight_id == fight_id))).all())
 
 
 async def test_a_held_drop_becomes_one_pending_drop_that_nobody_has_been_given(db):
@@ -164,8 +175,6 @@ async def test_the_game_says_who_may_hand_a_drop_out_and_to_whom(db):
     assert drop.mode == "assign"
     with pytest.raises(pending.PendingError, match="can't hand"):
         await pending.assign(db, Leading(), max(aria, bram, key=lambda hero: hero.id), drop.id, aria.id)
-    with pytest.raises(pending.PendingError, match="can't hand"):
-        await pending.assign(db, Rules(), aria, drop.id, bram.id), "the engine has no leader"
     leader = min(aria, bram, key=lambda hero: hero.id)
     with pytest.raises(pending.PendingError, match="party's heroes"):
         await pending.assign(db, Leading(), leader, drop.id, 999999)
@@ -175,6 +184,30 @@ async def test_the_game_says_who_may_hand_a_drop_out_and_to_whom(db):
     assert (drop.status, drop.winner_id) == ("awarded", bram.id)
     assert await stacks(db, bram) == [("potion", 2)]
     assert (await pending.view(db, drop, bram))["winner_id"] == bram.id
+
+
+async def test_by_default_the_parties_leader_hands_a_drop_out_and_nobody_else(db, monkeypatch):
+    aria, bram, record = await pair_fight(db, Assigning())
+    (drop,) = await held(db, record)
+    real = parties.is_leader
+
+    async def only_bram(session, hero):
+        return hero.id == bram.id
+
+    monkeypatch.setattr(parties, "is_leader", only_bram)
+    with pytest.raises(pending.PendingError, match="can't hand"):
+        await pending.assign(db, Assigning(), aria, drop.id, aria.id)  # Aria's player does not lead the party here
+    await pending.assign(db, Assigning(), bram, drop.id, aria.id)
+    assert (drop.status, drop.winner_id) == ("awarded", aria.id)
+    monkeypatch.setattr(parties, "is_leader", real)
+
+
+async def test_the_founder_of_a_party_hands_its_drops_out_by_default(db):
+    aria, bram, record = await pair_fight(db, Assigning())
+    (drop,) = await held(db, record)
+    assert await parties.is_leader(db, aria) and await parties.is_leader(db, bram), "one player, a lone team"
+    await pending.assign(db, Assigning(), aria, drop.id, bram.id)
+    assert (drop.status, drop.winner_id) == ("awarded", bram.id)
 
 
 async def test_a_hero_sees_their_own_answer_but_not_the_others_until_it_is_settled(db):
@@ -300,3 +333,45 @@ async def test_deleting_a_hero_clears_their_answers_and_leaves_the_drops_they_wo
     assert (await db.get(PendingDrop, won_id)).winner_id is None, "the drop stays on record, without its winner"
     assert (await db.get(PendingDrop, won_id)).status == "awarded"
     assert (await db.get(PendingDrop, open_id)).status == "open"
+
+
+async def test_a_hero_who_fought_can_be_deleted_and_the_drop_stops_waiting_for_them(db):
+    aria, bram, record = await pair_fight(db, Holding())
+    (drop,) = await held(db, record)
+    mike = await db.get(Account, aria.account_id)
+    aria_id, bram_id, fight_id = aria.id, bram.id, record.id
+    await pending.choose(db, bram, drop.id, "need")
+    assert drop.status == "open", "Aria has not answered"
+    await service.delete_hero(db, mike, aria_id)  # Aria fought, and the fight is over
+    db.expire_all()
+    drop = (await held_in(db, fight_id))[0]
+    assert (drop.status, drop.winner_id) == ("awarded", bram_id), "Bram was the only one left to wait for, and he had answered"
+    assert await db.get(Hero, aria_id) is None
+    assert await pending.heroes_of(db, drop) == [bram_id]
+
+
+async def test_a_drop_nobody_is_left_for_is_unclaimed_and_the_fight_stays_on_record(db):
+    aria, bram, record = await pair_fight(db, Holding())
+    mike = await db.get(Account, aria.account_id)
+    mike_id, aria_id, bram_id, record_id = mike.id, aria.id, bram.id, record.id
+    await service.delete_hero(db, mike, aria_id)
+    db.expire_all()
+    (drop,) = await held_in(db, record_id)
+    assert drop.status == "open", "Bram is still to answer"
+    mike = await db.get(Account, mike_id)
+    await service.delete_hero(db, mike, bram_id)
+    db.expire_all()
+    (drop,) = await held_in(db, record_id)
+    assert (drop.status, drop.winner_id) == ("unclaimed", None)
+    assert await db.get(FightRecord, record_id) is not None, "the fight itself is history and stays"
+
+
+async def test_a_hero_in_a_running_fight_cannot_be_deleted(db):
+    aria, _bram, record = await pair_fight(db, Holding())
+    mike = await db.get(Account, aria.account_id)
+    aria_id = aria.id
+    record.finished = False  # as if it were still being fought
+    await db.flush()
+    with pytest.raises(service.HeroError, match="is in a fight"):
+        await service.delete_hero(db, mike, aria_id)
+    assert await db.get(Hero, aria_id) is not None

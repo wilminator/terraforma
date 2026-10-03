@@ -4,19 +4,20 @@ Two ways, each its own call. A *need/want* drop waits until every hero of the wi
 ``need``, ``want`` or ``pass``; then each hero who needed (or, if nobody needed, wanted) rolls 1 to 100 from the fight's
 own stream (``"drop", number`` under the fight's), the highest roll wins and a tie goes to the lower hero id. If everybody
 passes it is ``unclaimed`` (what happens to it then is the game's). An *assign* drop is given by one hero to another
-when the game's rules say that hero may (``Rules.may_assign_drop``: the engine has no party leader, so the default is
-nobody).
+when the game's rules say that hero may (``Rules.may_assign_drop``: by default the hero's player leads the party, see
+``parties.service``).
 
 Service functions: they raise ``PendingError`` (a message the player can read) and change nothing when they do, as long
 as the caller's transaction rolls back (the calls' session does).
 """
 
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..heroes import inventory
 from ..heroes.models import Hero
 from ..models import Map, World
+from ..parties import service as parties
 from ..world.rng import WorldRng
 from .drops import ASSIGN, NEED_WANT
 from .events import Event, EventType
@@ -53,6 +54,27 @@ async def heroes_of(session: AsyncSession, pending: PendingDrop) -> list[int]:
         FightParticipant.fight_id == pending.fight_id, FightParticipant.party == pending.party,
         FightParticipant.hero_id.is_not(None)))
     return sorted(set(rows.all()))
+
+
+async def forget_hero(session: AsyncSession, hero: Hero) -> None:
+    """Before a hero is deleted: their answers go, the drops they won stay on record without a winner, and their place in
+    the fights they fought is cleared (the fights are history; a hero in a running one is refused before this). The open
+    drops they were part of stop waiting for them: one the rest have all answered is settled now, and one nobody is left
+    for is unclaimed."""
+    open_drops = await for_hero(session, hero)
+    await session.execute(delete(PendingDropChoice).where(PendingDropChoice.hero_id == hero.id))
+    await session.execute(update(PendingDrop).where(PendingDrop.winner_id == hero.id).values(winner_id=None))
+    await session.execute(update(FightParticipant).where(FightParticipant.hero_id == hero.id).values(hero_id=None))
+    await session.flush()
+    for drop in open_drops:
+        heroes = await heroes_of(session, drop)
+        if not heroes:
+            drop.status = UNCLAIMED
+        elif drop.mode == NEED_WANT:
+            answers = list((await session.scalars(select(PendingDropChoice).where(PendingDropChoice.pending_id == drop.id))).all())
+            if {each.hero_id for each in answers} >= set(heroes):
+                await _settle_rolls(session, drop, answers)
+    await session.flush()
 
 
 async def for_hero(session: AsyncSession, hero: Hero, *, only_open: bool = True) -> list[PendingDrop]:
@@ -135,7 +157,7 @@ async def assign(session: AsyncSession, rules: Rules, hero: Hero, pending_id: in
     pending, heroes = await _locked(session, hero, pending_id)
     if pending.mode != ASSIGN:
         raise PendingError("that drop is not handed out by anyone")
-    if not rules.may_assign_drop(heroes, hero.id):
+    if not rules.may_assign_drop(heroes, hero.id, await parties.is_leader(session, hero)):
         raise PendingError("you can't hand this drop out")
     if to_hero_id not in heroes:
         raise PendingError("choose one of the party's heroes")

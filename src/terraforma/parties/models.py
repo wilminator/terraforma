@@ -11,6 +11,10 @@ class Party(Located, Timestamps, Base):
     __tablename__ = "parties"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: The player (account) who leads the party: the one who founded it, then whoever accepts another party into theirs.
+    #: No link, like a relationship's sides; ``parties.service.leader_account`` says who leads when this player no longer
+    #: has a team in the party.
+    leader_account_id: Mapped[int | None] = mapped_column(Integer, index=True)
 
 
 class PartyTeam(Base):
