@@ -17,14 +17,15 @@ from .drops import DropTable as DropTableSpec
 from .status import StatusSpec
 
 
-async def hero_fighter(session: AsyncSession, hero: Hero) -> Combatant:
-    """The hero as it goes into a fight: its stats (resources at the level the last fight left them), what it knows,
-    its inventory and what it wears."""
+async def hero_fighter(session: AsyncSession, hero: Hero, rules: Rules | None = None) -> Combatant:
+    """The hero as it goes into a fight: its stats (only the resources have a current value: what the last fight left them), what it
+    knows, its inventory and what it wears. $rules say which stats are resources (the default ones if left out)."""
     stacks = await inventory.stacks(session, hero)
     position_of = {stack.id: stack.position for stack, _item in stacks}
     worn = await inventory.equipment(session, hero)
     job = await session.get(Job, hero.job_id)
-    current = dict(hero.stats)
+    resources = (rules or Rules()).resource_names
+    current = {name: value for name, value in hero.stats.items() if name in resources}
     for name, value in (hero.vitals or {}).items():  # what the last fight left (never above the maximum)
         if name in current:
             current[name] = max(0, min(value, current[name]))
@@ -49,14 +50,14 @@ async def monster_fighter(session: AsyncSession, key: str, rules: Rules | None =
     return fighter
 
 
-async def team_party(session: AsyncSession, team: Team) -> tuple[list[Combatant], dict[int, list[int]]]:
+async def team_party(session: AsyncSession, team: Team, rules: Rules | None = None) -> tuple[list[Combatant], dict[int, list[int]]]:
     """A team's heroes as fighters, in the order of their slots, and the ``{team id: [hero ids]}`` to set on the
     party's ``teams`` so the experience tree pays them (only fighters on a team earn)."""
     rows = await session.execute(
         select(Hero).join(TeamMember, TeamMember.hero_id == Hero.id).where(TeamMember.team_id == team.id).order_by(TeamMember.slot)
     )
     heroes = list(rows.scalars().all())
-    return [await hero_fighter(session, hero) for hero in heroes], {team.id: [hero.id for hero in heroes]}
+    return [await hero_fighter(session, hero, rules) for hero in heroes], {team.id: [hero.id for hero in heroes]}
 
 
 async def known_statuses(session: AsyncSession) -> dict[str, StatusSpec]:
@@ -70,7 +71,7 @@ async def party_side(session: AsyncSession, party_id: int, rules: Rules) -> dict
     teams joined the party (``{group: [combatants...]}``, ready for ``build_fight({side: ...})``). A team can span groups:
     a party keeps its teams whole, a fight's groups are only where they stand."""
     heroes = [await session.get(Hero, hero_id) for hero_id in await parties.hero_ids(session, party_id)]
-    fighters = [await hero_fighter(session, hero) for hero in heroes]
+    fighters = [await hero_fighter(session, hero, rules) for hero in heroes]
     return {number: fighters[start:start + rules.group_size] for number, start in enumerate(range(0, len(fighters), rules.group_size))}
 
 

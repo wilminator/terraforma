@@ -32,7 +32,7 @@ class EventType(StrEnum):
     RESTORE = "Restore"  # [party, group, character, resource, amount]
     REVIVED = "Revived"  # [party, group, character]
     DIED = "Died"  # [party, group, character, amount, overkill]
-    ALTER_STAT = "AlterStat"  # [party, group, character, stat, amount]: the current value of a stat moves
+    ALTER_STAT = "AlterStat"  # [party, group, character, stat, amount]: the current value of a resource (HP or MP) moves
     USE_ITEM = "UseItem"  # [inventory index]: one of a stack used up
     EXPEND_AMMO = "ExpendAmmo"  # [inventory index]
     EQUIP_SLOT = "EquipSlot"  # [inventory index, slot]

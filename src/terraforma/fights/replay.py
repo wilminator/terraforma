@@ -40,7 +40,6 @@ def apply_events(fight: Fight, rules: Rules, events: list[Event]) -> None:
             fighter.level = data[3]
             for stat, gain in data[4].items():
                 fighter.base[stat] += gain
-            fighter.reset_stats(rules)
         elif kind in (EventType.USE_ITEM, EventType.EXPEND_AMMO):
             actor.remove_item(data[0], 1)
         elif kind is EventType.EQUIP_SLOT:

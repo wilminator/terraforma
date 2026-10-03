@@ -57,7 +57,7 @@ def spell(effect, *, base=0, added=0, targets=0, cost=5, kind="spell"):
 HEAL = spell("heal", base=30, added=10)
 FIREBALL = spell("hurt", base=20, added=10)
 SLASH = spell("hurt", base=20, added=10, cost=0, kind="skill")
-HASTE = spell("increase_stats", cost=0, kind="skill")
+HASTE = spell("cause_good_status", cost=0, kind="skill")
 
 
 def fight_of(*parties, **alignment):
@@ -81,7 +81,7 @@ def test_specialty_reads_what_the_abilities_are_good_for():
     assert specialty([HEAL, HEAL, SLASH]) == Action.HEALER  # 2 of 3 heal
     assert specialty([HEAL, SLASH, SLASH, SLASH, SLASH]) == Action.PUMMELER  # 20% is not enough
     assert specialty([FIREBALL, FIREBALL, SLASH]) == Action.MAGE
-    assert specialty([spell("increase_stats")] * 2 + [FIREBALL, SLASH]) == Action.CASTER
+    assert specialty([spell("cause_good_status")] * 2 + [FIREBALL, SLASH]) == Action.CASTER
     assert specialty([HASTE, spell("cause_good_status", kind="skill")]) == Action.FIGHTER
 
 

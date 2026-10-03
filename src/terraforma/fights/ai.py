@@ -56,12 +56,10 @@ from .specs import (
     ALL_PARTIES,
     CAUSE_BAD_STATUS,
     CAUSE_GOOD_STATUS,
-    DECREASE_STATS,
     DETRIMENTAL,
     GROUP,
     HEAL,
     HURT,
-    INCREASE_STATS,
     NONE,
     ONLY_LIVING,
     PARTY,
@@ -71,7 +69,6 @@ from .specs import (
     REMOVE_GOOD_STATUS,
     REVIVE,
     SLAY,
-    STEAL_STATS,
     AbilitySpec,
     EffectSpec,
 )
@@ -629,8 +626,8 @@ def _sharp(turn: _Turn) -> Choice | None:
     return _mage(turn)
 
 
-HINDERING = frozenset({CAUSE_BAD_STATUS, DECREASE_STATS, STEAL_STATS, REMOVE_GOOD_STATUS})
-HELPING = frozenset({REMOVE_BAD_STATUS, CAUSE_GOOD_STATUS, INCREASE_STATS})
+HINDERING = frozenset({CAUSE_BAD_STATUS, REMOVE_GOOD_STATUS})
+HELPING = frozenset({REMOVE_BAD_STATUS, CAUSE_GOOD_STATUS})
 
 
 def _options_with(rules: Rules, fighter: Combatant, effects: frozenset) -> list[Option]:

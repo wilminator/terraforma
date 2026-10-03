@@ -213,20 +213,11 @@ class Rules:
         """Whether a slay takes: $base is the chance out of 100."""
         return rng.randint(1, 100) <= effect.base
 
-    # --- stats that move -----------------------------------------------------------------------------
-    def stat_range(self, stat: str, base: int) -> tuple[int, int]:
-        """The lowest and highest the current value of a stat can be pushed to by increase, decrease and steal effects
-        (before gear counts): none below zero, and none above twice the base (at least 10 over it)."""
-        return 0, max(base * 2, base + 10)
-
-    def stat_drift(self, stat: str, current: int, base: int) -> int:
-        """How much a pushed stat moves back towards its base at the end of each round: a quarter of the gap, at
-        least 1, never past the base. Returns the (signed) amount to add; 0 when it is at its base."""
-        gap = base - current
-        if gap == 0:
-            return 0
-        step = min(max(1, abs(gap) // 4), abs(gap))
-        return step if gap > 0 else -step
+    # --- stat values -------------------------------------------------------------------------------------
+    def stat_value(self, stat: str, geared: int, bonus: int) -> int:
+        """What a stat that is not a resource is worth right now: $geared is its base with the worn gear counted and $bonus what the
+        fighter's statuses add (``status.stat_bonus``). The sum, and never below zero; override it to clamp another way."""
+        return max(0, geared + bonus)
 
     # --- statuses --------------------------------------------------------------------------------------
     def status_acted(self, fight, source: tuple, target: tuple, status, intensity: float, ratio: float) -> list:

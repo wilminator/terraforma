@@ -36,6 +36,7 @@ class Command(IntEnum):
 class Combatant:
     name: str
     base: dict[str, int]
+    #: What is left of each resource (HP and MP). No other stat has one: they are the base plus what gear and statuses add.
     current: dict[str, int]
     abilities: list[AbilitySpec] = field(default_factory=list)
     inventory: list[list] = field(default_factory=list)  # [ItemSpec, quantity]
@@ -108,19 +109,13 @@ class Combatant:
         return value
 
     def get_current(self, rules: Rules, stat: str, all_equipment: bool | int = False) -> int:
-        """The stat right now. Resources are what is left of them; every other stat counts gear."""
-        value = self.current[stat]
-        if stat not in rules.resource_names:
-            every = all_equipment is True
-            command = all_equipment if not isinstance(all_equipment, bool) else self.command
-            value = self.with_gear(rules, stat, value, command, every) + stat_bonus(self, stat)
-        return value
-
-    def reset_stats(self, rules: Rules, everything: bool = False) -> None:
-        """Current stats back to base (the resources only if $everything: HP and MP carry over between fights)."""
-        for stat, value in self.base.items():
-            if everything or stat not in rules.resource_names:
-                self.current[stat] = value
+        """The stat right now. Resources (HP and MP) are what is left of them. Every other stat is its base with the worn gear and
+        the fighter's statuses added, as ``Rules.stat_value`` sums and clamps them: it has no current value of its own."""
+        if stat in rules.resource_names:
+            return self.current[stat]
+        every = all_equipment is True
+        command = all_equipment if not isinstance(all_equipment, bool) else self.command
+        return rules.stat_value(stat, self.with_gear(rules, stat, self.base[stat], command, every), stat_bonus(self, stat))
 
     # --- gear --------------------------------------------------------------------------------
     def equipped(self, slot: str) -> ItemSpec | None:

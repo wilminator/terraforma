@@ -326,20 +326,6 @@ def do_effect(fight, rules, rng, effect, actor, target, target_address, impact, 
             inflict_damage(fight, rules, actor, target, target_address, target.current[vital], False, log)
         else:
             log.add(EventType.NO_EFFECT, *target_address)
-    elif effect.effect in (specs.INCREASE_STATS, specs.DECREASE_STATS, specs.STEAL_STATS):
-        if target.get_current(rules, vital) == 0:
-            return False
-        for stat in effect.stats:
-            if stat in rules.resource_names:
-                continue
-            amount = math.floor(rules.roll_amount(rng, effect) * immunity * impact)
-            if effect.effect == specs.INCREASE_STATS:
-                move_stat(rules, target, target_address, stat, amount, log)
-            elif effect.effect == specs.DECREASE_STATS:
-                move_stat(rules, target, target_address, stat, -amount, log)
-            else:
-                taken = move_stat(rules, target, target_address, stat, -amount, log)
-                move_stat(rules, fight.get(actor), actor, stat, -taken, log)
     elif effect.effect in (specs.CAUSE_GOOD_STATUS, specs.CAUSE_BAD_STATUS):
         if target.get_current(rules, vital) == 0:
             return False
@@ -431,16 +417,6 @@ def restore_pool(fight, rules, actor, target, target_address, resource, amount, 
 
 # --- statuses ------------------------------------------------------------------------------------------------------
 
-def move_stat(rules: Rules, fighter: Combatant, address: Address, stat: str, amount: int, log: Log) -> int:
-    """Pushes the current value of a stat by $amount, within ``Rules.stat_range``, and returns how far it really moved."""
-    low, high = rules.stat_range(stat, fighter.base[stat])
-    moved = min(max(fighter.current[stat] + amount, low), high) - fighter.current[stat]
-    if moved:
-        log.add(EventType.ALTER_STAT, *address, stat, moved)
-        fighter.current[stat] += moved
-    return moved
-
-
 def place_status(fight: Fight, effect: EffectSpec, source: Address, target: Combatant, target_address: Address, log: Log) -> None:
     spec = fight.statuses.get(effect.status)
     if spec is None:
@@ -516,7 +492,7 @@ def tick_token(fight, rules, rng, address, fighter, token, tick, when, log) -> b
 
 def end_round(fight: Fight, rules: Rules, log: Log) -> None:
     """Closes a round for the statuses: the dead lose theirs, the rest age and the ones that have run their course
-    end; stats that were pushed drift back towards their base."""
+    end."""
     for address in fight.addresses():
         fighter = fight.get(address)
         if not fighter.alive(rules):
@@ -530,14 +506,3 @@ def end_round(fight: Fight, rules: Rules, log: Log) -> None:
             fighter = fight.get(address)
             for token in status.expired(fighter):
                 remove_token(fighter, address, token, status.EXPIRED, log)
-    for address in fight.addresses():
-        fighter = fight.get(address)
-        if not fighter.alive(rules):
-            continue
-        for stat, base in fighter.base.items():
-            if stat in rules.resource_names:
-                continue
-            drift = rules.stat_drift(stat, fighter.current[stat], base)
-            if drift:
-                log.add(EventType.ALTER_STAT, *address, stat, drift)
-                fighter.current[stat] += drift

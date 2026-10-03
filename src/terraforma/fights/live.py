@@ -87,7 +87,7 @@ async def start_team_fight(session: AsyncSession, team: Team, monster_keys: list
     """A fight between a player's team (party 0) and monsters (party 1), where the team's first hero stands. The round
     clock starts now. $area_drops are the keys of the area's own drop tables (the map's), rolled when the team wins. Raises Refused for a team with no heroes, no monsters, too many of them, or a hero who is in a
     fight already."""
-    heroes, teams = await team_party(session, team)
+    heroes, teams = await team_party(session, team, rules)
     if not heroes:
         raise Refused("that team has no heroes")
     if not 1 <= len(monster_keys) <= rules.party_size:
@@ -122,7 +122,7 @@ async def start_party_fight(session: AsyncSession, party_id: int, monster_keys: 
     party = await session.get(Party, party_id)
     heroes, teams = [], {}
     for team_id in await parties.team_ids(session, party_id):
-        members, ids = await team_party(session, await session.get(Team, team_id))
+        members, ids = await team_party(session, await session.get(Team, team_id), rules)
         heroes += members
         teams |= ids
     if not heroes:

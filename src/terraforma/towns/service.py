@@ -103,7 +103,7 @@ async def leave(session: AsyncSession, towns: Towns, rules: Rules, team_id: int)
     if result != "reformed" or party is None:
         return result, None
     heroes = await parties.hero_ids(session, party.id)
-    fighters = [await hero_fighter(session, await session.get(Hero, hero)) for hero in heroes]
+    fighters = [await hero_fighter(session, await session.get(Hero, hero), rules) for hero in heroes]
     number = await session.scalar(select(func.count(func.distinct(FightParticipant.fight_id))).where(FightParticipant.hero_id.in_(heroes))) or 0
     world = await session.get(World, (await session.get(Map, party.map_id)).world_id)
     keys = await towns.encounter(session, rules, party.id, sum(rules.pxp(fighter) for fighter in fighters), WorldRng(world.seed), number)

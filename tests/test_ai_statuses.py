@@ -68,8 +68,6 @@ def test_what_an_effect_is_worth_to_the_one_aiming_it():
     assert effect_worth(RULES, SPECS, poisoned, effect("remove_bad_status", status="stun")) == 0
     assert effect_worth(RULES, SPECS, target, effect("remove_bad_status")) == 0
     assert effect_worth(RULES, SPECS, poisoned, effect("remove_good_status")) == 0
-    assert effect_worth(RULES, SPECS, target, effect("increase_stats", base=10, stats=("Strength", "Speed"))) == 10
-    assert effect_worth(RULES, SPECS, target, effect("steal_stats", base=10, stats=("Strength", "Speed"))) == 20
     assert effect_worth(RULES, SPECS, target, effect("slay", base=50)) == 50
     assert effect_worth(RULES, SPECS, target, effect("hurt", base=5)) is None
 
