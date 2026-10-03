@@ -52,7 +52,7 @@ def test_a_good_seed_checks_and_fills_in_defaults():
 
 
 def test_files_that_are_not_content_are_left_alone():
-    assert check_seed({"maps": [{"anything": 1}]})["abilities"] == []
+    assert check_seed({"rumours": [{"anything": 1}]})["abilities"] == []
 
 
 @pytest.mark.parametrize("kind, change, message", [

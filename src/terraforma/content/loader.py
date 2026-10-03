@@ -4,6 +4,8 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.dialect import upsert
+from ..maps.service import apply_maps
+from ..world.start import ensure_start
 from . import models
 from .schema import DROP_SCALE, RESOURCES, STATS, Strict, check_seed
 
@@ -50,6 +52,10 @@ async def load_content(session: AsyncSession, seed: dict[str, list[dict]], stats
             update(table).where(table.key.not_in([row.key for row in rows])).values(active=False)
         )
         counts[kind] = len(rows)
+    if "maps" in seed:
+        # Maps belong to a world: the engine's, made first if this is a new database.
+        hub = await ensure_start(session)
+        counts["maps"] = await apply_maps(session, hub.world_id, checked["maps"])
     # The rows were written with bulk SQL: content already loaded in this session is stale.
     session.expire_all()
     return counts
