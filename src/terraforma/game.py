@@ -16,6 +16,7 @@ from .alliances.hooks import Alliances
 from .relations.hooks import Relations
 from .pvp.hooks import PvpZones
 from .market.hooks import Market
+from .guild.hooks import Guild
 from .npcs.hooks import Npcs
 from .towns.hooks import Towns
 

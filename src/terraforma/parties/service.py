@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..heroes.models import Hero, Team, TeamMember
 from ..world.start import ensure_start
 from ..towns.models import TownTeam, TownVisit
-from .models import Party, PartyTeam
+from .models import Party, PartyRequest, PartyTeam
 
 
 class PartyError(ValueError):
@@ -144,11 +144,15 @@ async def _accept(session: AsyncSession, party: Party, accepted_by: int | None) 
     party.leader_account_id = accepted_by
 
 
-async def join_party(session: AsyncSession, party_id: int, team_id: int, party_size: int, accepted_by: int | None = None) -> Party:
+async def join_party(session: AsyncSession, party_id: int, team_id: int, party_size: int, accepted_by: int | None = None, apart_ok: bool = False) -> Party:
     """The team joins the party whole, if there is a place for every one of its heroes. $accepted_by, the account of the
-    player who accepted it, becomes the party's leader."""
+    player who accepted it, becomes the party's leader. A party that is apart in a town refuses, unless $apart_ok (the guild
+    adds teams in town): the team then joins the town visit as a group of its own, not waiting, so the party can leave only once it
+    is ready too."""
     party = await get_party(session, party_id)
-    await _check_whole(session, party.id)
+    visit = await session.scalar(select(TownVisit).where(TownVisit.party_id == party.id))
+    if visit is None or not apart_ok:
+        await _check_whole(session, party.id)
     team = await _team(session, team_id)
     if await party_of(session, team.id) is not None:
         raise PartyError("that team is already in a party: it must leave it first")
@@ -158,6 +162,11 @@ async def join_party(session: AsyncSession, party_id: int, team_id: int, party_s
     await _accept(session, party, accepted_by)
     session.add(PartyTeam(party_id=party.id, team_id=team.id, position=await _next_position(session, party.id)))
     await _flush(session)
+    if visit is not None:
+        last = await session.scalar(select(func.max(TownTeam.group)).where(TownTeam.visit_id == visit.id))
+        session.add(TownTeam(visit_id=visit.id, team_id=team.id, group=0 if last is None else last + 1, waiting=False))
+        visit.formation = [*visit.formation, team.id]
+        await session.flush()
     return party
 
 
@@ -175,6 +184,7 @@ async def leave_party(session: AsyncSession, team_id: int) -> int | None:
         visits = select(TownVisit.id).where(TownVisit.party_id == party_id)  # (a party apart in a town goes with its visit)
         await session.execute(delete(TownTeam).where(TownTeam.visit_id.in_(visits)))
         await session.execute(delete(TownVisit).where(TownVisit.party_id == party_id))
+        await session.execute(delete(PartyRequest).where(PartyRequest.party_id == party_id))
         await session.execute(delete(Party).where(Party.id == party_id))
     else:
         await leader_account(session, party_id)  # (settles the leadership if the leaver was the last of the leader's teams)
@@ -200,6 +210,7 @@ async def merge_parties(session: AsyncSession, keep_id: int, absorb_id: int, par
     for offset, row in enumerate(moving):
         row.party_id, row.position = keep.id, position + offset
     await session.flush()
+    await session.execute(delete(PartyRequest).where(PartyRequest.party_id == absorb.id))
     await session.execute(delete(Party).where(Party.id == absorb.id))
     return keep
 

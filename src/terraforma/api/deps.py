@@ -11,6 +11,7 @@ from ..alliances.hooks import Alliances
 from ..relations.hooks import Relations
 from ..pvp.hooks import PvpZones
 from ..market.hooks import Market
+from ..guild.hooks import Guild
 from ..npcs.hooks import Npcs
 from ..towns.hooks import Towns
 from ..fights.rules import Rules
@@ -124,3 +125,12 @@ def get_market(request: Request) -> Market:
 
 
 GameMarket = Annotated[Market, Depends(get_market)]
+
+
+def get_guild(request: Request) -> Guild:
+    """The game's rule for who may ask to join whose party (allies only when the app runs without a game)."""
+    game = request.app.state.game
+    return game.guild if game else Guild()
+
+
+GameGuild = Annotated[Guild, Depends(get_guild)]

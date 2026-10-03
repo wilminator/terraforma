@@ -23,6 +23,8 @@ its command, followed by comma separated parameters. Text outside tags is shown.
     quest_marker,quest,op,value,scope,label  jump to the label unless the team's marker for the quest compares true with value
     set_quest_marker,quest,value   set the talking hero's team's marker for a quest (0 clears it)
     heal, recharge, select_team         the game's actions
+    open_party,on|off,label             the leader opens or closes the party to requests (the label if not the leader)
+    add_team, find_party, party_requests  the guild's activities (guild.service): add one of your teams, ask an open party, answer asks
     resurrect,price,label  cure,price,label  uncurse,price,label   the game's paid actions (cancelling jumps to the label)
     pause,ms             wait this long (the browser does)
     sound,clip  music,clip  mute        sound cues (the browser plays them)
@@ -36,7 +38,7 @@ level of ``quests`` is a whole number, or ``any`` to count every level. A compar
 
 There is always an implicit ``end`` label that leaves the dialog, and running past the last text leaves it too. A label that
 is neither defined nor ``end`` is refused when the text is checked (DragonStar would silently leave). The tags the engine
-does not act on itself (vend, hawk, shop, inn's Yes, services, heal, recharge, select_team, resurrect, cure, uncurse) are
+does not act on itself (vend, hawk, shop, inn's Yes, services, heal, recharge, select_team, add_team, find_party, party_requests, resurrect, cure, uncurse) are
 handed to the game's ``Npcs.tag``; one it does not handle is passed to the browser as an *activity* to run, which it
 finishes by calling ``next`` again.
 """
@@ -46,7 +48,7 @@ from dataclasses import dataclass
 SCOPES = ("any", "lead", "each")
 OPS = ("eq", "ne", "lt", "le", "gt", "ge")
 #: The tags that read or change the game's state, which the engine itself runs (through ``advance``'s $state).
-STATE_TAGS = ("have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker")
+STATE_TAGS = ("have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker", "open_party")
 MAX_TEXT = 20000
 MAX_STEPS = 10000  # tags run in one call: a text that jumps in a circle with nothing to show or ask is cut off
 
@@ -131,8 +133,12 @@ def check_tag(parts: list[str]) -> list[str]:
         for price in args[1::3]:
             _whole(command, price, "a price")
         return args[2::3]
-    elif command in ("mute", "ack", "end", "heal", "recharge", "select_team"):
+    elif command in ("mute", "ack", "end", "heal", "recharge", "select_team", "add_team", "find_party", "party_requests"):
         count(0)
+    elif command == "open_party":
+        count(2)
+        _one_of(command, args[0], ("on", "off"), "the setting")
+        return [args[1]]
     elif command in ("resurrect", "cure", "uncurse"):
         count(2)
         _whole(command, args[0], "the price")
