@@ -201,6 +201,49 @@ def test_the_add_hero_call_follows_the_games_party_size(app_client):
     assert refused.status_code >= 400 and "party" in refused.text
 
 
+# --- entering the game ------------------------------------------------------------------------------------------------------------
+
+async def test_a_team_that_plays_is_in_a_party_of_just_that_team_and_playing_again_changes_nothing(db):
+    mike = await account(db)
+    team = await team_of(db, mike, "Vanguard", ["Aria", "Bram"])
+    assert await parties.party_of(db, team.id) is None
+    party = await parties.play(db, team.id, 20)
+    assert await parties.team_ids(db, party.id) == [team.id] and await parties.leader_account(db, party.id) == mike.id
+    again = await parties.play(db, team.id, 20)
+    assert again.id == party.id and await count(db, Party) == 1
+
+
+async def test_a_team_with_no_heroes_cannot_play_and_a_team_already_in_a_bigger_party_keeps_it(db):
+    mike = await account(db)
+    empty = await service.create_team(db, mike, "Empty")
+    with pytest.raises(parties.PartyError, match="needs a hero"):
+        await parties.play(db, empty.id, 20)
+    a, b = await team_of(db, mike, "Team A", ["Aa1"]), await team_of(db, mike, "Team B", ["Bb1"])
+    party = await parties.create_party(db, a.id, 20)
+    await parties.join_party(db, party.id, b.id, 20)
+    assert (await parties.play(db, b.id, 20)).id == party.id and await parties.team_ids(db, party.id) == [a.id, b.id]
+
+
+@pytest.mark.anyio(False)
+def test_the_play_call_makes_the_party_and_is_for_the_teams_owner_only(app_client):
+    client = app_client
+    for name in ("Mike", "Zed"):
+        in_app_db(client, lambda db, name=name: create_account(db, name, PASSWORD, email=f"{name.lower()}@example.com", confirmed=True))
+    login = lambda name: {"X-CSRF-Token": client.post("/api/login", json={"username": name, "password": PASSWORD}).json()["csrf_token"]}  # noqa: E731
+    mike = login("Mike")
+    team = client.post("/api/teams", json={"name": "Vanguard"}, headers=mike).json()["id"]
+    empty = client.post("/api/teams", json={"name": "Empty"}, headers=mike).json()["id"]
+    hero = client.post("/api/heroes", json={"name": "Aria", "job": "fighter"}, headers=mike).json()["id"]
+    assert client.post(f"/api/teams/{team}/add-hero", json={"hero_id": hero}, headers=mike).status_code == 200
+    assert client.post(f"/api/teams/{empty}/play", json={}, headers=mike).status_code == 409, "no heroes"
+    assert client.post(f"/api/teams/{team}/play", json={}).status_code == 403, "no CSRF token"
+    played = client.post(f"/api/teams/{team}/play", json={}, headers=mike)
+    assert played.status_code == 200 and played.json()["teams"] == [team] and set(played.json()) == {"party", "teams", "map_id", "x", "y"}
+    assert client.post(f"/api/teams/{team}/play", json={}, headers=mike).json() == played.json(), "safe to repeat"
+    zed = login("Zed")
+    assert client.post(f"/api/teams/{team}/play", json={}, headers=zed).status_code == 404, "not Zed's team"
+
+
 # --- a party as one side of a fight -----------------------------------------------------------------------------------------------
 
 async def test_a_party_becomes_one_side_of_a_fight_in_groups(db):

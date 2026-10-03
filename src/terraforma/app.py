@@ -35,6 +35,7 @@ from .alliances.ballot_routes import router as ballots_router
 from .alliances.routes import router as alliances_router
 from .challenge.routes import router as challenge_router
 from .npcs.routes import router as npcs_router
+from .parties.routes import router as parties_router
 from .profiles.routes import router as profiles_router
 from .relations.rating_routes import router as ratings_router
 from .relations.routes import router as relations_router
@@ -124,6 +125,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(profiles_router)
     app.include_router(challenge_router)
     app.include_router(npcs_router)
+    app.include_router(parties_router)
 
     @app.get("/api/about")
     async def about(request: Request) -> dict:
