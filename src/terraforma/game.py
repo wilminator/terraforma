@@ -17,6 +17,7 @@ from .relations.hooks import Relations
 from .pvp.hooks import PvpZones
 from .market.hooks import Market
 from .npcs.hooks import Npcs
+from .npcs.inn import Inn
 from .towns.hooks import Towns
 
 
@@ -41,3 +42,4 @@ class Game:
     # Who may talk to an NPC from where they stand, and what a game does with the dialog tags the engine leaves to it (heal, a shop...).
     npcs: Npcs = field(default_factory=Npcs)
     market: Market = field(default_factory=Market)
+    inn: Inn = field(default_factory=Inn)

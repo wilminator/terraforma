@@ -4,7 +4,7 @@ shows text and cues, and sends back the index of an answer. A hero is in at most
 fight that is still running.
 """
 
-from functools import partial
+from collections.abc import Awaitable, Callable
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +18,9 @@ from .state import DialogState
 from .script import MAX_TEXT, BadAnswer, Script, ScriptError, Who, advance, parse
 
 MAX_COUNTER = 64
+
+#: What the engine does for the Yes of an inn: (hero, price) -> the label to go to (``npcs.inn.rest`` bound to the game's rules).
+Rest = Callable[[Hero, int], Awaitable[str]]
 
 
 class NpcError(ValueError):
@@ -99,11 +102,18 @@ async def _may_talk(session: AsyncSession, hooks: Npcs, npc: Npc, hero: Hero) ->
         raise NpcError(reason)
 
 
-async def _run(session: AsyncSession, hooks: Npcs, hero: Hero, npc: Npc, talk: NpcTalk | None, choice: int | None) -> dict:
+async def _run(session: AsyncSession, hooks: Npcs, hero: Hero, npc: Npc, talk: NpcTalk | None, choice: int | None, rest: Rest | None = None) -> dict:
     script: Script = parse(npc.dialog)
     who = await who_is(session, hero)
+
+    async def tag(command: str, parts: list[str]) -> str | None:
+        handled = await hooks.tag(session, hero, command, parts)
+        if handled is None and command == "inn" and rest is not None:  # the game left the Yes of an inn to the engine
+            return await rest(hero, int(parts[0]))
+        return handled
+
     try:
-        result = await advance(script, talk.pos if talk else 0, talk.prompt if talk else None, choice, who, partial(hooks.tag, session, hero), DialogState(session, hero))
+        result = await advance(script, talk.pos if talk else 0, talk.prompt if talk else None, choice, who, tag, DialogState(session, hero))
     except ScriptError as error:
         if talk is not None and not isinstance(error, BadAnswer):
             await session.delete(talk)
@@ -120,17 +130,17 @@ async def _run(session: AsyncSession, hooks: Npcs, hero: Hero, npc: Npc, talk: N
     return frame(npc, result["events"], result["prompt"])
 
 
-async def talk(session: AsyncSession, hooks: Npcs, hero: Hero, npc_id: int) -> dict:
+async def talk(session: AsyncSession, hooks: Npcs, hero: Hero, npc_id: int, rest: Rest | None = None) -> dict:
     """The hero starts talking to the NPC (leaving any other conversation): what it says first, and what it asks."""
     npc = await session.get(Npc, npc_id)
     if npc is None:
         raise NoSuchNpc("there's no such person")
     await _may_talk(session, hooks, npc, hero)
     await session.execute(delete(NpcTalk).where(NpcTalk.hero_id == hero.id))
-    return await _run(session, hooks, hero, npc, None, None)
+    return await _run(session, hooks, hero, npc, None, None, rest)
 
 
-async def answer(session: AsyncSession, hooks: Npcs, hero: Hero, choice: int | None) -> dict:
+async def answer(session: AsyncSession, hooks: Npcs, hero: Hero, choice: int | None, rest: Rest | None = None) -> dict:
     """The hero goes on: Next (no $choice), or the index of the answer picked (None cancels where a prompt can be cancelled).
     The hero must still be where they can talk, or the conversation ends."""
     current = await _talk_of(session, hero)
@@ -143,7 +153,7 @@ async def answer(session: AsyncSession, hooks: Npcs, hero: Hero, choice: int | N
         await session.delete(current)
         await session.flush()
         raise
-    return await _run(session, hooks, hero, npc, current, choice)
+    return await _run(session, hooks, hero, npc, current, choice, rest)
 
 
 async def activity(session: AsyncSession, hooks: Npcs, hero: Hero, commands: tuple[str, ...]) -> dict:
