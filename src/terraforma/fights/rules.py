@@ -307,10 +307,11 @@ class Rules:
 
         return AUTO
 
-    def may_assign_drop(self, hero_ids, hero_id: int) -> bool:
-        """Whether $hero_id may choose who gets a held ``"assign"`` drop of a party whose heroes are $hero_ids. The engine has
-        no party leader, so by default nobody may: a game that has one says so here."""
-        return False
+    def may_assign_drop(self, hero_ids, hero_id: int, is_leader: bool = False) -> bool:
+        """Whether $hero_id may choose who gets a held ``"assign"`` drop of a party whose heroes are $hero_ids. By default the
+        party's leader may (``is_leader``: the hero's player founded the party or accepted another into theirs, see
+        ``parties.service``) and nobody else; a game says otherwise here."""
+        return is_leader
 
     def status_worth(self, statuses: dict, target, effect) -> float | None:
         """What a status or stat effect is worth to the monster AI aiming it at $target, in hit points (zero or more);

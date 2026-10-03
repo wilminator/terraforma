@@ -4,8 +4,8 @@ Two ways, each its own call. A *need/want* drop waits until every hero of the wi
 ``need``, ``want`` or ``pass``; then each hero who needed (or, if nobody needed, wanted) rolls 1 to 100 from the fight's
 own stream (``"drop", number`` under the fight's), the highest roll wins and a tie goes to the lower hero id. If everybody
 passes it is ``unclaimed`` (what happens to it then is the game's). An *assign* drop is given by one hero to another
-when the game's rules say that hero may (``Rules.may_assign_drop``: the engine has no party leader, so the default is
-nobody).
+when the game's rules say that hero may (``Rules.may_assign_drop``: by default the hero's player leads the party, see
+``parties.service``).
 
 Service functions: they raise ``PendingError`` (a message the player can read) and change nothing when they do, as long
 as the caller's transaction rolls back (the calls' session does).
@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..heroes import inventory
 from ..heroes.models import Hero
 from ..models import Map, World
+from ..parties import service as parties
 from ..world.rng import WorldRng
 from .drops import ASSIGN, NEED_WANT
 from .events import Event, EventType
@@ -124,7 +125,7 @@ async def assign(session: AsyncSession, rules: Rules, hero: Hero, pending_id: in
     pending, heroes = await _locked(session, hero, pending_id)
     if pending.mode != ASSIGN:
         raise PendingError("that drop is not handed out by anyone")
-    if not rules.may_assign_drop(heroes, hero.id):
+    if not rules.may_assign_drop(heroes, hero.id, await parties.is_leader(session, hero)):
         raise PendingError("you can't hand this drop out")
     if to_hero_id not in heroes:
         raise PendingError("choose one of the party's heroes")

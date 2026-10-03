@@ -228,3 +228,63 @@ async def test_the_default_party_is_twenty_heroes_in_four_groups_of_five(db):
         await parties.join_party(db, party.id, team.id, 20)
     side = await party_side(db, party.id, Rules())
     assert [len(group) for group in side.values()] == [5, 5, 2]
+
+
+# --- the leader ------------------------------------------------------------------------------------------------
+
+async def two_players(db):
+    """Mike's team Vanguard and Zed's team Rivals, one hero each."""
+    mike = await account(db, "Mike")
+    zed = await account(db, "Zed")
+    mine = await team_of(db, mike, "Vanguard", ["Aria"])
+    theirs = await team_of(db, zed, "Rivals", ["Zane"])
+    return mike, zed, mine, theirs
+
+
+async def hero_named(db, name):
+    return await db.scalar(select(Hero).where(Hero.name == name))
+
+
+async def test_a_new_party_is_led_by_the_player_who_founded_it(db):
+    mike, zed, mine, theirs = await two_players(db)
+    party = await parties.create_party(db, mine.id, 20)
+    assert party.leader_account_id == mike.id and await parties.leader_account(db, party.id) == mike.id
+    assert await parties.is_leader(db, await hero_named(db, "Aria"))
+
+
+async def test_whoever_accepts_another_party_into_theirs_leads_it(db):
+    mike, zed, mine, theirs = await two_players(db)
+    first, second = await parties.create_party(db, mine.id, 20), await parties.create_party(db, theirs.id, 20)
+    assert await parties.leader_account(db, second.id) == zed.id
+    await parties.merge_parties(db, second.id, first.id, 20, accepted_by=zed.id)  # Zed accepts Mike's party into his
+    assert await parties.leader_account(db, second.id) == zed.id
+    assert not await parties.is_leader(db, await hero_named(db, "Aria")) and await parties.is_leader(db, await hero_named(db, "Zane"))
+
+
+async def test_accepting_a_team_makes_the_accepting_player_the_leader_and_a_stranger_cannot_accept(db):
+    mike, zed, mine, theirs = await two_players(db)
+    party = await parties.create_party(db, mine.id, 20)
+    with pytest.raises(parties.PartyError, match="only a player with a team"):
+        await parties.join_party(db, party.id, theirs.id, 20, accepted_by=zed.id)
+    assert await parties.party_of(db, theirs.id) is None, "nothing changed"
+    await parties.join_party(db, party.id, theirs.id, 20)
+    assert await parties.leader_account(db, party.id) == mike.id, "joining without being accepted by anyone keeps the leader"
+    elsewhere = await team_of(db, zed, "Second", ["Zoe"])
+    await parties.join_party(db, party.id, elsewhere.id, 20, accepted_by=zed.id)
+    assert await parties.leader_account(db, party.id) == zed.id
+
+
+async def test_when_the_leaders_last_team_leaves_the_owner_of_the_first_team_leads(db):
+    mike, zed, mine, theirs = await two_players(db)
+    party = await parties.create_party(db, mine.id, 20)
+    await parties.join_party(db, party.id, theirs.id, 20)
+    await parties.leave_party(db, mine.id)
+    assert (await db.get(Party, party.id)).leader_account_id == zed.id
+    assert await parties.leader_account(db, party.id) == zed.id
+
+
+async def test_a_team_in_no_party_is_led_by_its_owner_and_a_hero_without_a_team_leads_nothing(db):
+    mike, zed, mine, theirs = await two_players(db)
+    assert await parties.is_leader(db, await hero_named(db, "Aria"))
+    loose = await service.create_hero(db, mike, "Loose", "fighter")
+    assert not await parties.is_leader(db, loose)
