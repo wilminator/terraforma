@@ -3,7 +3,7 @@ Each is its own route. A party comes into a town and is put back together by the
 
 from fastapi import APIRouter, HTTPException, status
 
-from ..api.deps import ActingAccount, CurrentAccount, Db, GameTowns
+from ..api.deps import ActingAccount, CurrentAccount, Db, GameRules, GameTowns
 from ..heroes import service as heroes
 from ..heroes.routes import Id
 from ..heroes.routes import refuse as refuse_hero
@@ -31,15 +31,15 @@ async def town(team_id: Id, account: CurrentAccount, db: Db) -> dict:
 
 
 @router.post("/ready")
-async def ready(team_id: Id, account: ActingAccount, db: Db, towns: GameTowns) -> dict:
-    """The team (with the teams it goes with) is ready to leave and waits for the rest of its party. The others are told;
-    when every team is waiting, the party is put back together."""
+async def ready(team_id: Id, account: ActingAccount, db: Db, towns: GameTowns, rules: GameRules) -> dict:
+    """Leave Town: the team (with the teams it goes with) is ready to leave and waits for the rest of its party. The others are
+    told; when every team is waiting, the party is put back together and its fight starts (``fight`` is its id, or null)."""
     try:
         team = await heroes.own_team(db, account, team_id)
-        result = await service.ready(db, towns, team.id)
+        result, fight = await service.leave(db, towns, rules, team.id)
     except (heroes.HeroError, service.TownError) as error:
         raise refuse(error) from error
-    return {"result": result, **await service.view(db, team.id)}
+    return {"result": result, "fight": fight.id if fight else None, **await service.view(db, team.id)}
 
 
 @router.post("/come-back")

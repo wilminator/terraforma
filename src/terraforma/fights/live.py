@@ -24,6 +24,8 @@ from .. import wallclock
 from ..economy import Economy
 from ..heroes.models import Hero, Team
 from ..models import Map, World
+from ..parties import service as parties
+from ..parties.models import Party
 from ..relations import ratings
 from ..relations.hooks import Relations
 from ..world.rng import WorldRng
@@ -106,6 +108,43 @@ async def start_team_fight(session: AsyncSession, team: Team, monster_keys: list
     fight.parties[0].teams = teams
     first = await session.get(Hero, heroes[0].charid)
     record = await store.create_fight(session, await session.get(Map, first.map_id), fight, first.x, first.y)
+    record.time_multiplier = multiplier
+    record.round_deadline = wallclock.now() + timedelta(seconds=rules.round_length(multiplier))
+    await session.flush()
+    return record
+
+
+async def start_party_fight(session: AsyncSession, party_id: int, monster_keys: list[str], rules: Rules, area_drops: list[str] | None = None) -> FightRecord:
+    """A fight between a whole party (every team of it, side 0) and monsters (side 1), at the party's spot. Like ``start_team_fight``,
+    which it shares its refusals with."""
+    party = await session.get(Party, party_id)
+    heroes, teams = [], {}
+    for team_id in await parties.team_ids(session, party_id):
+        members, ids = await team_party(session, await session.get(Team, team_id))
+        heroes += members
+        teams |= ids
+    if not heroes:
+        raise Refused("that party has no heroes")
+    if not 1 <= len(monster_keys) <= rules.party_size:
+        raise Refused(f"a fight needs between 1 and {rules.party_size} monsters")
+    hero_ids = [hero for members in teams.values() for hero in members]
+    busy = await session.scalar(
+        select(FightParticipant.id).join(FightRecord, FightRecord.id == FightParticipant.fight_id)
+        .where(FightParticipant.hero_id.in_(hero_ids), FightRecord.finished.is_(False)).limit(1)
+    )
+    if busy is not None:
+        raise Refused("a hero of that party is already in a fight")
+    monsters = [await monster_fighter(session, key, rules) for key in monster_keys]
+    accounts = (await session.scalars(select(Hero.account_id).where(Hero.id.in_(hero_ids)).distinct())).all()
+    multiplier = timing.fight_multiplier([await timing.multiplier_for(session, owner) for owner in accounts])
+    timing.toughen(monsters, rules, rules.time_bonus(multiplier))
+    wanted = {key for monster in monsters for key in monster.drops} | set(area_drops or ())
+    tables = await known_drop_tables(session, wanted)
+    if missing := set(area_drops or ()) - set(tables):
+        raise Refused(f"there is no drop table {sorted(missing)[0]!r}")
+    fight = build_fight({0: _groups(heroes, rules.group_size), 1: _groups(monsters, rules.group_size)}, await known_statuses(session), tables, list(area_drops or ()))
+    fight.parties[0].teams = teams
+    record = await store.create_fight(session, await session.get(Map, party.map_id), fight, party.x, party.y)
     record.time_multiplier = multiplier
     record.round_deadline = wallclock.now() + timedelta(seconds=rules.round_length(multiplier))
     await session.flush()
