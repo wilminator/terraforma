@@ -7,7 +7,6 @@ only what nothing reads any more, so running one twice, or concurrently on two s
 
 import logging
 from collections.abc import Awaitable, Callable
-
 from datetime import timedelta
 
 from sqlalchemy import and_, delete, or_, select
@@ -16,6 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from . import wallclock
 from .accounts.ratelimit import ALL_LIMITS
 from .alliances.models import Ballot, BallotVote, BallotVoter
+from .fights.models import PendingDrop
+from .fights.pending import OPEN, expire
 from .models import RateLimitHit
 from .relations.models import ANSWERED, DISMISSED, RatingPrompt
 from .settings import Settings
@@ -42,6 +43,21 @@ async def finished_rate_limit_windows(session: AsyncSession, now: int, settings:
     one-off address never does, so they would pile up."""
     finished = or_(*(and_(RateLimitHit.bucket == limit.name, RateLimitHit.window_start <= now - limit.window) for limit in ALL_LIMITS))
     return (await session.execute(delete(RateLimitHit).where(finished))).rowcount
+
+
+@job
+async def stale_pending_drops(session: AsyncSession, now: int, settings: Settings) -> int:
+    """Pending drops that have waited longer than ``Settings.pending_drop_timeout_seconds`` (0: never): a need/want drop is
+    settled with the answers so far, one nobody answered (or a hand-out) is left unclaimed. Returns how many it settled."""
+    if not settings.pending_drop_timeout_seconds:
+        return 0
+    cutoff = wallclock.now() - timedelta(seconds=settings.pending_drop_timeout_seconds)
+    stale = await session.scalars(select(PendingDrop).where(PendingDrop.status == OPEN, PendingDrop.created_at <= cutoff).order_by(PendingDrop.id).with_for_update(skip_locked=True))
+    count = 0
+    for pending in stale.all():
+        await expire(session, pending)
+        count += 1
+    return count
 
 
 @job

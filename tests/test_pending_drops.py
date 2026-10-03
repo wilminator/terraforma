@@ -204,6 +204,77 @@ def test_the_calls_need_a_login_and_a_token_and_take_strict_bodies(pair):
     expect(client.get(base), 401)
 
 
+# --- housekeeping: a drop left undecided too long -------------------------------------------------------------------------
+
+async def age(db, drop, seconds):
+    from datetime import timedelta
+
+    from terraforma import wallclock
+
+    drop.created_at = wallclock.now() - timedelta(seconds=seconds)  # (the tests' clock is not the real one)
+    await db.flush()
+
+
+def timeout(seconds):
+    from terraforma.settings import Settings
+
+    return Settings(session_secret="x" * 32, pending_drop_timeout_seconds=seconds)
+
+
+async def test_the_timeout_is_off_by_default_so_a_drop_waits_for_ever(db):
+    from terraforma import housekeeping
+
+    assert timeout(0).pending_drop_timeout_seconds == 0 and "pending_drop_timeout_seconds" in housekeeping.stale_pending_drops.__doc__
+    aria, bram, record = await pair_fight(db, Holding())
+    (drop,) = await held(db, record)
+    await age(db, drop, 10**7)
+    assert await housekeeping.stale_pending_drops(db, 0, timeout(0)) == 0
+    assert drop.status == "open"
+
+
+async def test_a_drop_that_has_not_waited_long_enough_is_left_alone(db):
+    from terraforma import housekeeping
+
+    aria, bram, record = await pair_fight(db, Holding())
+    (drop,) = await held(db, record)
+    await age(db, drop, 30)
+    assert await housekeeping.stale_pending_drops(db, 0, timeout(60)) == 0 and drop.status == "open"
+
+
+async def test_a_stale_need_want_drop_is_settled_with_the_answers_so_far(db):
+    from terraforma import housekeeping
+
+    aria, bram, record = await pair_fight(db, Holding())
+    (drop,) = await held(db, record)
+    await pending.choose(db, aria, drop.id, "want")  # Bram never answers
+    await age(db, drop, 120)
+    assert await housekeeping.stale_pending_drops(db, 0, timeout(60)) == 1
+    assert (drop.status, drop.winner_id) == ("awarded", aria.id), "the one who answered gets it"
+    assert await stacks(db, aria) == [("sword", 1), ("potion", 5)]
+    assert await housekeeping.stale_pending_drops(db, 0, timeout(60)) == 0, "settled once"
+
+
+async def test_a_stale_drop_nobody_answered_or_nobody_handed_out_is_unclaimed(db):
+    from terraforma import housekeeping
+
+    aria, bram, record = await pair_fight(db, Holding())
+    (drop,) = await held(db, record)
+    await age(db, drop, 120)
+    await housekeeping.stale_pending_drops(db, 0, timeout(60))
+    assert (drop.status, drop.winner_id) == ("unclaimed", None)
+    assert await stacks(db, bram) == []
+
+
+async def test_a_stale_hand_out_is_unclaimed(db):
+    from terraforma import housekeeping
+
+    aria, bram, record = await pair_fight(db, Leading())
+    (drop,) = await held(db, record)
+    await age(db, drop, 120)
+    assert await housekeeping.stale_pending_drops(db, 0, timeout(60)) == 1
+    assert (drop.status, drop.winner_id) == ("unclaimed", None)
+
+
 async def test_deleting_a_hero_clears_their_answers_and_leaves_the_drops_they_won_without_a_winner(db):
     aria = await a_hero(db)
     mike = await db.get(Account, aria.account_id)
