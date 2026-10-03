@@ -82,6 +82,10 @@ async def held(db, record):
     return list((await db.scalars(select(PendingDrop).where(PendingDrop.fight_id == record.id))).all())
 
 
+async def held_in(db, fight_id):
+    return list((await db.scalars(select(PendingDrop).where(PendingDrop.fight_id == fight_id))).all())
+
+
 async def test_a_held_drop_becomes_one_pending_drop_that_nobody_has_been_given(db):
     aria, bram, record = await pair_fight(db, Holding())
     (drop,) = await held(db, record)
@@ -300,3 +304,45 @@ async def test_deleting_a_hero_clears_their_answers_and_leaves_the_drops_they_wo
     assert (await db.get(PendingDrop, won_id)).winner_id is None, "the drop stays on record, without its winner"
     assert (await db.get(PendingDrop, won_id)).status == "awarded"
     assert (await db.get(PendingDrop, open_id)).status == "open"
+
+
+async def test_a_hero_who_fought_can_be_deleted_and_the_drop_stops_waiting_for_them(db):
+    aria, bram, record = await pair_fight(db, Holding())
+    (drop,) = await held(db, record)
+    mike = await db.get(Account, aria.account_id)
+    aria_id, bram_id, fight_id = aria.id, bram.id, record.id
+    await pending.choose(db, bram, drop.id, "need")
+    assert drop.status == "open", "Aria has not answered"
+    await service.delete_hero(db, mike, aria_id)  # Aria fought, and the fight is over
+    db.expire_all()
+    drop = (await held_in(db, fight_id))[0]
+    assert (drop.status, drop.winner_id) == ("awarded", bram_id), "Bram was the only one left to wait for, and he had answered"
+    assert await db.get(Hero, aria_id) is None
+    assert await pending.heroes_of(db, drop) == [bram_id]
+
+
+async def test_a_drop_nobody_is_left_for_is_unclaimed_and_the_fight_stays_on_record(db):
+    aria, bram, record = await pair_fight(db, Holding())
+    mike = await db.get(Account, aria.account_id)
+    mike_id, aria_id, bram_id, record_id = mike.id, aria.id, bram.id, record.id
+    await service.delete_hero(db, mike, aria_id)
+    db.expire_all()
+    (drop,) = await held_in(db, record_id)
+    assert drop.status == "open", "Bram is still to answer"
+    mike = await db.get(Account, mike_id)
+    await service.delete_hero(db, mike, bram_id)
+    db.expire_all()
+    (drop,) = await held_in(db, record_id)
+    assert (drop.status, drop.winner_id) == ("unclaimed", None)
+    assert await db.get(FightRecord, record_id) is not None, "the fight itself is history and stays"
+
+
+async def test_a_hero_in_a_running_fight_cannot_be_deleted(db):
+    aria, _bram, record = await pair_fight(db, Holding())
+    mike = await db.get(Account, aria.account_id)
+    aria_id = aria.id
+    record.finished = False  # as if it were still being fought
+    await db.flush()
+    with pytest.raises(service.HeroError, match="is in a fight"):
+        await service.delete_hero(db, mike, aria_id)
+    assert await db.get(Hero, aria_id) is not None
