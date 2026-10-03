@@ -25,6 +25,9 @@ its command, followed by comma separated parameters. Text outside tags is shown.
     heal, recharge, select_team         the game's actions
     add_status,target,status,seconds,locked|removable,label   puts a standing status on the hero, team or party for the seconds (0: until removed); the label if it cannot
     has_status,target,status,has|lacks,label   the label unless the target has (or lacks) the status
+    have_tokens,amount,label            the label unless the hero's account holds that many Challenge Tokens
+    spend_tokens,amount,label           takes that many Challenge Tokens from the hero's account (the label if it holds fewer)
+    add_gold,amount,label               pays that much gold into the hero's purse, the game's economy decides where (the label if it cannot)
     open_party,on|off,label             the leader opens or closes the party to requests (the label if not the leader)
     add_team, find_party, party_requests  the guild's activities (guild.service): add one of your teams, ask an open party, answer asks
     resurrect,price,label  cure,price,label  uncurse,price,label   the game's paid actions (cancelling jumps to the label)
@@ -50,7 +53,7 @@ from dataclasses import dataclass
 SCOPES = ("any", "lead", "each")
 OPS = ("eq", "ne", "lt", "le", "gt", "ge")
 #: The tags that read or change the game's state, which the engine itself runs (through ``advance``'s $state).
-STATE_TAGS = ("have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker", "open_party", "add_status", "has_status")
+STATE_TAGS = ("have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker", "open_party", "add_status", "has_status", "have_tokens", "spend_tokens", "add_gold")
 MAX_TEXT = 20000
 MAX_STEPS = 10000  # tags run in one call: a text that jumps in a circle with nothing to show or ask is cut off
 
@@ -150,6 +153,11 @@ def check_tag(parts: list[str]) -> list[str]:
         _name(command, args[1], "a status")
         _one_of(command, args[2], ("has", "lacks"), "the test")
         return [args[3]]
+    elif command in ("have_tokens", "spend_tokens", "add_gold"):
+        count(2)
+        if _whole(command, args[0], "the amount") < 1:
+            raise ScriptError(f"{command} tag: the amount is at least 1")
+        return [args[1]]
     elif command == "open_party":
         count(2)
         _one_of(command, args[0], ("on", "off"), "the setting")
