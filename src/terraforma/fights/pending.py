@@ -11,7 +11,7 @@ Service functions: they raise ``PendingError`` (a message the player can read) a
 as the caller's transaction rolls back (the calls' session does).
 """
 
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..heroes import inventory
@@ -54,6 +54,27 @@ async def heroes_of(session: AsyncSession, pending: PendingDrop) -> list[int]:
         FightParticipant.fight_id == pending.fight_id, FightParticipant.party == pending.party,
         FightParticipant.hero_id.is_not(None)))
     return sorted(set(rows.all()))
+
+
+async def forget_hero(session: AsyncSession, hero: Hero) -> None:
+    """Before a hero is deleted: their answers go, the drops they won stay on record without a winner, and their place in
+    the fights they fought is cleared (the fights are history; a hero in a running one is refused before this). The open
+    drops they were part of stop waiting for them: one the rest have all answered is settled now, and one nobody is left
+    for is unclaimed."""
+    open_drops = await for_hero(session, hero)
+    await session.execute(delete(PendingDropChoice).where(PendingDropChoice.hero_id == hero.id))
+    await session.execute(update(PendingDrop).where(PendingDrop.winner_id == hero.id).values(winner_id=None))
+    await session.execute(update(FightParticipant).where(FightParticipant.hero_id == hero.id).values(hero_id=None))
+    await session.flush()
+    for drop in open_drops:
+        heroes = await heroes_of(session, drop)
+        if not heroes:
+            drop.status = UNCLAIMED
+        elif drop.mode == NEED_WANT:
+            answers = list((await session.scalars(select(PendingDropChoice).where(PendingDropChoice.pending_id == drop.id))).all())
+            if {each.hero_id for each in answers} >= set(heroes):
+                await _settle_rolls(session, drop, answers)
+    await session.flush()
 
 
 async def for_hero(session: AsyncSession, hero: Hero, *, only_open: bool = True) -> list[PendingDrop]:
