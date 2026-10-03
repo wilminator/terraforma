@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..economy import Economy, TeamGold
 from ..alliances.hooks import Alliances
 from ..relations.hooks import Relations
+from ..pvp.hooks import PvpZones
 from ..towns.hooks import Towns
 from ..fights.rules import Rules
 from ..models import Account
@@ -59,6 +60,15 @@ def get_towns(request: Request) -> Towns:
 
 
 GameTowns = Annotated[Towns, Depends(get_towns)]
+
+
+def get_pvp(request: Request) -> PvpZones:
+    """The game's PvP zones (the engine's default, PvP nowhere, when the app runs without a game)."""
+    game = request.app.state.game
+    return game.pvp if game else PvpZones()
+
+
+GamePvp = Annotated[PvpZones, Depends(get_pvp)]
 
 
 def get_alliances(request: Request) -> Alliances:

@@ -119,6 +119,16 @@ How many heroes a party holds is the game's rule: `Rules.party_size`, 20 by defa
 
 These are service functions, not server calls: the map drives them later (an interaction on the map forms and merges parties), so they take ids and whoever calls them decides who may. A party becomes one side of a fight with `fights.build.party_side(session, party_id, rules)`: its heroes team by team, in the order the teams joined, in groups of `group_size` (`build_fight({0: await party_side(...), 1: ...})`).
 
+## Fights between parties (PvP)
+
+Where a party may pick a fight with another party is a rule, in two parts. The place: `Game(pvp=...)` (`terraforma.pvp.hooks.PvpZones`) says whether a spot allows PvP, `allows_pvp(session, map_id, x, y)`; the engine's default is nowhere. The range window: `Rules.may_start_pvp(attacker_pxp, target_pxp, allowed)` returns None if the fight may start, otherwise why not. By default it refuses where PvP is off, and where it is on it allows a target whose party PXP is at least `Rules.pvp_window` (0.85) of the attacker's, and always a stronger one. A party's PXP is the sum of its fighters' (`terraforma.pvp.service.party_pxp`), and `terraforma.pvp.service.refusal` runs both checks. These are public interfaces (the license exception covers them).
+
+Vanguard Tavern's setup: towns and instance dungeons are PvE only, everywhere else is PvP, with the default window (a game that wants 80% sets `pvp_window = 0.8` on its Rules).
+
+        class Zones(PvpZones):
+            async def allows_pvp(self, session, map_id, x, y):
+                return not (await TOWNS.is_town(session, map_id, x, y) or map_id in INSTANCE_MAPS)
+
 ## Towns
 
 In a *town* a party comes apart. The game says which places are towns (`Game(towns=...)`, `terraforma.towns.hooks.Towns`: `is_town(session, map_id, x, y)`, nowhere by default; the map will ask it as a party moves), and `terraforma.towns.service.enter_town` suspends a party there: it is split into groups of its teams (`Towns.groups`: by default one team each; a game can keep a player's own teams together, for example because the player paid for it), and each team shops and rests on its own. The party can't be joined, merged or have a team leave while it is apart (`parties.service` refuses).
