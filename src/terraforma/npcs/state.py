@@ -7,7 +7,9 @@ at is the one the talking hero's team acts in right now (``towns.service.acting_
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..challenge import service as challenge
 from ..content.models import Item
+from ..economy import Economy, NotEnoughGold
 from ..heroes import inventory
 from ..heroes.models import Hero, HeroItem, Team, TeamMember
 from ..parties import service as parties
@@ -19,9 +21,10 @@ from .script import ScriptError
 
 
 class DialogState:
-    def __init__(self, session: AsyncSession, hero: Hero):
+    def __init__(self, session: AsyncSession, hero: Hero, economy: Economy | None = None):
         self.session = session
         self.hero = hero
+        self.economy = economy
         self._party: towns.ActingParty | None | bool = False  # (False: not asked yet)
 
     async def __call__(self, command: str, parts: list[str]) -> str:
@@ -149,6 +152,30 @@ class DialogState:
             await standing.place(self.session, target, target_id, status, int(seconds) or None, lock == "locked")
         except standing.StandingError as error:
             raise ScriptError(str(error)) from error
+        return ""
+
+    # --- Challenge Tokens and gold -------------------------------------------------------------------------------------
+
+    async def have_tokens(self, amount: str, label: str) -> str:
+        """The label unless the talking hero's account holds that many Challenge Tokens."""
+        return "" if await challenge.balance(self.session, self.hero.account_id) >= int(amount) else label
+
+    async def spend_tokens(self, amount: str, label: str) -> str:
+        """Takes the tokens from the talking hero's account: the label if it holds fewer, and nothing is taken."""
+        try:
+            await challenge.change(self.session, self.hero.account_id, -int(amount), challenge.SPEND)
+        except challenge.NotEnoughTokens:
+            return label
+        return ""
+
+    async def add_gold(self, amount: str, label: str) -> str:
+        """Pays gold into the talking hero's purse (where the game's economy keeps it): the label if it cannot."""
+        if self.economy is None:
+            raise ScriptError("this dialog pays gold (add_gold), and there is no economy to pay it")
+        try:
+            await self.economy.credit(self.session, self.hero, int(amount))
+        except (NotImplementedError, NotEnoughGold):
+            return label
         return ""
 
     async def has_status(self, target: str, status: str, test: str, label: str) -> str:

@@ -9,6 +9,7 @@ from collections.abc import Awaitable, Callable
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..economy import Economy
 from ..heroes.field import in_running_fight
 from ..heroes.models import Hero, Team, TeamMember
 from ..parties import service as parties
@@ -102,7 +103,7 @@ async def _may_talk(session: AsyncSession, hooks: Npcs, npc: Npc, hero: Hero) ->
         raise NpcError(reason)
 
 
-async def _run(session: AsyncSession, hooks: Npcs, hero: Hero, npc: Npc, talk: NpcTalk | None, choice: int | None, rest: Rest | None = None) -> dict:
+async def _run(session: AsyncSession, hooks: Npcs, hero: Hero, npc: Npc, talk: NpcTalk | None, choice: int | None, rest: Rest | None = None, economy: Economy | None = None) -> dict:
     script: Script = parse(npc.dialog)
     who = await who_is(session, hero)
 
@@ -113,7 +114,8 @@ async def _run(session: AsyncSession, hooks: Npcs, hero: Hero, npc: Npc, talk: N
         return handled
 
     try:
-        result = await advance(script, talk.pos if talk else 0, talk.prompt if talk else None, choice, who, tag, DialogState(session, hero))
+        async with session.begin_nested():  # a step is all or nothing: a spend that fails undoes the rewards before it
+            result = await advance(script, talk.pos if talk else 0, talk.prompt if talk else None, choice, who, tag, DialogState(session, hero, economy))
     except ScriptError as error:
         if talk is not None and not isinstance(error, BadAnswer):
             await session.delete(talk)
@@ -130,17 +132,17 @@ async def _run(session: AsyncSession, hooks: Npcs, hero: Hero, npc: Npc, talk: N
     return frame(npc, result["events"], result["prompt"])
 
 
-async def talk(session: AsyncSession, hooks: Npcs, hero: Hero, npc_id: int, rest: Rest | None = None) -> dict:
+async def talk(session: AsyncSession, hooks: Npcs, hero: Hero, npc_id: int, rest: Rest | None = None, economy: Economy | None = None) -> dict:
     """The hero starts talking to the NPC (leaving any other conversation): what it says first, and what it asks."""
     npc = await session.get(Npc, npc_id)
     if npc is None:
         raise NoSuchNpc("there's no such person")
     await _may_talk(session, hooks, npc, hero)
     await session.execute(delete(NpcTalk).where(NpcTalk.hero_id == hero.id))
-    return await _run(session, hooks, hero, npc, None, None, rest)
+    return await _run(session, hooks, hero, npc, None, None, rest, economy)
 
 
-async def answer(session: AsyncSession, hooks: Npcs, hero: Hero, choice: int | None, rest: Rest | None = None) -> dict:
+async def answer(session: AsyncSession, hooks: Npcs, hero: Hero, choice: int | None, rest: Rest | None = None, economy: Economy | None = None) -> dict:
     """The hero goes on: Next (no $choice), or the index of the answer picked (None cancels where a prompt can be cancelled).
     The hero must still be where they can talk, or the conversation ends."""
     current = await _talk_of(session, hero)
@@ -153,7 +155,7 @@ async def answer(session: AsyncSession, hooks: Npcs, hero: Hero, choice: int | N
         await session.delete(current)
         await session.flush()
         raise
-    return await _run(session, hooks, hero, npc, current, choice, rest)
+    return await _run(session, hooks, hero, npc, current, choice, rest, economy)
 
 
 async def activity(session: AsyncSession, hooks: Npcs, hero: Hero, commands: tuple[str, ...]) -> dict:
