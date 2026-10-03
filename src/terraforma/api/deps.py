@@ -10,6 +10,7 @@ from ..economy import Economy, TeamGold
 from ..alliances.hooks import Alliances
 from ..relations.hooks import Relations
 from ..pvp.hooks import PvpZones
+from ..market.hooks import Market
 from ..npcs.hooks import Npcs
 from ..towns.hooks import Towns
 from ..fights.rules import Rules
@@ -114,3 +115,12 @@ def get_npcs(request: Request) -> Npcs:
 
 
 GameNpcs = Annotated[Npcs, Depends(get_npcs)]
+
+
+def get_market(request: Request) -> Market:
+    """The game's shop rules (the engine's default stock and prices when the app runs without a game)."""
+    game = request.app.state.game
+    return game.market if game else Market()
+
+
+GameMarket = Annotated[Market, Depends(get_market)]

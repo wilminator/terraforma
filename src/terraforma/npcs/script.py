@@ -13,6 +13,7 @@ its command, followed by comma separated parameters. Text outside tags is shown.
     switch,prompt1,label1,...   like question, but cancelling always goes on with the text
     vend,item1,price1,...[,cancel]         a shop menu after the text that follows (the market answers it)
     hawk,margin,item1,price1,...[,cancel]  a sell-back menu likewise
+    shop,key[,cancel]    a shop the game stocks by the area's economy level (``market.hooks.Market``): buying and selling back
     inn,price,label      after the text that follows: Yes or No; No (or cancelling) jumps to the label, Yes lets the game rest the party
     services,prompt1,price1,label1,...  a menu of paid services (the game answers it)
     have_item,item,qty,scope,label    jump to the label unless the party has the item (at least qty, held by one hero)
@@ -35,7 +36,7 @@ level of ``quests`` is a whole number, or ``any`` to count every level. A compar
 
 There is always an implicit ``end`` label that leaves the dialog, and running past the last text leaves it too. A label that
 is neither defined nor ``end`` is refused when the text is checked (DragonStar would silently leave). The tags the engine
-does not act on itself (vend, hawk, inn's Yes, services, heal, recharge, select_team, resurrect, cure, uncurse) are
+does not act on itself (vend, hawk, shop, inn's Yes, services, heal, recharge, select_team, resurrect, cure, uncurse) are
 handed to the game's ``Npcs.tag``; one it does not handle is passed to the browser as an *activity* to run, which it
 finishes by calling ``next`` again.
 """
@@ -115,6 +116,11 @@ def check_tag(parts: list[str]) -> list[str]:
         for price in args[2:len(args) - (len(args) - 1) % 2:2]:
             _whole(command, price, "a price")
         return [args[-1]] if (len(args) - 1) % 2 else []
+    elif command == "shop":
+        if not 1 <= len(args) <= 2:
+            raise ScriptError(f"shop tag takes a shop key and, optionally, a cancel label, {len(args)} parameter(s) given")
+        _name(command, args[0], "a shop key")
+        return args[1:]
     elif command == "inn":
         count(2)
         _whole(command, args[0], "the price")
@@ -230,6 +236,8 @@ def _activity(command: str, args: list[str]) -> dict:
         cancel = args[-1] if (len(args) - 1) % 2 else None
     elif command in ("resurrect", "cure", "uncurse"):
         cancel = args[1]
+    elif command == "shop":
+        cancel = args[1] if len(args) == 2 else None
     return {"type": "activity", "command": command, "parts": args, "cancel": cancel}
 
 
@@ -306,7 +314,7 @@ async def advance(script: Script, pos: int, prompt: dict | None, choice: int | N
         elif command == "inn":
             pending = {"type": "choice", "kind": "inn", "options": [{"text": "Yes", "label": ""}, {"text": "No", "label": args[1]}],
                        "cancel": args[1], "parts": args}
-        elif command in ("vend", "hawk"):
+        elif command in ("vend", "hawk", "shop"):
             pending = _activity(command, args)
         elif command == "end":
             return {"events": events, "prompt": None, "pos": len(text)}
