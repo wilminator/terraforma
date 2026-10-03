@@ -15,6 +15,7 @@ from .fights.rules import Rules
 from .alliances.hooks import Alliances
 from .relations.hooks import Relations
 from .pvp.hooks import PvpZones
+from .npcs.hooks import Npcs
 from .towns.hooks import Towns
 
 
@@ -36,3 +37,5 @@ class Game:
     towns: Towns = field(default_factory=Towns)
     # Where a party may pick a fight with another party (nowhere, by default); see ``Rules.may_start_pvp`` for the range window.
     pvp: PvpZones = field(default_factory=PvpZones)
+    # Who may talk to an NPC from where they stand, and what a game does with the dialog tags the engine leaves to it (heal, a shop...).
+    npcs: Npcs = field(default_factory=Npcs)
