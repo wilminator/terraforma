@@ -13,12 +13,12 @@ async def unhandled(command, parts):
     return None
 
 
-async def run(text, *answers, who=WHO, tag=unhandled):
+async def run(text, *answers, who=WHO, tag=unhandled, state=None):
     """Runs the dialog, answering each prompt in turn: returns the frames (events and prompt) it went through."""
     script = parse(text)
     pos, prompt, frames, pending = 0, None, [], list(answers)
     while True:
-        result = await advance(script, pos, prompt, pending.pop(0) if prompt is not None and pending else None, who, tag)
+        result = await advance(script, pos, prompt, pending.pop(0) if prompt is not None and pending else None, who, tag, state)
         frames.append(result)
         pos, prompt = result["pos"], result["prompt"]
         if prompt is None or not pending:
@@ -57,6 +57,26 @@ def said(frames):
     ("`services,Rest,5`", "complete prompt, price and label triplets"),
     ("`services,Rest,five,end`", "whole number"),
     ("`resurrect,100`", "resurrect tag takes 2 parameters"),
+    ("`have_item,potion,1,any`", "have_item tag takes 4 parameters"),
+    ("`have_item,,1,any,end`", "needs an item"),
+    ("`have_item,potion,0,any,end`", "at least 1"),
+    ("`have_item,potion,x,any,end`", "whole number"),
+    ("`have_item,potion,1,some,end`", "scope is one of any, lead, each"),
+    ("`add_item,potion,1`", "add_item tag takes 3 parameters"),
+    ("`remove_item,potion,1,end,end`", "remove_item tag takes 3 parameters"),
+    ("`quests,hunt,1,ge,3,any`", "quests tag takes 6 parameters"),
+    ("`quests,,1,ge,3,any,end`", "needs a category"),
+    ("`quests,hunt,high,ge,3,any,end`", "level \\(or any\\)"),
+    ("`quests,hunt,1,gte,3,any,end`", "comparison is one of eq, ne, lt, le, gt, ge"),
+    ("`quests,hunt,1,ge,many,any,end`", "whole number"),
+    ("`quests,hunt,1,ge,3,all,end`", "scope is one of any, lead, each"),
+    ("`quest_marker,rats,ge,2,any`", "quest_marker tag takes 5 parameters"),
+    ("`quest_marker,rats,more,2,any,end`", "comparison is one of"),
+    ("`set_quest_marker,rats`", "set_quest_marker tag takes 2 parameters"),
+    ("`set_quest_marker,rats,-1`", "whole number"),
+    ("`set_quest_marker,rats,1000001`", "at most 1000000"),
+    ("`quests,hunt,1,ge,12345678901,any,end`", "at most 9 digits"),
+    ("`have_item,potion,1,any,nowhere`", "there is no label 'nowhere'"),
     ("`jump,nowhere`", "there is no label 'nowhere'"),
     ("`question,Yes,gone`", "there is no label 'gone'"),
     ("`question,Yes,end,gone`", "there is no label 'gone'"),
@@ -76,6 +96,13 @@ def test_every_tag_in_dragonstars_list_is_accepted():
             "`switch,A,top,B,end``vend,sword,100,potion,5,end``hawk,50,potion,3,end``inn,10,end``services,Rest,10,top,Pray,20,end`"
             "`heal``recharge``select_team``resurrect,100,end``cure,50,end``uncurse,50,end`")
     assert set(parse(text).labels) == {"top"}
+
+
+def test_the_item_and_quest_tags_are_accepted():
+    text = ("`label,no``have_item,potion,2,each,no``have_item,potion,1,lead,end``have_item,potion,1,any,end``add_item,potion,3,no``remove_item,potion,1,no`"
+            "`quests,hunt,2,ge,3,lead,no``quests,hunt,any,lt,10,each,no``quests,hunt,0,eq,0,any,no``quests,hunt,1,ne,1,any,no``quests,hunt,1,le,1,any,no``quests,hunt,1,gt,1,any,no`"
+            "`quest_marker,rats,ge,2,any,no``set_quest_marker,rats,2``set_quest_marker,rats,0`")
+    assert set(parse(text).labels) == {"no"}
 
 
 def test_a_dialog_is_not_longer_than_the_limit():
@@ -243,3 +270,34 @@ async def test_services_the_game_does_not_handle_are_never_free():
     asked = (await run("`services,Rest,10,rest,Pray,20,end`Which?\n`label,rest`Rested."))[0]
     assert asked["prompt"]["type"] == "activity" and asked["prompt"]["command"] == "services"
     assert "options" not in asked["prompt"], "a menu that picked a label would skip the charge"
+
+
+# --- the tags that read the game's state -----------------------------------------------------------------------------------
+
+async def test_a_state_tag_that_fails_jumps_to_its_label_and_one_that_holds_goes_on():
+    asked = []
+
+    async def state(command, parts):
+        asked.append((command, parts))
+        return "no" if command == "have_item" and parts[0] == "crown" else ""
+
+    text = "`have_item,potion,1,any,no`has potion, `have_item,crown,1,each,no`has crown`jump,end``label,no`lacks crown"
+    assert said(await run(text, state=state)) == "has potion, lacks crown"
+    assert asked == [("have_item", ["potion", "1", "any", "no"]), ("have_item", ["crown", "1", "each", "no"])]
+
+
+async def test_every_state_tag_goes_to_the_state_hook_with_its_parameters():
+    seen = []
+
+    async def state(command, parts):
+        seen.append(command)
+        return ""
+
+    text = "`have_item,a,1,any,end``add_item,a,1,end``remove_item,a,1,end``quests,hunt,1,ge,2,lead,end``quest_marker,q,eq,1,each,end``set_quest_marker,q,1`done"
+    assert said(await run(text, state=state)) == "done"
+    assert seen == ["have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker"]
+
+
+async def test_a_dialog_that_reads_state_with_no_one_to_ask_is_refused():
+    with pytest.raises(ScriptError, match="no one to ask"):
+        await run("`have_item,a,1,any,end`")
