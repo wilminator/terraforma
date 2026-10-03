@@ -2,9 +2,14 @@
 ``Game(guild=...)``. This is a public interface (the license exception covers it).
 
     class Guild(terraforma.guild.hooks.Guild):
+        async def guest_pass(self, session, team_id):
+            return GuestPass("guest", 3600)
+
         async def may_ask(self, session, team_id, party_id):
             return None if await in_my_faction(session, team_id) else "the guild only brings your faction together"
 """
+
+from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,7 +19,21 @@ from ..heroes.models import Team
 from ..parties.models import PartyTeam
 
 
+@dataclass(frozen=True)
+class GuestPass:
+    """How long a team added to a party stays: the standing status it is given (a key in the content's statuses, which can be a
+    plain one with no effects) and for how many seconds."""
+
+    status: str
+    seconds: int
+
+
 class Guild:
+    async def guest_pass(self, session: AsyncSession, team_id: int) -> GuestPass | None:
+        """The pass a team gets when its player adds it to a party (``add_team``): when its time runs out the team leaves the party.
+        None, by default: it stays until it leaves."""
+        return None
+
     async def may_ask(self, session: AsyncSession, team_id: int, party_id: int) -> str | None:
         """Whether the team may ask to join the party: None if so, otherwise why not. By default the team must be an ally of
         it: in an alliance with one of the party's teams, or owned by the same player as one of them."""
