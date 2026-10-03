@@ -204,6 +204,45 @@ async def test_what_makes_a_place_a_town_is_the_games_rule(db):
     assert await Hub().is_town(db, 1, 0, 0) is True and await Hub().is_town(db, 1, 3, 4) is False
 
 
+# --- the party a team acts in -----------------------------------------------------------------------------------------------
+
+async def test_a_team_acts_in_its_whole_party_outside_a_town_and_in_its_group_inside_one(db):
+    party, teams = await party_of_three(db)
+    acting = await towns_service.acting_party(db, teams[0])
+    mike, zed = (await db.get(Team, teams[0])).account_id, (await db.get(Team, teams[2])).account_id
+    assert acting == towns_service.ActingParty(party.id, tuple(teams), mike, False)
+    await towns_service.enter_town(db, TOWNS, party.id)
+    alone = await towns_service.acting_party(db, teams[2])
+    assert alone == towns_service.ActingParty(party.id, (teams[2],), zed, True), "in town, a team's party is just its group, and ethereal"
+    assert (await towns_service.acting_party(db, teams[0])).team_ids == (teams[0],)
+    assert await count(db, Party) == 1, "ethereal parties are never stored: the real party and its formation stay"
+    assert await parties.team_ids(db, party.id) == teams
+
+
+async def test_a_game_can_keep_a_players_teams_together_in_town_and_leaving_ends_the_ethereal_parties(db):
+    class OwnerGroups(Towns):
+        async def groups(self, session, party_id, team_ids):
+            owners: dict[int, list[int]] = {}
+            for team_id in team_ids:
+                owners.setdefault((await session.get(Team, team_id)).account_id, []).append(team_id)
+            return list(owners.values())
+
+    party, teams = await party_of_three(db)
+    await towns_service.enter_town(db, OwnerGroups(), party.id)
+    together = await towns_service.acting_party(db, teams[1])
+    assert together.team_ids == (teams[0], teams[1]) and together.ethereal and together.leader_account_id == (await db.get(Team, teams[0])).account_id
+    await towns_service.ready(db, OwnerGroups(), teams[0])
+    await towns_service.ready(db, OwnerGroups(), teams[2])
+    after = await towns_service.acting_party(db, teams[1])
+    assert after.team_ids == tuple(teams) and not after.ethereal, "the real party is back, formation as it was"
+
+
+async def test_a_team_that_has_not_entered_the_game_acts_in_no_party(db):
+    mike = await account(db)
+    team = await service.create_team(db, mike, "Lonely")
+    assert await towns_service.acting_party(db, team.id) is None
+
+
 # --- the hub, and leaving town ---------------------------------------------------------------------------------------------
 
 MONSTERS = {

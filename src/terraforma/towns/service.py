@@ -5,6 +5,8 @@ actions (``ready``, ``come_back``, ``leave_party``) are what the calls use. Who 
 calls: these take ids.
 """
 
+from dataclasses import dataclass
+
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,7 +14,7 @@ from ..fights import live
 from ..fights.build import hero_fighter
 from ..fights.models import FightParticipant, FightRecord
 from ..fights.rules import Rules
-from ..heroes.models import Hero
+from ..heroes.models import Hero, Team
 from ..models import Map, World
 from ..world.rng import WorldRng
 from ..parties import service as parties
@@ -54,6 +56,34 @@ async def enter_town(session: AsyncSession, towns: Towns, party_id: int) -> Town
             session.add(TownTeam(visit_id=visit.id, team_id=team_id, group=number, waiting=False))
     await session.flush()
     return visit
+
+
+@dataclass(frozen=True)
+class ActingParty:
+    """The party a team acts in right now. ``party_id`` is the real party (it keeps its formation all through a town visit).
+    ``team_ids`` are the teams acting together, in the party's formation order: the whole party, or, in a town, only the team's
+    group (one player's teams, by default), which is then an *ethereal* party: computed from the town visit, never stored,
+    and gone when the real party is put back together. ``leader_account_id`` is the player who leads those teams."""
+
+    party_id: int
+    team_ids: tuple[int, ...]
+    leader_account_id: int | None
+    ethereal: bool
+
+
+async def acting_party(session: AsyncSession, team_id: int) -> ActingParty | None:
+    """The party the team acts in (None for a team that has not entered the game: ``parties.service.play`` puts it in one)."""
+    party = await parties.party_of(session, team_id)
+    if party is None:
+        return None
+    formation = await parties.team_ids(session, party.id)
+    row = await team_row(session, team_id)
+    if row is None:
+        return ActingParty(party.id, tuple(formation), await parties.leader_account(session, party.id), False)
+    group = {each.team_id for each in await _group_of(session, row)}
+    mine = tuple(each for each in formation if each in group)
+    owners = {team.id: team.account_id for team in (await session.scalars(select(Team).where(Team.id.in_(mine)))).all()}
+    return ActingParty(party.id, mine, owners.get(mine[0]) if mine else None, True)
 
 
 async def settle(session: AsyncSession, towns: Towns, party_id: int) -> TownVisit | None:

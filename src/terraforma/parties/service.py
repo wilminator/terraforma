@@ -108,6 +108,18 @@ async def create_party(session: AsyncSession, team_id: int, party_size: int) -> 
     return party
 
 
+async def play(session: AsyncSession, team_id: int, party_size: int) -> Party:
+    """The team enters the game: its player selected it to play, and from then on it is in a party (of just that team, at first).
+    Safe to repeat: a team that is in a party already gets that party back. A team with no heroes can't play."""
+    team = await _team(session, team_id)
+    party = await party_of(session, team.id)
+    if party is not None:
+        return party
+    if await team_size(session, team.id) == 0:
+        raise PartyError("a team needs a hero to play")
+    return await create_party(session, team.id, party_size)
+
+
 async def _check_whole(session: AsyncSession, party_id: int) -> None:
     """A party in a town (suspended, its teams apart) can't change until it is whole again."""
     if await session.scalar(select(TownVisit.id).where(TownVisit.party_id == party_id)) is not None:
