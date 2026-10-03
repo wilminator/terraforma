@@ -36,6 +36,7 @@ from .alliances.routes import router as alliances_router
 from .profiles.routes import router as profiles_router
 from .relations.rating_routes import router as ratings_router
 from .relations.routes import router as relations_router
+from .pvp.routes import router as pvp_router
 from .towns.routes import router as towns_router
 from .trading.routes import router as trading_router
 from . import housekeeping
@@ -113,6 +114,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(pending_drops_router)
     app.include_router(relations_router)
     app.include_router(towns_router)
+    app.include_router(pvp_router)
     app.include_router(alliances_router)
     app.include_router(ratings_router)
     app.include_router(ballots_router)
