@@ -140,6 +140,17 @@ async def _settle_rolls(session: AsyncSession, pending: PendingDrop, answers: li
     await _award(session, pending, await session.get(Hero, best.hero_id))
 
 
+async def expire(session: AsyncSession, pending: PendingDrop) -> None:
+    """Settles an open pending drop that has waited too long (housekeeping): a need/want drop with the answers so far (those
+    who have not answered count as passing), and a hand-out nobody made is left ``unclaimed``."""
+    if pending.mode == NEED_WANT:
+        answers = list((await session.scalars(select(PendingDropChoice).where(PendingDropChoice.pending_id == pending.id))).all())
+        await _settle_rolls(session, pending, answers)
+    else:
+        pending.status = UNCLAIMED
+    await session.flush()
+
+
 async def assign(session: AsyncSession, rules: Rules, hero: Hero, pending_id: int, to_hero_id: int) -> PendingDrop:
     """The hero gives an ``assign`` drop to another hero of the party, if the game's rules let them."""
     pending, heroes = await _locked(session, hero, pending_id)
