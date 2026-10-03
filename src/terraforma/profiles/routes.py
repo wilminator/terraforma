@@ -79,6 +79,14 @@ async def set_team_pages(body: TeamPages, request: Request, account: ActingAccou
     return await service.mine(db, account)
 
 
+@router.put("/profile/team-alliances")
+async def set_team_alliances(body: TeamPages, request: Request, account: ActingAccount, db: Db) -> dict:
+    """Whether the player's public team pages name the alliances the teams are in (off until the player says so)."""
+    await limited(request, ratelimit.PROFILE_BY_ACCOUNT, str(account.id))
+    await service.set_team_alliances(db, account, body.enabled)
+    return await service.mine(db, account)
+
+
 @router.put("/profile/team-listed")
 async def set_listed(body: Listed, request: Request, account: ActingAccount, db: Db) -> dict:
     await limited(request, ratelimit.PROFILE_BY_ACCOUNT, str(account.id))

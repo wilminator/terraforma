@@ -95,20 +95,40 @@ def test_a_new_token_replaces_the_old_for_good(pact):
     assert public(client, f"/api/p/{new}")["handle"] == "MiketheBold"
 
 
-def test_team_pages_are_off_until_the_player_turns_them_on_and_link_the_alliances(pact):
+def test_team_pages_are_off_until_the_player_turns_them_on_and_name_alliances_only_on_a_second_opt_in(pact):
     client, ids = pact
     token = call(client, "POST", "Mike", "/api/profile/token")["token"]
     team_token = {team["name"]: team["token"] for team in call(client, "GET", "Mike", "/api/profile")["teams"]}["Vanguard"]
     public(client, f"/api/p/team/{team_token}", 404)  # off
     call(client, "PUT", "Mike", "/api/profile/team-pages", {"enabled": True})
     assert public(client, f"/api/p/{token}")["teams"][0]["page"] == team_token
+    # Team pages on is not enough: the alliances stay out of the page until the player says so.
+    assert call(client, "GET", "Mike", "/api/profile")["team_alliances"] is False
+    assert public(client, f"/api/p/team/{team_token}") == {"name": "Vanguard", "handle": "MiketheBold"}
+    assert call(client, "PUT", "Mike", "/api/profile/team-alliances", {"enabled": True})["team_alliances"] is True
     # The alliance has no page yet, so the team page names it with no link.
     assert public(client, f"/api/p/team/{team_token}") == {
         "name": "Vanguard", "handle": "MiketheBold", "alliances": [{"name": "Iron Pact", "page": None}]}
+
+
+def test_the_alliances_link_to_their_pages_and_switch_off_again(pact):
+    client, ids = pact
+    call(client, "PUT", "Mike", "/api/profile/team-pages", {"enabled": True})
+    mine = call(client, "PUT", "Mike", "/api/profile/team-alliances", {"enabled": True})
+    team_token = {team["name"]: team["token"] for team in mine["teams"]}["Vanguard"]
     alliance_token = call(client, "POST", "Mike", f"/api/alliances/{ids['alliance']}/profile/token")["token"]
     assert public(client, f"/api/p/team/{team_token}")["alliances"] == [{"name": "Iron Pact", "page": alliance_token}]
+    call(client, "PUT", "Mike", "/api/profile/team-alliances", {"enabled": False})
+    assert "alliances" not in public(client, f"/api/p/team/{team_token}")
     call(client, "PUT", "Mike", "/api/profile/team-pages", {"enabled": False})
-    public(client, f"/api/p/team/{team_token}", 404)
+    public(client, f"/api/p/team/{team_token}", 404)  # team pages off hides the page whatever the alliances switch says
+
+
+def test_the_alliances_switch_makes_the_page_by_itself_and_takes_only_a_boolean(pact):
+    client, _ = pact
+    assert call(client, "PUT", "Mike", "/api/profile/team-alliances", {"enabled": True})["token"] is not None
+    call(client, "PUT", "Mike", "/api/profile/team-alliances", {"enabled": "yes"}, 422)
+    call(client, "PUT", "Mike", "/api/profile/team-alliances", {"enabled": True, "extra": 1}, 422)
 
 
 def test_an_alliance_page_lists_every_team_but_links_only_those_with_team_pages(pact):

@@ -29,7 +29,7 @@ from dataclasses import dataclass
 
 from .events import EventType, event
 from .gear import round_half_up
-from .specs import AbilitySpec, EffectSpec, ItemSpec
+from .specs import HEAL, RESTORE_MP, REVIVE, AbilitySpec, EffectSpec, ItemSpec
 
 
 @dataclass(frozen=True)
@@ -182,6 +182,24 @@ class Rules:
         """
         return dict(maximums)
 
+    def field_use(self, rng: random.Random, effect: EffectSpec, vitals: dict[str, int], maximums: dict[str, int]) -> dict[str, int] | None:
+        """What using an item on a hero outside a fight does (``heroes.field.use_item``): $vitals is where its resources
+        stand and $maximums the most each can hold; returns the new values by resource name, or None when the item
+        can't be used this way (only healing, restoring mana and reviving are, by default). The default is what the same
+        effect does in a fight: heal and restore mana only the living, and a revive fills the life of the dead. A game
+        overrides this to allow more (a camp tonic that cures a status) or to forbid some (no revives in the field)."""
+        vital, mana = self.vital, self.mana
+        alive = vitals.get(vital, 0) > 0
+        if effect.effect == HEAL and alive:
+            return {**vitals, vital: min(maximums[vital], vitals[vital] + self.roll_amount(rng, effect))}
+        if effect.effect == RESTORE_MP and alive and mana in maximums:
+            return {**vitals, mana: min(maximums[mana], vitals.get(mana, 0) + self.roll_amount(rng, effect))}
+        if effect.effect == REVIVE and not alive:
+            return {**vitals, vital: maximums[vital]}
+        if effect.effect in (HEAL, RESTORE_MP, REVIVE):
+            return dict(vitals)  # a use that does nothing: the caller refuses it
+        return None
+
     def revive_chance(self, rng: random.Random, effect: EffectSpec) -> bool:
         """Whether a revive on someone still alive takes: $base is the chance out of 100."""
         return rng.randint(1, 100) < effect.base
@@ -265,6 +283,12 @@ class Rules:
         from .drops import settle  # here, since drops reads Rules
 
         return settle(self, fight, rng)
+
+    def tokens_earned(self, fight, address) -> int:
+        """Called for each hero's fighter when a fight ends: how many tokens (the game's own currency, kept per account in
+        ``terraforma.tokens``) it earns. None by default: a game opts in. Called only for heroes, so an admin earns only
+        when fighting as a player, and never for a monster or a fight they only watched. A negative answer pays nothing."""
+        return 0
 
     def drop_recipients(self, fight, party: int, monsters, share: str, rng) -> list:
         """Who in $party receives one drop of the monsters that died ($monsters: the one that dropped it, or all of them for

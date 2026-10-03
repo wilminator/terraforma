@@ -94,6 +94,13 @@ async def set_team_pages(session: AsyncSession, account: Account, enabled: bool)
     return profile
 
 
+async def set_team_alliances(session: AsyncSession, account: Account, enabled: bool) -> PlayerProfile:
+    profile = await player(session, account) or await publish(session, account)
+    profile.team_alliances = enabled
+    await session.flush()
+    return profile
+
+
 async def _own_team(session: AsyncSession, account: Account, team_id: int) -> Team:
     team = await session.scalar(select(Team).where(Team.id == team_id, Team.account_id == account.id))
     if team is None:
@@ -132,6 +139,7 @@ async def mine(session: AsyncSession, account: Account) -> dict:
         "bio": profile.bio if profile else "",
         "handle": account.handle,
         "team_pages": bool(profile and profile.team_pages),
+        "team_alliances": bool(profile and profile.team_alliances),
         "teams": [
             {"id": team.id, "name": team.name, "listed": rows[team.id].listed if team.id in rows else True,
              "token": rows[team.id].token if team.id in rows else None}
@@ -188,9 +196,12 @@ async def player_page(session: AsyncSession, token: str) -> dict:
     }
 
 
-async def _team_page(session: AsyncSession, team: Team, row: TeamProfile | None) -> dict:
-    """A team's page: its name, its player's handle, and the alliances it is in (each with a link once it has a page)."""
+async def _team_page(session: AsyncSession, team: Team, show_alliances: bool) -> dict:
+    """A team's page: its name, its player's handle, and, when $show_alliances, the alliances it is in (each with a link
+    once it has a page). The public page shows them only if the player opted in; the alliance's own members always see them."""
     owner = await session.get(Account, team.account_id)
+    if not show_alliances:
+        return {"name": team.name, "handle": owner.handle}
     rows = (await session.execute(
         select(Alliance, AllianceProfile).join(AllianceMember, AllianceMember.alliance_id == Alliance.id)
         .outerjoin(AllianceProfile, AllianceProfile.alliance_id == Alliance.id)
@@ -210,7 +221,7 @@ async def team_page(session: AsyncSession, token: str) -> dict:
     profile = await session.scalar(select(PlayerProfile).where(PlayerProfile.account_id == team.account_id)) if team else None
     if team is None or profile is None or not profile.team_pages:
         raise NotFound("there's no such page")
-    return await _team_page(session, team, row)
+    return await _team_page(session, team, profile.team_alliances)
 
 
 async def alliance_page(session: AsyncSession, token: str) -> dict:
@@ -246,6 +257,6 @@ async def member_team_page(session: AsyncSession, account: Account, alliance_id:
     if await alliances.member_row(session, alliance.id, team_id) is None:
         raise NotFound("there's no such team in this alliance")
     team = await session.get(Team, team_id)
-    return await _team_page(session, team, None)
+    return await _team_page(session, team, True)
 
 
