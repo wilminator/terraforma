@@ -20,6 +20,7 @@ from .fights.pending import OPEN, expire
 from .models import RateLimitHit
 from .relations.models import ANSWERED, DISMISSED, RatingPrompt
 from .settings import Settings
+from .standing import service as standing
 
 log = logging.getLogger(__name__)
 
@@ -85,6 +86,12 @@ async def old_settled_rating_prompts(session: AsyncSession, now: int, settings: 
     before = wallclock.now() - timedelta(days=settings.rating_prompt_retention_days)
     settled = RatingPrompt.state.in_([ANSWERED, DISMISSED]) & (RatingPrompt.updated_at <= before)
     return (await session.execute(delete(RatingPrompt).where(settled))).rowcount
+
+
+@job
+async def ended_standing_statuses(session: AsyncSession, now: int, settings: Settings) -> int:
+    """Standing statuses whose end time has passed. Every read already leaves them out, so this only tidies the rows."""
+    return len(await standing.sweep(session))
 
 
 async def run(sessionmaker: async_sessionmaker[AsyncSession], settings: Settings) -> dict[str, int]:

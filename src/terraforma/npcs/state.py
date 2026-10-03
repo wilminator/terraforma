@@ -13,6 +13,7 @@ from ..heroes.models import Hero, HeroItem, Team, TeamMember
 from ..parties import service as parties
 from ..parties.models import Party
 from ..quests import service as quests
+from ..standing import service as standing
 from ..towns import service as towns
 from .script import ScriptError
 
@@ -126,3 +127,32 @@ class DialogState:
             return label
         await self.session.execute(update(Party).where(Party.id == party.party_id).values(open=setting == "on"))
         return ""
+
+    # --- standing statuses ------------------------------------------------------------------------------------------------
+
+    async def _target(self, target: str) -> int | None:
+        """The id of the hero, the hero's team or the party (the real one, which keeps its formation through a town visit)
+        the tag speaks of; None if there is none (a hero on no team, a team in no party)."""
+        if target == "hero":
+            return self.hero.id
+        if target == "team":
+            return await self.team_id()
+        party = await self.party()
+        return None if party is None else party.party_id
+
+    async def add_status(self, target: str, status: str, seconds: str, lock: str, label: str) -> str:
+        """Puts a standing status on the target for the seconds (0: until removed): the label if there is no such target."""
+        target_id = await self._target(target)
+        if target_id is None:
+            return label
+        try:
+            await standing.place(self.session, target, target_id, status, int(seconds) or None, lock == "locked")
+        except standing.StandingError as error:
+            raise ScriptError(str(error)) from error
+        return ""
+
+    async def has_status(self, target: str, status: str, test: str, label: str) -> str:
+        """The label unless the target has (or, for ``lacks``, lacks) the status; a missing target has none."""
+        target_id = await self._target(target)
+        held = target_id is not None and await standing.has(self.session, target, target_id, status)
+        return "" if held == (test == "has") else label

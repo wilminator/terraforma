@@ -19,6 +19,7 @@ from ..npcs.models import NpcTalk
 from ..parties.models import PartyRequest
 from ..profiles.models import TeamProfile
 from ..quests.service import forget_team as forget_quests
+from ..standing import service as standing
 from ..world.start import ensure_start
 from ..fights import pending
 from ..fights.rules import Rules
@@ -128,6 +129,7 @@ async def delete_hero(session: AsyncSession, account: Account, hero_id: int) -> 
     for table in (HeroEquipment, HeroItem, HeroAbility):
         await session.execute(delete(table).where(table.hero_id == hero.id))
     await session.execute(delete(NpcTalk).where(NpcTalk.hero_id == hero.id))
+    await standing.forget(session, "hero", hero.id)
     await pending.forget_hero(session, hero)  # their drop answers, wins and place in finished fights
     await session.delete(hero)
     await session.flush()
@@ -200,6 +202,7 @@ async def delete_team(session: AsyncSession, account: Account, team_id: int, all
     await session.execute(delete(TeamProfile).where(TeamProfile.team_id == team.id))
     await forget_quests(session, team.id)
     await session.execute(delete(PartyRequest).where(PartyRequest.team_id == team.id))
+    await standing.forget(session, "team", team.id)
     await session.delete(team)
     await session.flush()
 

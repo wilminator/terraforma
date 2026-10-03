@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..heroes.models import Hero, Team, TeamMember
 from ..world.start import ensure_start
 from ..towns.models import TownTeam, TownVisit
+from ..standing.models import PARTY, StandingStatus
 from .models import Party, PartyRequest, PartyTeam
 
 
@@ -185,6 +186,7 @@ async def leave_party(session: AsyncSession, team_id: int) -> int | None:
         await session.execute(delete(TownTeam).where(TownTeam.visit_id.in_(visits)))
         await session.execute(delete(TownVisit).where(TownVisit.party_id == party_id))
         await session.execute(delete(PartyRequest).where(PartyRequest.party_id == party_id))
+        await session.execute(delete(StandingStatus).where(StandingStatus.target_kind == PARTY, StandingStatus.target_id == party_id))
         await session.execute(delete(Party).where(Party.id == party_id))
     else:
         await leader_account(session, party_id)  # (settles the leadership if the leaver was the last of the leader's teams)
@@ -211,6 +213,7 @@ async def merge_parties(session: AsyncSession, keep_id: int, absorb_id: int, par
         row.party_id, row.position = keep.id, position + offset
     await session.flush()
     await session.execute(delete(PartyRequest).where(PartyRequest.party_id == absorb.id))
+    await session.execute(delete(StandingStatus).where(StandingStatus.target_kind == PARTY, StandingStatus.target_id == absorb.id))
     await session.execute(delete(Party).where(Party.id == absorb.id))
     return keep
 
