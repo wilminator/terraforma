@@ -277,6 +277,20 @@ class Rules:
 
         return potential(self, fighter)
 
+    #: How much of the attacker's party PXP the target's party must have for a PvP fight to be allowed: DragonStar-style
+    #: 0.85. A stronger target is always allowed.
+    pvp_window: float = 0.85
+
+    def may_start_pvp(self, attacker_pxp: int, target_pxp: int, allowed: bool) -> str | None:
+        """Whether a party with $attacker_pxp may pick a fight with one of $target_pxp, in a place where PvP is
+        $allowed (``PvpZones.allows_pvp``): None if it may, otherwise why not. Refused where PvP is not allowed; where it
+        is, allowed against any party at least ``pvp_window`` as strong as the attacker, and always against a stronger one."""
+        if not allowed:
+            return "Fighting other parties is not allowed here."
+        if target_pxp >= attacker_pxp or target_pxp >= attacker_pxp * self.pvp_window:
+            return None
+        return "That party is too weak to fight."
+
     def roll_drops(self, fight, rng) -> list:
         """Called when a fight ends, after the experience and the gold: rolls the drops of the monsters that died and
         gives them out (``fights.drops``). Returns the events, already applied to the fight."""

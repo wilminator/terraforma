@@ -14,6 +14,7 @@ from .economy import Economy, TeamGold
 from .fights.rules import Rules
 from .alliances.hooks import Alliances
 from .relations.hooks import Relations
+from .pvp.hooks import PvpZones
 from .towns.hooks import Towns
 
 
@@ -33,3 +34,5 @@ class Game:
     alliances: Alliances = field(default_factory=Alliances)
     # Which places are towns (where a party comes apart into its teams and is put back together), and how its teams group.
     towns: Towns = field(default_factory=Towns)
+    # Where a party may pick a fight with another party (nowhere, by default); see ``Rules.may_start_pvp`` for the range window.
+    pvp: PvpZones = field(default_factory=PvpZones)
