@@ -39,6 +39,7 @@ def said(frames):
     ("`jump,a,b`", "jump tag takes 1 parameter"),
     ("`ack,now`", "ack tag takes 0 parameters"),
     ("`heal,1`", "heal tag takes 0 parameters"),
+    ("`end,now`", "end tag takes 0 parameters"),
     ("`pause`", "pause tag takes 1 parameter"),
     ("`pause,soon`", "whole number"),
     ("`team,x,end`", "whole number"),
@@ -99,6 +100,13 @@ async def test_a_jump_goes_to_just_after_its_label():
 
 async def test_running_past_the_last_text_and_the_end_label_both_leave():
     assert said(await run("a`jump,end`b")) == "a"
+
+
+async def test_the_end_tag_leaves_the_dialog_where_it_stands():
+    frames = await run("Goodbye.`end`This is never said.`ack`")
+    assert said(frames) == "Goodbye." and frames[-1]["prompt"] is None and len(frames) == 1
+    text = "`question,Leave,bye,Stay,stay`Going?`label,stay`Good.`jump,end``label,bye`Safe travels.`end`Unreachable."
+    assert said(await run(text, 0)) == "Going?Safe travels."
 
 
 async def test_a_dialog_that_goes_in_circles_is_cut_off():

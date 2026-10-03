@@ -20,6 +20,7 @@ its command, followed by comma separated parameters. Text outside tags is shown.
     pause,ms             wait this long (the browser does)
     sound,clip  music,clip  mute        sound cues (the browser plays them)
     ack                  wait until the player says to go on
+    end                  leave the dialog here (the same as jumping to the end label)
 
 There is always an implicit ``end`` label that leaves the dialog, and running past the last text leaves it too. A label that
 is neither defined nor ``end`` is refused when the text is checked (DragonStar would silently leave). The tags the engine
@@ -99,7 +100,7 @@ def check_tag(parts: list[str]) -> list[str]:
         for price in args[1::3]:
             _whole(command, price, "a price")
         return args[2::3]
-    elif command in ("mute", "ack", "heal", "recharge", "select_team"):
+    elif command in ("mute", "ack", "end", "heal", "recharge", "select_team"):
         count(0)
     elif command in ("resurrect", "cure", "uncurse"):
         count(2)
@@ -252,6 +253,8 @@ async def advance(script: Script, pos: int, prompt: dict | None, choice: int | N
                        "cancel": args[1], "parts": args}
         elif command in ("vend", "hawk"):
             pending = _activity(command, args)
+        elif command == "end":
+            return {"events": events, "prompt": None, "pos": len(text)}
         elif command == "ack":
             return {"events": events, "prompt": {"type": "ack"}, "pos": pos}
         elif command == "pause":
