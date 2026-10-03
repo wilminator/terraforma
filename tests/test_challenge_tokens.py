@@ -327,7 +327,7 @@ async def test_the_migration_carries_balances_and_the_ledger_both_ways(db, engin
     await tokens.change(db, account.id, -4, "shop")
     await db.commit()
     forget_schema(database_url)  # the tables are about to change: the next test rebuilds them
-    await downgrade(engine, "0028")
+    await downgrade(engine, "0029")
     async with engine.connect() as connection:
         old = (await connection.execute(text("SELECT balance FROM token_balances WHERE account_id = :a"), {"a": account.id})).scalar()
         old_rows = (await connection.execute(text("SELECT amount, reason FROM token_ledger ORDER BY id"))).all()
