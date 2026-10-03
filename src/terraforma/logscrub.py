@@ -18,7 +18,7 @@ PATTERNS = [
     # "key": "value" in JSON
     (re.compile(r'(?i)("(?:password|token|secret|csrf_token|code|otp)"\s*:\s*)"[^"]*"'), r'\1"' + REDACTED + '"'),
     # headers carrying credentials
-    (re.compile(r"(?i)\b(authorization|cookie|set-cookie|x-csrf-token)(\s*[:=]\s*)\S+"), r"\1\2" + REDACTED),
+    (re.compile(r"(?i)\b(authorization|cookie|set-cookie|x-csrf-token)(\s*[:=]\s*)(?:(?:bearer|basic)\s+)?\S+"), r"\1\2" + REDACTED),
     # anything that looks like a long random token on its own
     (re.compile(r"\b[A-Za-z0-9_-]{32,}(?:\.[A-Za-z0-9_-]{8,})*\b"), REDACTED),
 ]

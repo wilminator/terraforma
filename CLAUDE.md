@@ -17,7 +17,8 @@
   - Logins and sensitive calls are rate-limited.
   - Encryption keys have two slots.
   - A player's public handle can't match their username or email.
-  - Admins earn tokens only when fighting as a player.
+  - Admins earn Challenge Tokens only when fighting as a player.
+  - The one call with no login is the server-to-server Challenge Token purchase (`/api/server/challenge/purchase`): off unless `settings.toml` sets a secret, which it must send as a bearer token; it takes an idempotency key.
 - Any asset in this repo (art, sound, music, fonts) must be legally usable and compatible with a public repo: Mike's own, or openly licensed (CC0, CC-BY with credit). Record each asset's source and license beside it, and never add one whose license is unknown. Nothing from DragonStar's assets.
 - The browser code ported from DragonStar gets no feature work until DragonStar's features are ported. Fixes needed for the new server are fine.
 - Work goes on branches with pull requests, one slice per pull request; Mike creates the release tags (v0.x.y) that games depend on.

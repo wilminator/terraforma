@@ -31,6 +31,10 @@ key_dir = "keys"
 # ballot_retention_days = 0
 # rating_prompt_retention_days = 0
 
+# A game that sells Challenge Tokens sets this (at least 32 characters). Its own backend then credits purchases with
+# POST /api/server/challenge/purchase, sending "Authorization: Bearer <this secret>". Empty or absent: the call is off.
+# challenge_purchase_secret = ""
+
 # Outgoing mail. Leave this section out for development: messages are then
 # written as .eml files to outbox_dir (default "outbox") instead of sent.
 # Cloudflare: port 465 with implicit TLS; the API key is both username and password.

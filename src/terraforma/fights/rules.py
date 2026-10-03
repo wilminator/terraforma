@@ -298,11 +298,23 @@ class Rules:
 
         return settle(self, fight, rng)
 
-    def tokens_earned(self, fight, address) -> int:
-        """Called for each hero's fighter when a fight ends: how many tokens (the game's own currency, kept per account in
-        ``terraforma.tokens``) it earns. None by default: a game opts in. Called only for heroes, so an admin earns only
-        when fighting as a player, and never for a monster or a fight they only watched. A negative answer pays nothing."""
+    def challenge_earned(self, fight, address) -> int:
+        """Called for each hero's fighter when a fight ends: how many Challenge Tokens (the game's special currency, one
+        balance per account, kept in ``terraforma.challenge``) it earns. None by default: a game opts in, and this is where
+        it sets its earning rates. Called only for heroes, so an admin earns only when fighting as a player, and never for a
+        monster or a fight they only watched. A negative answer pays nothing. What is paid is then cut to fit
+        ``challenge_daily_cap`` and ``challenge_purse_cap``."""
         return 0
+
+    def challenge_daily_cap(self, account_id: int) -> int | None:
+        """The most Challenge Tokens an account may earn from fights in one UTC day, or None for no limit (the default).
+        What would go over is not paid. It does not limit purchases or spending."""
+        return None
+
+    def challenge_purse_cap(self, account_id: int) -> int | None:
+        """The most Challenge Tokens an account may hold, or None for no limit (the default). Earnings are cut to fit; a
+        purchase that would not fit is refused whole."""
+        return None
 
     def drop_recipients(self, fight, party: int, monsters, share: str, rng) -> list:
         """Who in $party receives one drop of the monsters that died ($monsters: the one that dropped it, or all of them for

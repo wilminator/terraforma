@@ -15,6 +15,7 @@ from terraforma import logscrub
         ('body {"username": "Mike", "password": "correct horse battery"}', "correct horse battery"),
         ("cookie: terraforma_session=abc.def.ghi", "abc.def.ghi"),
         ("X-CSRF-Token: Zm9vYmFyYmF6cXV4", "Zm9vYmFyYmF6cXV4"),
+        ("Authorization: Bearer s3cret-shop-key", "s3cret-shop-key"),
         ("password=hunter2&next=/", "hunter2"),
         ("issued A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8", "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"),
     ],

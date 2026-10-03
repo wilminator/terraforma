@@ -21,7 +21,7 @@ import os
 import tomllib
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class MailSettings(BaseModel):
@@ -69,6 +69,16 @@ class Settings(BaseModel):
     # Housekeeping removes closed ballots and settled rating prompts older than this many days (0: keep them for good).
     ballot_retention_days: int = Field(default=0, ge=0)
     rating_prompt_retention_days: int = Field(default=0, ge=0)
+    # A game that sells Challenge Tokens sets this (at least 32 characters) and its backend credits purchases with
+    # POST /api/server/challenge/purchase, sending it as "Authorization: Bearer <secret>". Empty: the call is off.
+    challenge_purchase_secret: str = ""
+
+    @field_validator("challenge_purchase_secret")
+    @classmethod
+    def _secret_is_long_enough(cls, value: str) -> str:
+        if value and len(value) < 32:
+            raise ValueError("challenge_purchase_secret must be at least 32 characters (or empty, to turn the call off)")
+        return value
 
 
 def load_settings(path: str | os.PathLike | None = None) -> Settings:
