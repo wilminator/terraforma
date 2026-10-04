@@ -29,6 +29,11 @@ class Game:
     # The game's seed data (JSON) and assets, when it has them.
     seed_dir: Path | None = None
     assets_dir: Path | None = None
+    # The game's browser code: a folder served at /game/, the ES modules in it the page imports (each default export is called
+    # with the shell) and the stylesheets it loads, in order (see README, "The browser client").
+    client_dir: Path | None = None
+    client_modules: tuple[str, ...] = ()
+    client_styles: tuple[str, ...] = ()
     # How fights are played: the stats, the resources and every formula. Override Rules to change them.
     rules: Rules = field(default_factory=Rules)
     # Where gold lives and how it moves (on the team, DragonStar's way, unless the game says otherwise).

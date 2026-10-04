@@ -12,8 +12,8 @@ from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..api.deps import ActingAccount, CurrentAccount, Db, client_address
-from ..api.security import start_session
+from ..api.deps import ActingAccount, CurrentAccount, Db, client_address, current_account
+from ..api.security import SESSION_CSRF, start_session
 from ..mail import Mail
 from . import ratelimit, service, twofa
 from .tokens import TokenError
@@ -160,6 +160,18 @@ async def logout(request: Request, account: ActingAccount) -> dict:
 @router.get("/me")
 async def me(account: CurrentAccount) -> dict:
     return {"username": account.username, "handle": account.handle}
+
+
+@router.get("/session")
+async def session(request: Request, db: Db) -> dict:
+    """For a page that has just loaded: who is logged in (or ``account`` null, answered 200 rather than 401 so the browser logs no
+    error for a visitor who simply hasn't logged in) and the CSRF token to send back, which a reload has otherwise lost. Only this
+    site's own pages can read the answer."""
+    try:
+        account = await current_account(request, db)
+    except HTTPException:
+        return {"account": None, "csrf_token": None}
+    return {"account": {"username": account.username, "handle": account.handle}, "csrf_token": request.session.get(SESSION_CSRF)}
 
 
 @router.post("/handle")

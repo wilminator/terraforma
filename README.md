@@ -33,6 +33,54 @@ To serve it, run `python -m terraforma serve my_game:app`. It checks the setting
 
 For tests, add `pytest_plugins = ["terraforma.testing"]` to the game's `tests/conftest.py`. Override the `game` fixture there, and `app_client` serves your game on every database under test.
 
+## The browser client
+
+The engine serves its own browser client: plain ES modules and CSS, no build step, no bundler, no Node. The pages know nothing of any game; they draw what the server's calls send.
+
+| URL | What it is |
+|---|---|
+| `/` | The marketing site: the game's name and a way in. |
+| `/play/` | The game client. Landscape only: held upright it shows "turn your device sideways". Log in, then the stage (a fixed design resolution, 480 by 270, shown at the largest whole-number scale that fits). |
+| `/account/` | The account pages, for any screen and orientation. |
+| `/client/...` | The engine's own code and styles (`src/terraforma/client/static/lib`). |
+| `/game/...` | The game's `client_dir`. |
+| `/assets/...` | The game's `assets_dir`. |
+| `GET /api/client` | What a page needs to start: the game's name, the URLs of its modules and styles, and its assets folder. |
+| `GET /api/session` | Who is logged in (or `account: null`, still a 200) and the CSRF token to send back; a page that reloads has lost the token it got at login. |
+
+**Pages run only files of the engine's and the game's own**: every page answers with a Content-Security-Policy that allows nothing inline and nothing from another site, so a game's code goes in files, not in the page.
+
+**Browser code in a game.** A game adds its own browser code with three fields of `Game` (a public interface, covered by the license exception):
+
+```python
+Game(name="My Game", client_dir=HERE / "client", client_modules=("my_game.js",), client_styles=("my_game.css",))
+```
+
+Every page, once it knows the manifest, adds the stylesheets and then imports each module in order and calls its default export with the **shell**:
+
+```js
+export default function register(shell) {
+  shell.text.set({ "login.title": "Enter the tavern" });     // any of the engine's words (strings.js)
+  shell.on("login", ({ username }) => { /* ... */ });
+}
+```
+
+| The shell has | |
+|---|---|
+| `shell.page` | `"site"`, `"account"` or `"play"`. |
+| `shell.game` | The manifest: `engine`, `game`, `modules`, `styles`, `assets`. |
+| `shell.assetUrl(name)` | The URL of one of the game's assets. |
+| `shell.text.get(key, values)` and `shell.text.set({key: text})` | The page's words; `{name}` in a text is filled in. An element with `data-text="key"` shows the key's text. |
+| `shell.api` | `get`, `post`, `call` and `ApiError`: the server's calls, with the CSRF token added to the ones that change something. |
+| `shell.account` | `null`, or `{username, handle}` once logged in. |
+| `shell.on(event, handler)` | Events `ready` (every module registered, nothing drawn yet), `login` and `logout`. Returns a function that stops listening. |
+
+A module that fails to load is reported in the console and on the page, and skipped; the rest still run. A game changes the look with a stylesheet, usually by setting the custom properties at the top of `engine.css`. Each later client slice adds its own hooks here (activity panels, map objects).
+
+The client's files are checked when the app is made: a module or style that isn't in `client_dir`, a name with a path out of it, or a folder that doesn't exist stops the server at start.
+
+**The example game** (`terraforma.example`) is the smallest game that uses all of this: a seed with one small map, a tileset of six pictures, and a browser module and stylesheet that use the hooks above. `python -m terraforma serve` runs it, and it is the game the browser tests play. A game of your own can start from it. Its pictures are drawn for this repository; every asset's source and license are recorded beside it (`assets/ASSETS.md`).
+
 ## Running it
 
 Everything runs in Docker.
@@ -43,7 +91,10 @@ mkdir -m 700 keys
 docker compose run --rm app python -m terraforma keys new   # the encryption key (once)
 docker compose up app                       # the engine alone, http://localhost:8000 (Postgres)
 docker compose run --rm test                # every test, on SQLite, Postgres and MySQL
+docker compose run --rm test -m e2e         # only the browser tests (Chromium plays the example game)
 ```
+
+The browser tests (`tests/e2e`) serve the example game on a real port and play it in Chromium with Playwright: a test fails on any console error or warning, uncaught error or failed request. In CI they run on SQLite for every pull request; the label `browser-all-databases` on a pull request runs them on Postgres and MySQL too. Outside Docker, `pip install -e ".[dev]"` and `playwright install chromium` set them up.
 
 Settings come from `settings.toml`, not environment variables. The NAS the game runs on may not pass environment variables or Docker secrets into the container. `python -m terraforma check-settings` says what's wrong with the file, if anything.
 

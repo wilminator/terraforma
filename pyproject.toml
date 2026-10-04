@@ -35,8 +35,10 @@ mysql = ["aiomysql>=0.2"]
 all-databases = ["terraforma[sqlite,postgres,mysql]"]
 # For tests, the engine's and a game's (terraforma.testing).
 testing = ["pytest>=8.3", "pytest-xdist>=3.6", "httpx2"]
+# The browser tests (tests/e2e). The browser itself comes with `playwright install chromium`.
+browser = ["playwright>=1.56"]
 dev = [
-    "terraforma[all-databases,testing]",
+    "terraforma[all-databases,testing,browser]",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -54,5 +56,6 @@ markers = [
     "heroes: category, see tests/conftest.py",
     "fights: category, see tests/conftest.py",
     "social: category, see tests/conftest.py",
+    "e2e: runs in a real browser against a live server (tests/e2e); CI runs these as their own jobs",
     "uncategorized: a test file missing from CATEGORIES in tests/conftest.py (CI would not run it)",
 ]

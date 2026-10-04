@@ -47,7 +47,7 @@ from .relations.routes import router as relations_router
 from .pvp.routes import router as pvp_router
 from .towns.routes import router as towns_router
 from .trading.routes import router as trading_router
-from . import housekeeping
+from . import client, housekeeping
 from .keys import KeyRing
 from .mail import Mailer, OutboxMailer, SmtpMailer
 from .seed import load_seed
@@ -154,5 +154,6 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
 
     app.include_router(fights_router)
     app.add_api_websocket_route("/ws/fights/{fight_id}", fight_socket)
+    client.install(app, game)  # last: the calls above are matched first
 
     return app
