@@ -17,6 +17,7 @@ from terraforma.pvp.service import PvpError, start_pvp_fight
 from terraforma.testing import in_app_db
 from terraforma.towns import service as towns_service
 from terraforma.towns.hooks import Towns
+from terraforma.world.start import ensure_start
 from terraforma.models import Account
 from terraforma.game import Game
 from terraforma.pvp import service
@@ -69,8 +70,9 @@ def test_party_pxp_sums_its_fighters():
     assert service.party_pxp(Strength(), [10, 20, 30]) == 60
 
 
-async def test_default_zones_allow_nowhere():
-    assert await PvpZones().allows_pvp(None, 1, 0, 0) is False
+async def test_default_zones_allow_nowhere_on_a_map_with_no_zones(db):
+    hub = await ensure_start(db)
+    assert await PvpZones().allows_pvp(db, hub.id, 0, 0) is False
     assert isinstance(Game(name="Test").pvp, PvpZones)
 
 

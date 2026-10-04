@@ -43,21 +43,65 @@ async def advance_clock(session: AsyncSession, world_id: int, ticks: int = 1) ->
 
 
 class Map(Timestamps, Base):
-    """A map in a world. The hub is one too, until the overworld arrives."""
+    """A map in a world: a grid of tiles and a grid of zones over it. The hub is one too.
+
+    ``tileset`` lists the kinds of tile (``content.schema.Tile``: passable, poison, encounter rate, art) and ``tiles``
+    is the grid, rows top to bottom, of places in it. ``zones`` lists the kinds of area (``content.schema.Zone``: its
+    encounter table, area drops, PvP flag) and ``zone_tiles`` is their grid. A map with no grids (the default hub) is
+    open ground in a single plain zone. ``revision`` goes up whenever the map's content changes, so a client can notice
+    that the map it holds is old. The grids are whole numbers, stored as plain JSON.
+    """
 
     __tablename__ = "maps"
     __table_args__ = (UniqueConstraint("world_id", "name"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     world_id: Mapped[int] = mapped_column(ForeignKey("worlds.id"), index=True)
+    # The slug that locations and the browser use (see world.location.Position); ``title`` is what players read.
     name: Mapped[str] = mapped_column(String(64))
+    title: Mapped[str] = mapped_column(String(64), default="", server_default="")
     width: Mapped[int] = mapped_column(Integer, default=1)
     height: Mapped[int] = mapped_column(Integer, default=1)
-    # Walking off one edge comes back on the other.
-    wraps: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Walking off the left or right edge comes back on the other side; likewise top and bottom. A wrapped edge is no edge.
+    wrap_x: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    wrap_y: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Steps a party takes after entering the map, or after a fight, before it can meet monsters.
+    safe_steps: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    tileset: Mapped[list | None] = mapped_column(JSON)
+    tiles: Mapped[list | None] = mapped_column(JSON)
+    zones: Mapped[list | None] = mapped_column(JSON)
+    zone_tiles: Mapped[list | None] = mapped_column(JSON)
 
     def contains(self, position: Position) -> bool:
         return position.map == self.name and 0 <= position.x < self.width and 0 <= position.y < self.height
+
+    def normalize(self, x: int, y: int) -> tuple[int, int] | None:
+        """The tile (x, y) means on this map: wrapped round an edge that wraps, None if it is off the map."""
+        if self.wrap_x:
+            x %= self.width
+        if self.wrap_y:
+            y %= self.height
+        return (x, y) if 0 <= x < self.width and 0 <= y < self.height else None
+
+    def tile(self, x: int, y: int) -> dict:
+        """What kind of tile is at (x, y) (wrapped as ``normalize`` does). Off the map, or on a map with no grid, it is open ground."""
+        spot = self.normalize(x, y)
+        if spot is None or not self.tiles:
+            return dict(OPEN_GROUND)
+        return {**OPEN_GROUND, **self.tileset[self.tiles[spot[1]][spot[0]]]}
+
+    def zone(self, x: int, y: int) -> dict:
+        """What kind of area is at (x, y): its encounter table, area drops and PvP flag. A plain zone off the grid."""
+        spot = self.normalize(x, y)
+        if spot is None or not self.zones:
+            return dict(PLAIN_ZONE)
+        index = self.zone_tiles[spot[1]][spot[0]] if self.zone_tiles else 0
+        return {**PLAIN_ZONE, **self.zones[index]}
+
+
+OPEN_GROUND = {"name": "", "passable": True, "poison": False, "encounter_rate": 0, "art": None}
+PLAIN_ZONE = {"name": "", "encounters": [], "drops": [], "pvp": False}
 
 
 class Account(Timestamps, Base):

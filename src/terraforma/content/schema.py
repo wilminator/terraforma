@@ -3,7 +3,7 @@
 These formats are a public interface (the license exception covers them),
 so changing one is deliberate and documented in the README. Each file is a
 list of objects; the file name says the kind (abilities.json, items.json,
-jobs.json, personalities.json, monsters.json, statuses.json). Unknown fields, wrong types
+jobs.json, personalities.json, monsters.json, statuses.json, maps.json). Unknown fields, wrong types
 and bad names are refused with the file, the row and the field named.
 
 Stats are the game's (``Rules.stats``; the engine's ten, STATS, unless it overrides them), and so are its
@@ -22,6 +22,10 @@ STATS = ("HP", "MP", "Speed", "Accuracy", "Strength", "Dodge", "Block", "Power",
 RESOURCES = ("HP", "MP")
 #: A drop's chance is out of this unless the game's rules say otherwise (``Rules.drop_chance_scale``).
 DROP_SCALE = 10000
+#: A tile's encounter rate is out of this: the chance a step on it meets monsters (``encounter_rate`` in maps.json).
+ENCOUNTER_SCALE = 10000
+#: The biggest map, in tiles along a side (the grids are stored whole).
+MAP_SIDE = 512
 
 KEY = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 ASSET = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9_./-]{0,127}$")
@@ -278,6 +282,74 @@ class Monster(Strict):
     ai: MonsterAi = MonsterAi()
 
 
+class Tile(Strict):
+    """One kind of tile in a map's tileset; the map's grid says which kind each tile is, by its place in the tileset.
+    ``passable`` says whether a party can step on it, ``poison`` whether stepping on it poisons (what that does is the
+    game's rule), ``encounter_rate`` is the chance out of ENCOUNTER_SCALE that a step ending here meets monsters, and
+    ``art`` is the picture's file name under the game's assets folder."""
+
+    name: str = Field(default="", max_length=64)
+    passable: bool = True
+    poison: bool = False
+    encounter_rate: int = Field(default=0, ge=0, le=ENCOUNTER_SCALE)
+    art: Asset | None = None
+
+
+class Encounter(Strict):
+    """One group of monsters a zone can throw at a party; ``weight`` is how often it is picked against the others."""
+
+    monsters: list[Key] = Field(min_length=1, max_length=20)
+    weight: int = Field(default=1, ge=1, le=1000000)
+
+
+class Zone(Strict):
+    """A kind of area: what walking in it meets (``encounters``), what a fight there drops on top of the monsters' own
+    (``drops``: drop table keys), and whether parties may fight each other there (``pvp``)."""
+
+    name: str = Field(default="", max_length=64)
+    encounters: list[Encounter] = Field(default=[], max_length=100)
+    drops: list[Key] = Field(default=[], max_length=20)
+    pvp: bool = False
+
+
+class MapSeed(Strict):
+    """A map: ``tiles`` is its grid (rows, top to bottom) of places in ``tileset``; ``zone_tiles`` is a second grid of
+    places in ``zones`` (left out: the whole map is the first zone). ``wrap_x`` and ``wrap_y`` make walking off the
+    left or right, top or bottom edge come back on the other side. ``safe_steps`` is how many steps a party takes on
+    the map before it can meet monsters, from entering the map and again after each fight (0: none)."""
+
+    key: Key
+    name: str = Field(min_length=1, max_length=64)
+    wrap_x: bool = False
+    wrap_y: bool = False
+    safe_steps: int = Field(default=0, ge=0, le=1000)
+    tileset: list[Tile] = Field(min_length=1, max_length=256)
+    tiles: list[list[int]] = Field(min_length=1, max_length=MAP_SIDE)
+    zones: list[Zone] = Field(default=[Zone()], min_length=1, max_length=256)
+    zone_tiles: list[list[int]] | None = None
+
+    @property
+    def width(self) -> int:
+        return len(self.tiles[0])
+
+    @property
+    def height(self) -> int:
+        return len(self.tiles)
+
+    @model_validator(mode="after")
+    def _the_grids_fit(self):
+        if not 1 <= self.width <= MAP_SIDE or any(len(row) != self.width for row in self.tiles):
+            raise ValueError(f"tiles: every row needs the same number of tiles, 1 to {MAP_SIDE}")
+        if any(not 0 <= tile < len(self.tileset) for row in self.tiles for tile in row):
+            raise ValueError(f"tiles: a tile is a place in tileset (0 to {len(self.tileset) - 1})")
+        if self.zone_tiles is not None:
+            if len(self.zone_tiles) != self.height or any(len(row) != self.width for row in self.zone_tiles):
+                raise ValueError("zone_tiles: must be the same size as tiles")
+            if any(not 0 <= zone < len(self.zones) for row in self.zone_tiles for zone in row):
+                raise ValueError(f"zone_tiles: a zone is a place in zones (0 to {len(self.zones) - 1})")
+        return self
+
+
 WHENS = ("round_start", "round_end", "turn_start", "turn_end", "helped", "harmed", "saving_throw")
 TIMED = ("round_start", "round_end", "turn_start", "turn_end")
 
@@ -386,6 +458,7 @@ KINDS: dict[str, type[Strict]] = {
     "jobs": Job,
     "monsters": Monster,
     "statuses": Status,
+    "maps": MapSeed,
 }
 
 
@@ -435,6 +508,15 @@ def check_seed(seed: dict[str, list[dict]], stats: tuple[str, ...] = STATS, reso
         for entry in table.entries:
             if entry.item is not None and entry.item not in keys["items"]:
                 problems.append(f"drop_tables.json {table.key}: entries name {entry.item!r}, which items.json doesn't have")
+    for row in checked["maps"]:
+        for number, zone in enumerate(row.zones):
+            for encounter in zone.encounters:
+                for name in encounter.monsters:
+                    if name not in keys["monsters"]:
+                        problems.append(f"maps.json {row.key}: zone {number} encounters name {name!r}, which monsters.json doesn't have")
+            for name in zone.drops:
+                if name not in keys["drop_tables"]:
+                    problems.append(f"maps.json {row.key}: zone {number} drops name {name!r}, which drop_tables.json doesn't have")
     kinds = {row.key: row.kind for row in checked["statuses"]}
     effects = [(kind, row, effect) for kind, field in (("abilities", "effect"), ("items", "use_effect"))
                for row in checked[kind] if (effect := getattr(row, field)) is not None]

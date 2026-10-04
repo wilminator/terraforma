@@ -85,6 +85,7 @@ A game's starting content is JSON in its `seed/` folder (`Game(seed_dir=...)`): 
 | `monsters.json` | `key`, `name`, `personality` (key), `xp_reward`, `gold_reward`, `stats`, `abilities`, `items`, `equipment` (keys), `drops` (drop table keys), `ai` |
 | `drop_tables.json` | `key`, `name`, `weighted`, `rolls`, `entries` (see Item drops below) |
 | `statuses.json` | `key`, `name`, `kind` (`good` or `bad`), `description`, `icon`, `duration`, `intensity`, `ticks`, `modifiers`, `xp_share` (see Statuses below) |
+| `maps.json` | `key`, `name`, `wrap_x`, `wrap_y`, `safe_steps`, `tileset`, `tiles`, `zones`, `zone_tiles` (see Maps below) |
 
 - **Keys.** Every row has a `key` (1-64 lowercase letters, digits, `_` or `-`) that the game picks and never reuses. Rows name each other by key. Only `key` and `name` are required; the rest have defaults.
 - **Equipment slots.** An item's `equip_slots` lists the slots it takes. The engine's slots are `rhand rammo rarm lhand lammo larm body head back feet`; `hand`, `ammo` and `arm` are *sided* (the player picks left or right when equipping), and a two-handed weapon lists `lhand` and `rhand`. A weapon's `attack.ammo_type` has to match its ammunition's. Gear never stacks; ammunition and non-equipment stack to 250, in at most 12 stacks (for now these limits are constants in `heroes/inventory.py`).
@@ -126,9 +127,21 @@ Joining and merging are service functions, not server calls of their own: they t
 
 A team enters the game when its player selects it to play: `POST /api/teams/{id}/play` (login and CSRF token; safe to repeat; refused with 409 for a team with no heroes) makes its party, a party of just that team, where its first hero stands. After that a team is never in no party; teams meet by joining and merging parties on the map. In a town the real party and its formation are kept, and each group of teams there acts as an *ethereal* party: `towns.service.acting_party(session, team_id)` says which party a team acts in right now (the whole real party, or in a town only the team's group, `ethereal=True`, never stored and gone when the real party is put back together).
 
+## Maps
+
+A map (`maps.json`; `terraforma.maps`) is a grid of tiles with a second grid of zones over it. Both are public formats (the license exception covers them). Walking, encounters, event scripts and the nearby list come in later slices; for now a game can draw maps and the engine stores them.
+
+- **Tiles.** `tileset` lists the kinds of tile: `name`, `passable` (default true), `poison` (default false; what it does is the game's rule), `encounter_rate` (out of 10000: the chance a step ending on it meets monsters) and `art` (a file name under the game's assets folder). `tiles` is the grid, rows top to bottom, each tile a place in `tileset` (up to 512 by 512; every row the same length).
+- **Zones.** `zones` lists the kinds of area: `name`, `encounters` (groups of `monsters`, keys in `monsters.json`, each with a `weight` against the others), `drops` (drop table keys, the area's own, see Item drops) and `pvp` (whether parties may fight each other there). `zone_tiles` is their grid, the same size as `tiles`; left out, the whole map is the first zone (which defaults to a plain one).
+- **Edges.** `wrap_x` and `wrap_y` make walking off the left or right, top or bottom edge come out on the other side (a wrapped edge is no edge, and fires no edge event). `safe_steps` is how many steps a party takes on the map, from entering it and again after each fight, before it can meet monsters.
+- **Keys.** A map's `key` is its name everywhere else (`Position.map`, a hero's place); `name` is what players read. Maps are checked with the rest of the seed (monsters and drop tables named by a zone must exist). The default hub is a map without a grid (open ground, one plain zone); a `maps.json` row with the key `hub` draws it.
+- **Loading.** Maps load into the engine's world on every start. A new key is added, a known one rewritten, and a map the seed no longer lists is kept (things may stand on it). `Map.revision` starts at 1 and goes up whenever a load changes anything about the map, so a client holding an older one can tell.
+- **Asking a map.** `Map.normalize(x, y)` (wrapped, or None off the map), `Map.tile(x, y)` and `Map.zone(x, y)` give the tile kind and the zone at a place; off a grid they give open ground and a plain zone.
+- **PvP.** The engine's default `PvpZones.allows_pvp` now reads the zone's `pvp` flag (a map with no zones allows it nowhere, as before); a game's own `Game(pvp=...)` still overrides it.
+
 ## Fights between parties (PvP)
 
-Where a party may pick a fight with another party is a rule, in two parts. The place: `Game(pvp=...)` (`terraforma.pvp.hooks.PvpZones`) says whether a spot allows PvP, `allows_pvp(session, map_id, x, y)`; the engine's default is nowhere. The range window: `Rules.may_start_pvp(attacker_pxp, target_pxp, allowed)` returns None if the fight may start, otherwise why not. By default it refuses where PvP is off, and where it is on it allows a target whose party PXP is at least `Rules.pvp_window` (0.85) of the attacker's, and always a stronger one. A party's PXP is the sum of its fighters' (`terraforma.pvp.service.party_pxp`), and `terraforma.pvp.service.refusal` runs both checks. These are public interfaces (the license exception covers them).
+Where a party may pick a fight with another party is a rule, in two parts. The place: `Game(pvp=...)` (`terraforma.pvp.hooks.PvpZones`) says whether a spot allows PvP, `allows_pvp(session, map_id, x, y)`; the engine's default follows the map's zone flag (see Maps), so nowhere on a map with no zones. The range window: `Rules.may_start_pvp(attacker_pxp, target_pxp, allowed)` returns None if the fight may start, otherwise why not. By default it refuses where PvP is off, and where it is on it allows a target whose party PXP is at least `Rules.pvp_window` (0.85) of the attacker's, and always a stronger one. A party's PXP is the sum of its fighters' (`terraforma.pvp.service.party_pxp`), and `terraforma.pvp.service.refusal` runs both checks. These are public interfaces (the license exception covers them).
 
 This is the step where a player who has met an enemy party on the map confirms they want to fight it: the game asks first, then makes the call. To pick a fight, a team's owner calls `POST /api/pvp/fights` with `team_id` (their own team; its party picks the fight) and `party_id` (the party to fight), with login and CSRF token. The fight starts with the caller's party as party 0 and the other as party 1, and each player commands their own heroes. It is refused with a 409 and the reason unless both parties stand at the same spot (same map and tile), neither is in a town or in a fight, the place allows PvP and the other party is inside the window. A team not in a party, or not the caller's, is refused too (404 for a team that is not theirs). There is no way yet to list the parties at a spot; the map will offer that. What a PvP fight pays out is the engine's ordinary result (experience, no gold or drops unless the game's Rules say so).
 
@@ -314,7 +327,7 @@ The engine is database-agnostic. Postgres is the primary database, MySQL is supp
 
 ## Map-ready from the start
 
-Maps and a changing world come later. The groundwork is there from the first commit:
+Maps (see Maps) and a changing world come later. The groundwork is there from the first commit:
 
 - **Location.** Everything that exists somewhere has a map and a tile (`Located`).
 - **Randomness.** All of it comes from the world's seed, through named streams (`WorldRng`), so worlds can be rebuilt and bugs replayed.
