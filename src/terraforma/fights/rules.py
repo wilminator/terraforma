@@ -274,6 +274,15 @@ class Rules:
     #: 0.85. A stronger target is always allowed.
     pvp_window: float = 0.85
 
+    #: The longest route (steps) a party may be given in one go, however far the client asked it to go.
+    route_limit: int = 100
+
+    def party_blocks(self, mover, other) -> bool:
+        """Whether the party $other (a ``Party`` row) standing on a tile keeps the party $mover from stepping onto it.
+        None of them do, by default: parties walk through each other. Called while a route is made and again at each
+        step; a game that wants collisions (or only hostile ones) overrides it."""
+        return False
+
     def may_start_pvp(self, attacker_pxp: int, target_pxp: int, allowed: bool) -> str | None:
         """Whether a party with $attacker_pxp may pick a fight with one of $target_pxp, in a place where PvP is
         $allowed (``PvpZones.allows_pvp``): None if it may, otherwise why not. Refused where PvP is not allowed; where it
