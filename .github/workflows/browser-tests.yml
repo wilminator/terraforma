@@ -1,0 +1,95 @@
+# The browser tests (tests/e2e): the example game served for real and played in Chromium.
+#
+# They run on SQLite for every pull request. Putting the label `browser-all-databases` on a pull request also runs them on
+# Postgres and MySQL (adding the label starts the run; no other step).
+name: browser tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+jobs:
+  environment:
+    name: environment
+    # Another label being added is no reason to run again.
+    if: github.event.action != 'labeled' || github.event.label.name == 'browser-all-databases'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+        with:
+          build: "true"
+
+  sqlite:
+    name: browser (sqlite)
+    needs: environment
+    runs-on: ubuntu-latest
+    env:
+      TERRAFORMA_TEST_DATABASES: "sqlite+aiosqlite:///{tmp}/test.db"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/browser
+      - run: pytest -n auto -m e2e
+
+  postgres:
+    name: browser (postgres)
+    needs: environment
+    if: contains(github.event.pull_request.labels.*.name, 'browser-all-databases')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: terraforma
+          POSTGRES_PASSWORD: terraforma
+          POSTGRES_DB: terraforma_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U terraforma"
+          --health-interval 2s --health-retries 30
+          --tmpfs /var/lib/postgresql/data
+    env:
+      TERRAFORMA_TEST_DATABASES: "postgresql+asyncpg://terraforma:terraforma@127.0.0.1:5432/terraforma_test"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/browser
+      - run: pytest -n auto -m e2e
+
+  mysql:
+    name: browser (mysql)
+    needs: environment
+    if: contains(github.event.pull_request.labels.*.name, 'browser-all-databases')
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: terraforma-root
+          MYSQL_USER: terraforma
+          MYSQL_PASSWORD: terraforma
+          MYSQL_DATABASE: terraforma_test
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uterraforma -pterraforma"
+          --health-interval 2s --health-retries 60
+          --tmpfs /var/lib/mysql
+    env:
+      TERRAFORMA_TEST_DATABASES: "mysql+aiomysql://terraforma:terraforma@127.0.0.1:3306/terraforma_test"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/browser
+      - name: Let the MySQL test user make per-worker databases
+        run: |
+          python - <<'PY'
+          import pymysql
+          connection = pymysql.connect(host="127.0.0.1", user="root", password="terraforma-root")
+          with connection.cursor() as cursor:
+              cursor.execute("GRANT ALL PRIVILEGES ON `terraforma\\_test\\_%`.* TO 'terraforma'@'%'")
+          connection.close()
+          PY
+      - run: pytest -n auto -m e2e

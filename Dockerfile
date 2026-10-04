@@ -28,6 +28,9 @@ CMD ["python", "-m", "terraforma", "serve"]
 # --- the tests ------------------------------------------------------------
 FROM base AS test
 RUN pip install -e ".[dev]"
+# Chromium for the browser tests (tests/e2e), kept where the terraforma user can read it.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+RUN playwright install --with-deps chromium && chmod -R a+rX /opt/playwright
 COPY settings.example.toml ./
 COPY tests ./tests
 # The tests run as terraforma and need to write pytest's cache in /app.

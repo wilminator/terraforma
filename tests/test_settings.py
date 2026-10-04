@@ -65,4 +65,4 @@ def test_the_development_app_starts_from_the_settings_file(tmp_path, monkeypatch
 
     path = write(tmp_path, f'database_url = "sqlite+aiosqlite:///{tmp_path}/dev.db"\nsession_secret = "' + "x" * 32 + '"\n')
     monkeypatch.setenv("TERRAFORMA_SETTINGS", str(path))
-    assert app().title == "TerraForma (development)"
+    assert app().title == "TerraForma Example"
