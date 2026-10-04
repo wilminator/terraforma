@@ -4,20 +4,28 @@ Each call is its own route with a strict model for its arguments. Walking change
 token (``ActingAccount``); looking only needs a login (``CurrentAccount``).
 """
 
+from functools import partial
 from typing import Annotated, Self
 
 from fastapi import APIRouter, HTTPException, Path, status
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 
-from ..api.deps import ActingAccount, CurrentAccount, Db, GameRules
+from ..api.deps import ActingAccount, CurrentAccount, Db, GameEconomy, GameInn, GameNpcs, GameReach, GameRules
+from ..heroes import service as heroes
+from ..heroes.routes import Id as HeroId
+from ..heroes.routes import refuse as refuse_hero
 from ..models import Map
+from ..npcs import inn as inns
+from ..npcs import service as npcs
 from ..world.location import MapName
-from . import walking
+from . import objects, walking
+from .models import EDGE, MapObject
 
 router = APIRouter(prefix="/api")
 
 PartyId = Annotated[int, Path(ge=1)]
+ObjectId = Annotated[int, Path(ge=1)]
 Coordinate = Annotated[int, Field(ge=-1_000_000, le=1_000_000)]
 
 
@@ -55,14 +63,19 @@ def refuse(error: walking.WalkError) -> HTTPException:
 @router.get("/maps/{name}")
 async def look_at_map(name: Annotated[MapName, Path()], db: Db, account: CurrentAccount) -> dict:
     """A map as a player's page draws it: its size, wrap flags, revision (a page holding an older one asks again), the kinds
-    of tile and their grid, and the kinds of zone with theirs. What a tile or zone meets or drops is kept from the page."""
+    of tile and their grid, and the kinds of zone with theirs. What a tile or zone meets or drops is kept from the page, and so is what an object's or an edge's script says. ``objects`` are the things a hero can use
+    (``key``, ``name``, ``kind``, ``action``, tile) and ``edges`` the edges that have an event, where a route may leave the map."""
     found = await db.scalar(select(Map).where(Map.name == name))
     if found is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "there's no such map")
+    rows = (await db.scalars(select(MapObject).where(MapObject.map_id == found.id).order_by(MapObject.id))).all()
+    things, edges = [each for each in rows if each.kind != EDGE], [each for each in rows if each.kind == EDGE]
     return {
         "map": found.name, "title": found.title, "width": found.width, "height": found.height,
         "wrap_x": found.wrap_x, "wrap_y": found.wrap_y, "revision": found.revision,
         "tileset": [{key: kind[key] for key in ("name", "passable", "poison", "art")} for kind in found.tileset or []],
+        "objects": [{"id": each.id, "key": each.key, "name": each.name, "kind": each.kind, "action": each.action, "x": each.x, "y": each.y} for each in things],
+        "edges": sorted(each.edge for each in edges),
         "tiles": found.tiles, "zones": [{key: kind[key] for key in ("name", "pvp")} for kind in found.zones or []], "zone_tiles": found.zone_tiles,
     }
 
@@ -87,10 +100,32 @@ async def make_route(party_id: PartyId, body: RouteRequest, db: Db, account: Act
 
 
 @router.post("/parties/{party_id}/route/step")
-async def check_in(party_id: PartyId, body: TileRef, db: Db, account: ActingAccount, rules: GameRules) -> dict:
+async def check_in(party_id: PartyId, body: TileRef, db: Db, account: ActingAccount, rules: GameRules, hooks: GameNpcs, inn: GameInn, economy: GameEconomy) -> dict:
     """The page has reached a tile of the route. Answers whether the server confirms it (and any fight it ran into), or
-    where the party really is when it doesn't (``confirmed`` false), so the page can go back there."""
+    where the party really is when it doesn't (``confirmed`` false), so the page can go back there. A step off an edge of the
+    map that has an event leaves the party where it stands and answers with ``edge`` (its direction) and ``dialog``, the
+    first step of the event's script (a conversation frame; ``window`` says whether to open the dialog window)."""
     try:
-        return await walking.step(db, rules, account.id, party_id, body.x, body.y)
+        async def run(hero, edge: MapObject) -> dict:
+            return await npcs.start(db, hooks, hero, edge, partial(inns.rest, db, inn, rules, economy), economy)
+
+        return await walking.step(db, rules, account.id, party_id, body.x, body.y, run)
     except walking.WalkError as error:
         raise refuse(error) from error
+
+
+@router.post("/heroes/{hero_id}/objects/{object_id}/use")
+async def use_object(hero_id: HeroId, object_id: ObjectId, db: Db, account: ActingAccount, hooks: GameNpcs, reach: GameReach, inn: GameInn, rules: GameRules, economy: GameEconomy) -> dict:
+    """The hero uses a chest, door or the like in reach of them (the game's ``Reach.map_object``, for the object's own action;
+    the nearby list for that action shows what is). Answers with the first step of its script: ``events`` to show, the
+    ``prompt`` if it asks something, and ``window``: whether the page should open its dialog window. Refused (409) out of reach
+    or in a fight, and 404 for a thing that isn't there."""
+    try:
+        hero = await heroes.own_hero(db, account, hero_id)
+        return await objects.use(db, hooks, reach, hero, object_id, partial(inns.rest, db, inn, rules, economy), economy)
+    except objects.NoSuchObject as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+    except npcs.NpcError as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
+    except heroes.HeroError as error:
+        raise refuse_hero(error) from error

@@ -23,13 +23,15 @@ class Npc(Located, Timestamps, Base):
 
 
 class NpcTalk(Timestamps, Base):
-    """A hero in the middle of a conversation: at most one each. ``pos`` is where the text goes on from, ``prompt`` what the
-    hero was last asked (None when it was not waiting on anything)."""
+    """A hero in the middle of a conversation: at most one each, with an NPC (``npc_id``) or with a map object, whose script runs
+    the same way (``object_id``; exactly one of the two is set). ``pos`` is where the text goes on from, ``prompt`` what the hero
+    was last asked (None when it was not waiting on anything)."""
 
     __tablename__ = "npc_talks"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     hero_id: Mapped[int] = mapped_column(ForeignKey("heroes.id"), unique=True)
-    npc_id: Mapped[int] = mapped_column(ForeignKey("npcs.id"), index=True)
+    npc_id: Mapped[int | None] = mapped_column(ForeignKey("npcs.id"), index=True, nullable=True)
+    object_id: Mapped[int | None] = mapped_column(ForeignKey("map_objects.id"), index=True, nullable=True)
     pos: Mapped[int] = mapped_column(Integer, default=0)
     prompt: Mapped[dict | None] = mapped_column(JSON, nullable=True)

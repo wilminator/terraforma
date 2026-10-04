@@ -2,10 +2,10 @@
 hands it to ``Game(reach=...)``. This is a public interface (the license exception covers it).
 
 An action is a string: the engine's are ``TALK``, ``INVITE``, ``OPEN``, ``SEARCH``, ``FIGHT`` and ``HELP``, and a game may
-add its own. One rule per kind of target, so a game can set NPCs and parties apart: ``npc`` for the people who stand on a
-map and ``party`` for other players' parties. Each returns None when the actor is in range, otherwise why not. The calls that
-act (talking, and later opening, searching, fighting, helping) ask again when they run, so a list that has gone stale is
-refused cleanly.
+add its own. One rule per kind of target, so a game can set them apart: ``npc`` for the people who stand on a map,
+``map_object`` for chests, doors and the like, and ``party`` for other players' parties. Each returns None when the actor is
+in range, otherwise why not. The calls that act (talking, opening, searching, and later fighting and helping) ask again when
+they run, so a list that has gone stale is refused cleanly.
 
     class Reach(terraforma.reach.hooks.Reach):
         async def party(self, session, action, actor, party):
@@ -15,6 +15,7 @@ refused cleanly.
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..heroes.models import Hero
+from ..maps.models import MapObject
 from ..models import Map
 from ..npcs.models import Npc
 from ..parties.models import Party
@@ -63,6 +64,15 @@ class Reach:
         if any(near(spot, tile) and near(there, tile) for tile in map(tuple, npc.counter)):
             return None
         return "stand at the counter to talk"
+
+    async def map_object(self, session: AsyncSession, action: str, actor: Hero, obj: MapObject) -> str | None:
+        """Whether the hero is in range of the map object (a chest, a door) for the action, which is the object's own (``open``
+        by default): None if so, otherwise why not. By default from the tiles around it (within one tile, diagonals too), on
+        its map. A game can ask for more (a key, a level)."""
+        if actor.map_id != obj.map_id:
+            return "that is not here"
+        found = await session.get(Map, obj.map_id)
+        return None if distance(found, (actor.x, actor.y), (obj.x, obj.y)) <= 1 else "that is too far away"
 
     async def party(self, session: AsyncSession, action: str, actor: Hero | Party, party: Party) -> str | None:
         """Whether the actor (a hero, or a party) is in range of another party for the action: None if so, otherwise why not.

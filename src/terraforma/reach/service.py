@@ -1,10 +1,11 @@
-"""The nearby list: what a hero can reach for an action, nearest first, NPCs before parties."""
+"""The nearby list: what a hero can reach for an action, nearest first: NPCs, then map objects, then parties."""
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..fights.rules import Rules
 from ..heroes.models import Hero, Team, TeamMember
+from ..maps.models import EDGE, MapObject
 from ..models import Map
 from ..npcs.models import Npc
 from ..parties import service as parties
@@ -52,9 +53,10 @@ async def _shown_teams(session: AsyncSession, party_id: int) -> list[dict]:
 
 
 async def nearby(session: AsyncSession, reach: Reach, rules: Rules, hero: Hero, action: str) -> dict:
-    """What the hero can reach for $action from where they stand: the NPCs, then (when the game's ``Reach.lists_parties``
-    says so) the other parties, each nearest first, at most ``Rules.nearby_limit`` in all, and for how many seconds the list
+    """What the hero can reach for $action from where they stand: the NPCs, then the map objects whose action it is, then
+    (when the game's ``Reach.lists_parties`` says so) the other parties, each nearest first, at most ``Rules.nearby_limit`` in all, and for how many seconds the list
     may be shown before asking again. An entry is ``{"kind": "npc", "id", "key", "name", "distance"}`` or
+    ``{"kind": "object", "id", "key", "name", "object": <its kind: chest, door...>, "distance"}`` or
     ``{"kind": "party", "id", "teams": [{"id", "name"}], "distance"}`` (only the visible teams are named)."""
     found = await session.get(Map, hero.map_id)
     here = (hero.x, hero.y)
@@ -66,6 +68,12 @@ async def nearby(session: AsyncSession, reach: Reach, rules: Rules, hero: Hero, 
             near.append((distance(found, here, (npc.x, npc.y)), npc))
     near.sort(key=lambda pair: (pair[0], pair[1].name, pair[1].id))
     entries += [{"kind": "npc", "id": npc.id, "key": npc.key, "name": npc.name, "distance": away} for away, npc in near]
+    things = (await session.scalars(
+        select(MapObject).where(MapObject.map_id == hero.map_id, MapObject.action == action, MapObject.kind != EDGE).order_by(MapObject.name, MapObject.id)
+    )).all()
+    reachable = [(distance(found, here, (each.x, each.y)), each) for each in things if await reach.map_object(session, action, hero, each) is None]
+    reachable.sort(key=lambda pair: (pair[0], pair[1].name, pair[1].id))
+    entries += [{"kind": "object", "id": each.id, "key": each.key, "name": each.name, "object": each.kind, "distance": away} for away, each in reachable]
     if await reach.lists_parties(session, action, hero):
         mine = await party_of_hero(session, hero)
         close = []

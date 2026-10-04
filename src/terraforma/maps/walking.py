@@ -11,22 +11,30 @@ Each confirmed step moves the party and ends with a roll for monsters: the tile'
 world's seed for that party and that step, once the party has taken more than the map's ``safe_steps`` since it entered
 the map or last fought. A hit picks one of the zone's encounters (by weight), starts the fight where the party stands and
 ends the route. A step through a wrapped edge is a step like any other. Steps are one tile up, down, left or right.
+
+A route may end by stepping off an edge of the map that has an event (``maps.json``: ``edges``), onto the tile just beyond
+it. That last step is checked in like the rest, but the party stays where it is and the edge's script runs for the party's
+leader. A wrapped edge is no edge and has no event.
 """
 
 from collections import deque
+from collections.abc import Awaitable, Callable
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..content.schema import ENCOUNTER_SCALE
 from ..fights import live
-from ..fights.models import FightParticipant, FightRecord
+from ..fights.models import FightRecord
 from ..fights.rules import Rules
+from ..heroes.models import Hero
 from ..models import Map, World
 from ..parties import service as parties
 from ..parties.models import Party
 from ..towns import service as towns
 from ..world.rng import WorldRng
+from .models import EDGE, EDGES, MapObject
+from .travel import in_fight, move_heroes
 
 Tile = tuple[int, int]
 
@@ -89,19 +97,37 @@ async def _blocked(session: AsyncSession, rules: Rules, party: Party) -> set[Til
     return {(other.x, other.y) for other in others if rules.party_blocks(party, other)}
 
 
-async def _in_fight(session: AsyncSession, party: Party) -> bool:
-    heroes = await parties.hero_ids(session, party.id)
-    return heroes != [] and await session.scalar(
-        select(FightParticipant.id).join(FightRecord, FightRecord.id == FightParticipant.fight_id)
-        .where(FightParticipant.hero_id.in_(heroes), FightRecord.finished.is_(False)).limit(1)
-    ) is not None
-
-
 async def _check_free(session: AsyncSession, party: Party) -> None:
-    if await _in_fight(session, party):
+    if await in_fight(session, party):
         raise WalkError("a party in a fight can't walk")
     if await towns.is_suspended(session, party.id):
         raise WalkError("a party in a town is apart: it must be put back together first")
+
+
+async def _edges(session: AsyncSession, game_map: Map) -> dict[str, MapObject]:
+    """The edge events of the map, by direction."""
+    rows = await session.scalars(select(MapObject).where(MapObject.map_id == game_map.id, MapObject.kind == EDGE))
+    return {row.edge: row for row in rows.all()}
+
+
+def _leaving(game_map: Map, tile: Tile) -> str | None:
+    """The edge of the map the tile is just beyond (one tile off it, in line with the map), or None."""
+    if game_map.normalize(*tile) is not None:
+        return None
+    for direction, (dx, dy) in EDGES.items():
+        if game_map.normalize(tile[0] - dx, tile[1] - dy) == (tile[0] - dx, tile[1] - dy):
+            return direction
+    return None
+
+
+async def leader_hero(session: AsyncSession, party: Party) -> Hero | None:
+    """The hero a party's events run for: the first hero of the party that belongs to its leader."""
+    leader = await parties.leader_account(session, party.id)
+    for hero_id in await parties.hero_ids(session, party.id):
+        hero = await session.get(Hero, hero_id)
+        if hero.account_id == leader:
+            return hero
+    return None
 
 
 def _view(party: Party, game_map: Map) -> dict:
@@ -126,11 +152,18 @@ async def plan(session: AsyncSession, rules: Rules, account_id: int, party_id: i
     await _check_free(session, party)
     game_map = await _map_of(session, party)
     blocked = await _blocked(session, rules, party)
+    edges = await _edges(session, game_map)
     tiles: list[Tile] = [(party.x, party.y)]
-    for waypoint in waypoints:
+    for number, waypoint in enumerate(waypoints):
         spot = game_map.normalize(*waypoint)
         if spot is None:
-            raise WalkError(f"({waypoint[0]}, {waypoint[1]}) is off the map")
+            edge = _leaving(game_map, waypoint)
+            if edge not in edges:
+                raise WalkError(f"({waypoint[0]}, {waypoint[1]}) is off the map")
+            if number != len(waypoints) - 1:
+                raise WalkError("a route ends where it leaves the map")
+            dx, dy = EDGES[edge]
+            spot = (waypoint[0] - dx, waypoint[1] - dy)
         if not game_map.tile(*spot)["passable"]:
             raise WalkError(f"({spot[0]}, {spot[1]}) can't be walked on")
         if spot in blocked:
@@ -139,6 +172,10 @@ async def plan(session: AsyncSession, rules: Rules, account_id: int, party_id: i
         if way is None:
             raise WalkError(f"there's no way to ({spot[0]}, {spot[1]}) of {rules.route_limit} steps or fewer")
         tiles += way
+        if game_map.normalize(*waypoint) is None:
+            if len(tiles) > rules.route_limit:
+                raise WalkError(f"there's no way off the map of {rules.route_limit} steps or fewer")
+            tiles.append(tuple(waypoint))
     if len(tiles) == 1:
         raise WalkError("the party is there already")
     party.route = {"tiles": [list(tile) for tile in tiles], "at": 0, "revision": game_map.revision}
@@ -153,10 +190,15 @@ async def _stop(session: AsyncSession, party: Party, game_map: Map, why: str) ->
     return {"confirmed": False, "reason": why, "map": game_map.name, "revision": game_map.revision, "x": party.x, "y": party.y}
 
 
-async def step(session: AsyncSession, rules: Rules, account_id: int, party_id: int, x: int, y: int) -> dict:
+async def step(
+    session: AsyncSession, rules: Rules, account_id: int, party_id: int, x: int, y: int,
+    run_edge: Callable[[Hero, MapObject], Awaitable[dict]] | None = None,
+) -> dict:
     """The client has arrived on (x, y), the next tile of the party's route. Confirms it (the party moves there and may meet
     monsters: ``fight`` is then the fight's number and ``monsters`` its keys, and the route is over) or, if it can't, says
-    where the party stands (``confirmed`` false) and ends the route. ``done`` is true on the route's last tile."""
+    where the party stands (``confirmed`` false) and ends the route. ``done`` is true on the route's last tile. A step off an edge
+    that has an event (the route's last tile, beyond the map) leaves the party where it stands, runs the edge's script with
+    $run_edge (hero, edge row) -> the first frame of its conversation, and answers with that as ``dialog`` and the ``edge``."""
     party = await own_party(session, account_id, party_id)
     game_map = await _map_of(session, party)
     route = party.route
@@ -174,7 +216,11 @@ async def step(session: AsyncSession, rules: Rules, account_id: int, party_id: i
     if (x, y) in await _blocked(session, rules, party):
         return await _stop(session, party, game_map, "another party is in the way")
 
+    if game_map.normalize(x, y) is None:
+        return await _leave(session, party, game_map, (x, y), run_edge)
+
     party.x, party.y = x, y
+    await move_heroes(session, party)
     party.steps += 1
     party.walked += 1
     at = route["at"] + 1
@@ -186,6 +232,23 @@ async def step(session: AsyncSession, rules: Rules, account_id: int, party_id: i
         party.route = None
     else:
         party.route = {**route, "at": at}
+    await session.flush()
+    return result
+
+
+async def _leave(session: AsyncSession, party: Party, game_map: Map, tile: Tile, run_edge) -> dict:
+    """The step off an edge of the map: the party stays on its last tile, the route is over, and the edge's script runs."""
+    party.route = None
+    result = {"confirmed": True, "map": game_map.name, "revision": game_map.revision, "x": party.x, "y": party.y, "done": True}
+    direction = _leaving(game_map, tile)
+    edge = (await _edges(session, game_map)).get(direction)
+    if edge is None:  # the edge lost its event since the route was made (the revision check should have caught that)
+        await session.flush()
+        return await _stop(session, party, game_map, "there is nothing beyond that edge")
+    result["edge"] = direction
+    hero = await leader_hero(session, party)
+    if run_edge is not None and hero is not None:
+        result["dialog"] = await run_edge(hero, edge)
     await session.flush()
     return result
 
