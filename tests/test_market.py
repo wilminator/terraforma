@@ -17,6 +17,7 @@ from terraforma.market import service as market
 from terraforma.market.hooks import Market
 from terraforma.npcs import service as npcs
 from terraforma.npcs.hooks import Npcs
+from terraforma.reach.hooks import Reach
 from terraforma.npcs.script import ScriptError, parse
 from terraforma.testing import in_app_db
 
@@ -36,6 +37,7 @@ SEED = {
     ],
 }
 NPCS, ECONOMY, RULES = Npcs(), TeamGold(), Rules()
+REACH = Reach()
 VEND = "Fresh stock.`vend,herb,12,potion,30,sword,150,Maybe later`\nBuy something?`ack`Come again.`jump,end`" "`label,Maybe later`Fine."
 HAWK = "I buy things.`hawk,50,herb,20,Bye`\nWell?`ack`Done.`jump,end`" "`label,Bye`Bye."
 SHOP = "Welcome.`shop,general,Bye`\nWell?`ack`Done.`jump,end`" "`label,Bye`Bye."
@@ -70,8 +72,8 @@ async def a_hero(db, name="Aria", team_gold=500):
 async def talking(db, hero, dialog):
     """The hero talks to a keeper next to them until the dialog waits on its shop; returns that prompt."""
     npc = await npcs.place_npc(db, "keeper", "Keeper", hero.map_id, hero.x + 1, hero.y, dialog)
-    await npcs.talk(db, NPCS, hero, npc.id)
-    return await npcs.activity(db, NPCS, hero, market.COMMANDS)
+    await npcs.talk(db, NPCS, REACH, hero, npc.id)
+    return await npcs.activity(db, NPCS, REACH, hero, market.COMMANDS)
 
 
 async def holding(db, hero, key):
@@ -216,11 +218,11 @@ async def test_a_game_can_price_one_item_differently_for_a_quest(db):
 async def test_no_shop_without_a_conversation_waiting_on_one(db):
     hero, _team = await a_hero(db)
     with pytest.raises(npcs.NpcError, match="not in a conversation"):
-        await npcs.activity(db, NPCS, hero, market.COMMANDS)
+        await npcs.activity(db, NPCS, REACH, hero, market.COMMANDS)
     npc = await npcs.place_npc(db, "keeper", "Keeper", hero.map_id, hero.x + 1, hero.y, "Hello.`ack`Bye.")
-    await npcs.talk(db, NPCS, hero, npc.id)
+    await npcs.talk(db, NPCS, REACH, hero, npc.id)
     with pytest.raises(npcs.NpcError, match="nothing to do"):
-        await npcs.activity(db, NPCS, hero, market.COMMANDS)
+        await npcs.activity(db, NPCS, REACH, hero, market.COMMANDS)
 
 
 async def test_walking_away_ends_the_shopping(db):
@@ -228,9 +230,9 @@ async def test_walking_away_ends_the_shopping(db):
     await talking(db, hero, VEND)
     hero.x += 5
     with pytest.raises(npcs.NpcError):
-        await npcs.activity(db, NPCS, hero, market.COMMANDS)
+        await npcs.activity(db, NPCS, REACH, hero, market.COMMANDS)
     with pytest.raises(npcs.NpcError, match="not in a conversation"):
-        await npcs.activity(db, NPCS, hero, market.COMMANDS)
+        await npcs.activity(db, NPCS, REACH, hero, market.COMMANDS)
 
 
 # --- the calls -------------------------------------------------------------------------------------------------------

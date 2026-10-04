@@ -7,7 +7,7 @@ from pydantic import Field
 
 from ..accounts import ratelimit
 from ..accounts.routes import Strict, limited
-from ..api.deps import ActingAccount, CurrentAccount, Db, GameEconomy, GameMarket, GameNpcs, GameRules
+from ..api.deps import ActingAccount, CurrentAccount, Db, GameEconomy, GameMarket, GameNpcs, GameReach, GameRules
 from ..heroes import inventory
 from ..heroes import service as heroes
 from ..heroes.routes import Id
@@ -35,33 +35,33 @@ def refuse(error: ValueError) -> HTTPException:
 
 
 @router.get("")
-async def shop(hero_id: Id, account: CurrentAccount, db: Db, hooks: GameNpcs, market: GameMarket, rules: GameRules, economy: GameEconomy) -> dict:
+async def shop(hero_id: Id, account: CurrentAccount, db: Db, hooks: GameNpcs, reach: GameReach, market: GameMarket, rules: GameRules, economy: GameEconomy) -> dict:
     """The wares with prices, what the hero could sell and for how much, and their gold."""
     try:
         hero = await heroes.own_hero(db, account, hero_id)
-        prompt = await npcs.activity(db, hooks, hero, service.COMMANDS)
+        prompt = await npcs.activity(db, hooks, reach, hero, service.COMMANDS)
         return await service.view(db, market, rules, economy, hero, prompt)
     except (heroes.HeroError, npcs.NpcError, service.ShopError) as error:
         raise refuse(error) from error
 
 
 @router.post("/buy")
-async def buy(hero_id: Id, body: Buy, request: Request, account: ActingAccount, db: Db, hooks: GameNpcs, market: GameMarket, rules: GameRules, economy: GameEconomy) -> dict:
+async def buy(hero_id: Id, body: Buy, request: Request, account: ActingAccount, db: Db, hooks: GameNpcs, reach: GameReach, market: GameMarket, rules: GameRules, economy: GameEconomy) -> dict:
     await limited(request, ratelimit.TRADE_BY_ACCOUNT, str(account.id))
     try:
         hero = await heroes.own_hero(db, account, hero_id)
-        prompt = await npcs.activity(db, hooks, hero, service.COMMANDS)
+        prompt = await npcs.activity(db, hooks, reach, hero, service.COMMANDS)
         return await service.buy(db, market, rules, economy, hero, prompt, body.item, body.qty)
     except (heroes.HeroError, npcs.NpcError, service.ShopError) as error:
         raise refuse(error) from error
 
 
 @router.post("/sell")
-async def sell(hero_id: Id, body: Sell, request: Request, account: ActingAccount, db: Db, hooks: GameNpcs, market: GameMarket, rules: GameRules, economy: GameEconomy) -> dict:
+async def sell(hero_id: Id, body: Sell, request: Request, account: ActingAccount, db: Db, hooks: GameNpcs, reach: GameReach, market: GameMarket, rules: GameRules, economy: GameEconomy) -> dict:
     await limited(request, ratelimit.TRADE_BY_ACCOUNT, str(account.id))
     try:
         hero = await heroes.own_hero(db, account, hero_id)
-        prompt = await npcs.activity(db, hooks, hero, service.COMMANDS)
+        prompt = await npcs.activity(db, hooks, reach, hero, service.COMMANDS)
         return await service.sell(db, market, rules, economy, hero, prompt, body.position, body.qty)
     except (heroes.HeroError, npcs.NpcError, service.ShopError) as error:
         raise refuse(error) from error

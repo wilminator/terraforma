@@ -14,6 +14,7 @@ from terraforma.heroes.models import Hero
 from terraforma.models import Account
 from terraforma.npcs import service
 from terraforma.npcs.hooks import Npcs
+from terraforma.reach.hooks import Reach
 from terraforma.npcs.models import Npc, NpcTalk
 from terraforma.npcs.script import ScriptError
 from terraforma.parties import service as parties
@@ -27,6 +28,7 @@ pytestmark = pytest.mark.anyio
 PASSWORD = "correct horse battery"
 SEED = {"jobs": [{"key": "fighter", "name": "Fighter", "stat_growth": {"HP": 20}}]}
 NPCS = Npcs()
+REACH = Reach()
 
 KEEPER = ("Welcome to the Tavern.`ack`What can I do for you?`switch,Rooms,rooms,Chat,chat`\nWell?\n`jump,end`"
           "`label,rooms``inn,10,end`A room is 10 gold. Rest?`ack`Sleep well.`jump,end`"
@@ -69,19 +71,19 @@ async def test_a_dialog_that_does_not_check_is_not_placed(db):
 async def test_a_hero_talks_from_a_tile_next_to_the_counter_that_the_npc_is_also_next_to(db):
     hero = await a_hero(db)  # at (0, 0); the counter is the row y=1 at x=0..2, the keeper at (1, 2)
     npc = await keeper(db, hero)
-    assert await NPCS.can_talk(db, npc, hero) is None, "next to the counter tile (0, 1)"
+    assert await REACH.npc(db, "talk", hero, npc) is None, "next to the counter tile (0, 1)"
     hero.x, hero.y = 1, 1
-    assert await NPCS.can_talk(db, npc, hero) is None, "on a counter tile"
+    assert await REACH.npc(db, "talk", hero, npc) is None, "on a counter tile"
     hero.x, hero.y = 3, 0
-    assert await NPCS.can_talk(db, npc, hero) is None, "diagonally next to the counter tile (2, 1)"
+    assert await REACH.npc(db, "talk", hero, npc) is None, "diagonally next to the counter tile (2, 1)"
     hero.x, hero.y = 4, 1
-    assert await NPCS.can_talk(db, npc, hero) == "stand at the counter to talk", "two tiles from the counter's end"
+    assert await REACH.npc(db, "talk", hero, npc) == "stand at the counter to talk", "two tiles from the counter's end"
     hero.x, hero.y = 1, 3
-    assert await NPCS.can_talk(db, npc, hero) == "stand at the counter to talk", "on the keeper's side, no counter between"
+    assert await REACH.npc(db, "talk", hero, npc) == "stand at the counter to talk", "on the keeper's side, no counter between"
     npc.counter = []
-    assert await NPCS.can_talk(db, npc, hero) is None, "with no counter, anywhere next to the NPC"
+    assert await REACH.npc(db, "talk", hero, npc) is None, "with no counter, anywhere next to the NPC"
     hero.x, hero.y = 9, 9
-    assert await NPCS.can_talk(db, npc, hero) == "that person is too far away"
+    assert await REACH.npc(db, "talk", hero, npc) == "that person is too far away"
 
 
 async def test_an_npc_on_another_map_is_not_here(db):
@@ -93,21 +95,21 @@ async def test_an_npc_on_another_map_is_not_here(db):
     db.add(other)
     await db.flush()
     npc.map_id = other.id
-    assert await NPCS.can_talk(db, npc, hero) == "that person is not here"
-    assert await service.npcs_here(db, NPCS, hero) == []
+    assert await REACH.npc(db, "talk", hero, npc) == "that person is not here"
+    assert await service.npcs_here(db, REACH, hero) == []
 
 
 async def test_the_people_a_hero_can_talk_to_are_listed_by_the_games_rule(db):
-    class Locked(Npcs):
-        async def can_talk(self, session, npc, hero):
-            return "the guard waves you off" if npc.key == "guard" else await super().can_talk(session, npc, hero)
+    class Locked(Reach):
+        async def npc(self, session, action, actor, npc):
+            return "the guard waves you off" if npc.key == "guard" else await super().npc(session, action, actor, npc)
 
     hero = await a_hero(db)
     await keeper(db, hero)
     await keeper(db, hero, key="guard", counter=())
     assert [npc.key for npc in await service.npcs_here(db, Locked(), hero)] == ["keeper"]
     with pytest.raises(service.NpcError, match="waves you off"):
-        await service.talk(db, Locked(), hero, (await db.scalar(select(Npc).where(Npc.key == "guard"))).id)
+        await service.talk(db, NPCS, Locked(), hero, (await db.scalar(select(Npc).where(Npc.key == "guard"))).id)
 
 
 # --- a conversation --------------------------------------------------------------------------------------------------
@@ -115,23 +117,23 @@ async def test_the_people_a_hero_can_talk_to_are_listed_by_the_games_rule(db):
 async def test_a_conversation_runs_one_answer_at_a_time(db):
     hero = await a_hero(db)
     npc = await keeper(db, hero)
-    first = await service.talk(db, NPCS, hero, npc.id)
+    first = await service.talk(db, NPCS, REACH, hero, npc.id)
     assert first["npc"] == {"id": npc.id, "key": "keeper", "name": "Keeper"}
     NEXT = {"choice": [], "next": True, "cancel": False}
     assert first["events"] == [{"type": "text", "text": "Welcome to the Tavern."}] and first["prompt"] == {"type": "ack", "accepts": NEXT} and not first["ended"]
     assert (await service.current(db, hero))["prompt"] == {"type": "ack", "accepts": NEXT}
-    asked = await service.answer(db, NPCS, hero, None)
+    asked = await service.answer(db, NPCS, REACH, hero, None)
     assert asked["events"] == [{"type": "text", "text": "What can I do for you?\n"}] or asked["events"][0]["text"].startswith("What can I do")
     assert asked["prompt"] == {
         "type": "choice", "kind": "switch", "options": [{"text": "Rooms"}, {"text": "Chat"}], "accepts": {"choice": [0, 1], "next": False, "cancel": True},
     }, "where each answer goes stays on the server"
-    inn = await service.answer(db, NPCS, hero, 0)
+    inn = await service.answer(db, NPCS, REACH, hero, 0)
     assert inn["prompt"]["kind"] == "inn" and inn["events"][0]["text"] == "A room is 10 gold. Rest?"
-    yes = await service.answer(db, NPCS, hero, 0)
+    yes = await service.answer(db, NPCS, REACH, hero, 0)
     assert yes["prompt"] == {"type": "activity", "command": "inn", "parts": ["10", "end"], "accepts": NEXT}, "nothing rests the party until a game says how"
-    slept = await service.answer(db, NPCS, hero, None)
+    slept = await service.answer(db, NPCS, REACH, hero, None)
     assert slept["prompt"] == {"type": "ack", "accepts": NEXT}, "with no label, the activity's end goes on with the text"
-    done = await service.answer(db, NPCS, hero, None)
+    done = await service.answer(db, NPCS, REACH, hero, None)
     assert done["events"] == [{"type": "text", "text": "Sleep well."}] and done["ended"] and done["prompt"] is None
     assert await service.current(db, hero) == {"talking": False}
     assert await db.scalar(select(func.count()).select_from(NpcTalk)) == 0
@@ -140,18 +142,18 @@ async def test_a_conversation_runs_one_answer_at_a_time(db):
 async def test_choosing_the_other_answer_goes_the_other_way(db):
     hero = await a_hero(db)
     npc = await keeper(db, hero)
-    await service.talk(db, NPCS, hero, npc.id)
-    await service.answer(db, NPCS, hero, None)
-    chat = await service.answer(db, NPCS, hero, 1)
+    await service.talk(db, NPCS, REACH, hero, npc.id)
+    await service.answer(db, NPCS, REACH, hero, None)
+    chat = await service.answer(db, NPCS, REACH, hero, 1)
     assert chat["events"] == [{"type": "text", "text": "Fine weather."}] and chat["ended"]
 
 
 async def test_a_wrong_answer_is_refused_and_the_conversation_stays_where_it_was(db):
     hero = await a_hero(db)
     npc = await keeper(db, hero)
-    await service.talk(db, NPCS, hero, npc.id)
+    await service.talk(db, NPCS, REACH, hero, npc.id)
     with pytest.raises(service.NpcError, match="only Next"):
-        await service.answer(db, NPCS, hero, 0)
+        await service.answer(db, NPCS, REACH, hero, 0)
     assert (await service.current(db, hero))["prompt"]["type"] == "ack", "only a broken text ends the talk, not a wrong answer"
 
 
@@ -159,8 +161,8 @@ async def test_talking_to_someone_else_leaves_the_first_conversation(db):
     hero = await a_hero(db)
     one = await keeper(db, hero)
     two = await keeper(db, hero, key="cook", dialog="`ack`Soup?")
-    await service.talk(db, NPCS, hero, one.id)
-    await service.talk(db, NPCS, hero, two.id)
+    await service.talk(db, NPCS, REACH, hero, one.id)
+    await service.talk(db, NPCS, REACH, hero, two.id)
     assert await db.scalar(select(func.count()).select_from(NpcTalk)) == 1
     assert (await service.current(db, hero))["npc"]["key"] == "cook"
     await service.leave(db, hero)
@@ -170,33 +172,33 @@ async def test_talking_to_someone_else_leaves_the_first_conversation(db):
 async def test_walking_away_ends_the_conversation(db):
     hero = await a_hero(db)
     npc = await keeper(db, hero)
-    await service.talk(db, NPCS, hero, npc.id)
+    await service.talk(db, NPCS, REACH, hero, npc.id)
     hero.x, hero.y = 20, 20
     with pytest.raises(service.NpcError, match="counter"):
-        await service.answer(db, NPCS, hero, None)
+        await service.answer(db, NPCS, REACH, hero, None)
     assert await service.current(db, hero) == {"talking": False}
 
 
 async def test_going_on_without_a_conversation_is_refused(db):
     hero = await a_hero(db)
     with pytest.raises(service.NpcError, match="not in a conversation"):
-        await service.answer(db, NPCS, hero, None)
+        await service.answer(db, NPCS, REACH, hero, None)
     with pytest.raises(service.NoSuchNpc):
-        await service.talk(db, NPCS, hero, 999)
+        await service.talk(db, NPCS, REACH, hero, 999)
 
 
 async def test_a_hero_in_a_fight_cannot_talk(db):
     hero, _record = await a_team_fights_a_rat(db)
     npc = await keeper(db, hero)
     with pytest.raises(service.NpcError, match="in a fight"):
-        await service.talk(db, NPCS, hero, npc.id)
+        await service.talk(db, NPCS, REACH, hero, npc.id)
 
 
 async def test_a_dialog_that_is_broken_after_it_was_placed_ends_the_talk_with_the_reason(db):
     hero = await a_hero(db)
     npc = await keeper(db, hero, dialog="`label,a``jump,a`")
     with pytest.raises(service.NpcError, match="circles"):
-        await service.talk(db, NPCS, hero, npc.id)
+        await service.talk(db, NPCS, REACH, hero, npc.id)
     assert await service.current(db, hero) == {"talking": False}
 
 
@@ -209,10 +211,10 @@ async def test_the_dialog_tags_see_the_players_teams_and_party(db):
     who = await service.who_is(db, hero)
     assert who.team_ids == {team.id} and who.party_id == party.id
     npc = await keeper(db, hero, dialog=f"`team,{team.id},no`Hello, Vanguard.`jump,end``label,no`Who?")
-    assert (await service.talk(db, NPCS, hero, npc.id))["events"] == [{"type": "text", "text": "Hello, Vanguard."}]
+    assert (await service.talk(db, NPCS, REACH, hero, npc.id))["events"] == [{"type": "text", "text": "Hello, Vanguard."}]
     stranger = await a_hero(db, "Zed")
     stranger.x, stranger.y = hero.x, hero.y
-    assert (await service.talk(db, NPCS, stranger, npc.id))["events"] == [{"type": "text", "text": "Who?"}]
+    assert (await service.talk(db, NPCS, REACH, stranger, npc.id))["events"] == [{"type": "text", "text": "Who?"}]
 
 
 async def test_a_game_can_handle_the_tags_the_engine_leaves_to_it(db):
@@ -226,14 +228,14 @@ async def test_a_game_can_handle_the_tags_the_engine_leaves_to_it(db):
     hero = await a_hero(db)
     hero.vitals = {"HP": 1}
     npc = await keeper(db, hero, dialog="`heal`You look better.")
-    frame = await service.talk(db, Healer(), hero, npc.id)
+    frame = await service.talk(db, Healer(), REACH, hero, npc.id)
     assert hero.vitals is None and frame["events"] == [{"type": "text", "text": "You look better."}] and frame["ended"]
 
 
 async def test_deleting_a_hero_in_a_conversation_works(db):
     hero = await a_hero(db)
     npc = await keeper(db, hero)
-    await service.talk(db, NPCS, hero, npc.id)
+    await service.talk(db, NPCS, REACH, hero, npc.id)
     await heroes.delete_hero(db, await db.get(Account, hero.account_id), hero.id)
     assert await db.scalar(select(func.count()).select_from(NpcTalk)) == 0 and await db.get(Hero, hero.id) is None
 

@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import Field
 
 from ..accounts.routes import Strict
-from ..api.deps import ActingAccount, CurrentAccount, Db, GameEconomy, GameInn, GameNpcs, GameRules
+from ..api.deps import ActingAccount, CurrentAccount, Db, GameEconomy, GameInn, GameNpcs, GameReach, GameRules
 from ..heroes import service as heroes
 from ..heroes.routes import Id
 from ..heroes.routes import refuse as refuse_hero
@@ -32,22 +32,22 @@ def refuse(error: ValueError) -> HTTPException:
 
 
 @router.get("/npcs")
-async def npcs_here(hero_id: Id, account: CurrentAccount, db: Db, npcs: GameNpcs) -> list[dict]:
+async def npcs_here(hero_id: Id, account: CurrentAccount, db: Db, reach: GameReach) -> list[dict]:
     """The people the hero could talk to from where they stand."""
     try:
         hero = await heroes.own_hero(db, account, hero_id)
     except heroes.HeroError as error:
         raise refuse(error) from error
-    return [{"id": npc.id, "key": npc.key, "name": npc.name} for npc in await service.npcs_here(db, npcs, hero)]
+    return [{"id": npc.id, "key": npc.key, "name": npc.name} for npc in await service.npcs_here(db, reach, hero)]
 
 
 @router.post("/npcs/{npc_id}/talk")
-async def talk(hero_id: Id, npc_id: Id, account: ActingAccount, db: Db, npcs: GameNpcs, inn: GameInn, rules: GameRules, economy: GameEconomy) -> dict:
+async def talk(hero_id: Id, npc_id: Id, account: ActingAccount, db: Db, npcs: GameNpcs, reach: GameReach, inn: GameInn, rules: GameRules, economy: GameEconomy) -> dict:
     """The hero starts talking to the NPC. Refused (409) unless the hero may talk to them from here and is not in a fight.
     Answers with what was said (``events``: text and cues, in order), what the NPC asks (``prompt``) and whether it ended."""
     try:
         hero = await heroes.own_hero(db, account, hero_id)
-        return await service.talk(db, npcs, hero, npc_id, partial(inns.rest, db, inn, rules, economy), economy)
+        return await service.talk(db, npcs, reach, hero, npc_id, partial(inns.rest, db, inn, rules, economy), economy)
     except (heroes.HeroError, service.NpcError) as error:
         raise refuse(error) from error
 
@@ -63,11 +63,11 @@ async def dialog(hero_id: Id, account: CurrentAccount, db: Db) -> dict:
 
 
 @router.post("/dialog/next")
-async def next_step(hero_id: Id, body: Next, account: ActingAccount, db: Db, npcs: GameNpcs, inn: GameInn, rules: GameRules, economy: GameEconomy) -> dict:
+async def next_step(hero_id: Id, body: Next, account: ActingAccount, db: Db, npcs: GameNpcs, reach: GameReach, inn: GameInn, rules: GameRules, economy: GameEconomy) -> dict:
     """Goes on: Next (no choice), or the answer picked."""
     try:
         hero = await heroes.own_hero(db, account, hero_id)
-        return await service.answer(db, npcs, hero, body.choice, partial(inns.rest, db, inn, rules, economy), economy)
+        return await service.answer(db, npcs, reach, hero, body.choice, partial(inns.rest, db, inn, rules, economy), economy)
     except (heroes.HeroError, service.NpcError) as error:
         raise refuse(error) from error
 

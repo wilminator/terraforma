@@ -1,4 +1,4 @@
-"""Talking to NPCs: a hero stands where the game's ``Npcs.can_talk`` allows, and the NPC's dialog runs on the server, one step
+"""Talking to NPCs: a hero stands where the game's ``Reach.npc`` allows a talk, and the NPC's dialog runs on the server, one step
 at a time (``npcs.script``). The server decides everything: what is said, what is asked and where an answer goes; the browser
 shows text and cues, and sends back the index of an answer. A hero is in at most one conversation, and in none while in a
 fight that is still running.
@@ -13,6 +13,7 @@ from ..economy import Economy
 from ..heroes.field import in_running_fight
 from ..heroes.models import Hero, Team, TeamMember
 from ..parties import service as parties
+from ..reach.hooks import TALK, Reach
 from .hooks import Npcs
 from .models import Npc, NpcTalk
 from .state import DialogState
@@ -52,10 +53,10 @@ async def place_npc(session: AsyncSession, key: str, name: str, map_id: int, x: 
     return npc
 
 
-async def npcs_here(session: AsyncSession, hooks: Npcs, hero: Hero) -> list[Npc]:
+async def npcs_here(session: AsyncSession, reach: Reach, hero: Hero) -> list[Npc]:
     """The NPCs on the hero's map the hero could talk to from where they stand."""
     rows = await session.scalars(select(Npc).where(Npc.map_id == hero.map_id).order_by(Npc.name, Npc.id))
-    return [npc for npc in rows.all() if await hooks.can_talk(session, npc, hero) is None]
+    return [npc for npc in rows.all() if await reach.npc(session, TALK, hero, npc) is None]
 
 
 async def who_is(session: AsyncSession, hero: Hero) -> Who:
@@ -96,10 +97,10 @@ async def _talk_of(session: AsyncSession, hero: Hero) -> NpcTalk | None:
     return await session.scalar(select(NpcTalk).where(NpcTalk.hero_id == hero.id))
 
 
-async def _may_talk(session: AsyncSession, hooks: Npcs, npc: Npc, hero: Hero) -> None:
+async def _may_talk(session: AsyncSession, reach: Reach, npc: Npc, hero: Hero) -> None:
     if await in_running_fight(session, hero):
         raise NpcError(f"{hero.name} is in a fight")
-    if reason := await hooks.can_talk(session, npc, hero):
+    if reason := await reach.npc(session, TALK, hero, npc):
         raise NpcError(reason)
 
 
@@ -132,17 +133,17 @@ async def _run(session: AsyncSession, hooks: Npcs, hero: Hero, npc: Npc, talk: N
     return frame(npc, result["events"], result["prompt"])
 
 
-async def talk(session: AsyncSession, hooks: Npcs, hero: Hero, npc_id: int, rest: Rest | None = None, economy: Economy | None = None) -> dict:
+async def talk(session: AsyncSession, hooks: Npcs, reach: Reach, hero: Hero, npc_id: int, rest: Rest | None = None, economy: Economy | None = None) -> dict:
     """The hero starts talking to the NPC (leaving any other conversation): what it says first, and what it asks."""
     npc = await session.get(Npc, npc_id)
     if npc is None:
         raise NoSuchNpc("there's no such person")
-    await _may_talk(session, hooks, npc, hero)
+    await _may_talk(session, reach, npc, hero)
     await session.execute(delete(NpcTalk).where(NpcTalk.hero_id == hero.id))
     return await _run(session, hooks, hero, npc, None, None, rest, economy)
 
 
-async def answer(session: AsyncSession, hooks: Npcs, hero: Hero, choice: int | None, rest: Rest | None = None, economy: Economy | None = None) -> dict:
+async def answer(session: AsyncSession, hooks: Npcs, reach: Reach, hero: Hero, choice: int | None, rest: Rest | None = None, economy: Economy | None = None) -> dict:
     """The hero goes on: Next (no $choice), or the index of the answer picked (None cancels where a prompt can be cancelled).
     The hero must still be where they can talk, or the conversation ends."""
     current = await _talk_of(session, hero)
@@ -150,7 +151,7 @@ async def answer(session: AsyncSession, hooks: Npcs, hero: Hero, choice: int | N
         raise NpcError("not in a conversation")
     npc = await session.get(Npc, current.npc_id)
     try:
-        await _may_talk(session, hooks, npc, hero)
+        await _may_talk(session, reach, npc, hero)
     except NpcError:
         await session.delete(current)
         await session.flush()
@@ -158,7 +159,7 @@ async def answer(session: AsyncSession, hooks: Npcs, hero: Hero, choice: int | N
     return await _run(session, hooks, hero, npc, current, choice, rest, economy)
 
 
-async def activity(session: AsyncSession, hooks: Npcs, hero: Hero, commands: tuple[str, ...]) -> dict:
+async def activity(session: AsyncSession, hooks: Npcs, reach: Reach, hero: Hero, commands: tuple[str, ...]) -> dict:
     """The activity the hero's conversation is waiting on, when it is one of $commands: its prompt (``command``, ``parts``). An
     activity such as a shop is run from the conversation, never from what the browser says, so the NPC's own text decides what
     is sold and for how much. The hero must still be where they can talk, or the conversation ends."""
@@ -166,7 +167,7 @@ async def activity(session: AsyncSession, hooks: Npcs, hero: Hero, commands: tup
     if row is None:
         raise NpcError("not in a conversation")
     try:
-        await _may_talk(session, hooks, await session.get(Npc, row.npc_id), hero)
+        await _may_talk(session, reach, await session.get(Npc, row.npc_id), hero)
     except NpcError:
         await session.delete(row)
         await session.flush()

@@ -19,6 +19,7 @@ from .market.hooks import Market
 from .guild.hooks import Guild
 from .npcs.hooks import Npcs
 from .npcs.inn import Inn
+from .reach.hooks import Reach
 from .towns.hooks import Towns
 
 
@@ -40,8 +41,10 @@ class Game:
     towns: Towns = field(default_factory=Towns)
     # Where a party may pick a fight with another party (nowhere, by default); see ``Rules.may_start_pvp`` for the range window.
     pvp: PvpZones = field(default_factory=PvpZones)
-    # Who may talk to an NPC from where they stand, and what a game does with the dialog tags the engine leaves to it (heal, a shop...).
+    # What a game does with the dialog tags the engine leaves to it (heal, a shop...).
     npcs: Npcs = field(default_factory=Npcs)
+    # Who a hero can reach for an action (talk, invite, open, search, fight, help) from where they stand: one rule for NPCs, one for parties.
+    reach: Reach = field(default_factory=Reach)
     market: Market = field(default_factory=Market)
     inn: Inn = field(default_factory=Inn)
     guild: Guild = field(default_factory=Guild)
