@@ -85,7 +85,7 @@ def _groups(fighters: list, size: int) -> dict[int, list]:
 
 async def start_team_fight(session: AsyncSession, team: Team, monster_keys: list[str], rules: Rules, area_drops: list[str] | None = None) -> FightRecord:
     """A fight between a player's team (party 0) and monsters (party 1), where the team's first hero stands. The round
-    clock starts now. $area_drops are the keys of the area's own drop tables (the map's), rolled when the team wins. Raises Refused for a team with no heroes, no monsters, too many of them, or a hero who is in a
+    clock starts now. $area_drops are the keys of the area's own drop tables, rolled when the team wins (the zone's where the fight is, unless given). Raises Refused for a team with no heroes, no monsters, too many of them, or a hero who is in a
     fight already."""
     heroes, teams = await team_party(session, team, rules)
     if not heroes:
@@ -98,6 +98,10 @@ async def start_team_fight(session: AsyncSession, team: Team, monster_keys: list
     )
     if busy is not None:
         raise Refused("a hero of that team is already in a fight")
+    first = await session.get(Hero, heroes[0].charid)
+    game_map = await session.get(Map, first.map_id)
+    if area_drops is None:  # the area's own drops are the zone's, where the fight is
+        area_drops = game_map.zone(first.x, first.y)["drops"]
     monsters = [await monster_fighter(session, key, rules) for key in monster_keys]
     multiplier = timing.fight_multiplier([await timing.multiplier_for(session, team.account_id)])
     timing.toughen(monsters, rules, rules.time_bonus(multiplier))
@@ -108,8 +112,9 @@ async def start_team_fight(session: AsyncSession, team: Team, monster_keys: list
     fight = build_fight({0: _groups(heroes, rules.group_size), 1: _groups(monsters, rules.group_size)}, await known_statuses(session), tables, list(area_drops or ()))
     fight.parties[0].teams = teams
     await standing.attach(session, fight)
-    first = await session.get(Hero, heroes[0].charid)
-    record = await store.create_fight(session, await session.get(Map, first.map_id), fight, first.x, first.y)
+    record = await store.create_fight(session, game_map, fight, first.x, first.y)
+    if (own := await parties.party_of(session, team.id)) is not None:
+        own.steps = 0
     record.time_multiplier = multiplier
     record.round_deadline = wallclock.now() + timedelta(seconds=rules.round_length(multiplier))
     await session.flush()
@@ -136,6 +141,9 @@ async def start_party_fight(session: AsyncSession, party_id: int, monster_keys: 
     )
     if busy is not None:
         raise Refused("a hero of that party is already in a fight")
+    game_map = await session.get(Map, party.map_id)
+    if area_drops is None:
+        area_drops = game_map.zone(party.x, party.y)["drops"]
     monsters = [await monster_fighter(session, key, rules) for key in monster_keys]
     accounts = (await session.scalars(select(Hero.account_id).where(Hero.id.in_(hero_ids)).distinct())).all()
     multiplier = timing.fight_multiplier([await timing.multiplier_for(session, owner) for owner in accounts])
@@ -147,7 +155,8 @@ async def start_party_fight(session: AsyncSession, party_id: int, monster_keys: 
     fight = build_fight({0: _groups(heroes, rules.group_size), 1: _groups(monsters, rules.group_size)}, await known_statuses(session), tables, list(area_drops or ()))
     fight.parties[0].teams = teams
     await standing.attach(session, fight)
-    record = await store.create_fight(session, await session.get(Map, party.map_id), fight, party.x, party.y)
+    record = await store.create_fight(session, game_map, fight, party.x, party.y)
+    party.steps = 0  # the walk to the next fight starts over (``Map.safe_steps``)
     record.time_multiplier = multiplier
     record.round_deadline = wallclock.now() + timedelta(seconds=rules.round_length(multiplier))
     await session.flush()

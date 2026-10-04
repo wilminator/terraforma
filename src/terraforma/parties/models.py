@@ -1,6 +1,6 @@
 """A party is a collection of whole teams. It stands on a map, like everything that exists somewhere."""
 
-from sqlalchemy import Boolean, ForeignKey, Integer, UniqueConstraint
+from sqlalchemy import JSON, Boolean, ForeignKey, Integer, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db.base import Base, Timestamps
@@ -17,6 +17,14 @@ class Party(Located, Timestamps, Base):
     leader_account_id: Mapped[int | None] = mapped_column(Integer, index=True)
     #: Whether the party is looking for members: the guild's search lists open parties, and only those can be asked to take a team.
     open: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    #: Steps taken since the party entered its map or last fought: the map's ``safe_steps`` count against this
+    #: (``maps.walking``). It starts over when the party fights.
+    steps: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    #: Every step the party has ever walked; it numbers the encounter rolls, so each step has a stream of its own.
+    walked: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    #: The route the server gave the party: ``{"tiles": [[x, y], ...], "at": index of the last confirmed tile, "revision": the map's}``,
+    #: the first tile being where the party stood. None when the party is not walking. Plain JSON (whole numbers only).
+    route: Mapped[dict | None] = mapped_column(JSON)
 
 
 class PartyTeam(Base):
