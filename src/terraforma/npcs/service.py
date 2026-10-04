@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..economy import Economy
 from ..heroes.field import in_running_fight
 from ..heroes.models import Hero, Team, TeamMember
+from ..maps.models import EDGE, MapObject
 from ..parties import service as parties
 from ..reach.hooks import TALK, Reach
 from .hooks import Npcs
@@ -89,22 +90,38 @@ def public(prompt: dict | None) -> dict | None:
     return shown
 
 
-def frame(npc: Npc, events: list[dict], prompt: dict | None) -> dict:
-    return {"npc": {"id": npc.id, "key": npc.key, "name": npc.name}, "events": events, "prompt": public(prompt), "ended": prompt is None}
+def frame(source: Npc | MapObject, events: list[dict], prompt: dict | None) -> dict:
+    """What the browser gets of a step of a conversation. A map object's frame also says whether to open the dialog window
+    (``window``): it is only for a step that asks something of the hero; what such a script says otherwise is shown as it
+    is (``events``), without one."""
+    if isinstance(source, MapObject):
+        return {"object": {"id": source.id, "key": source.key, "name": source.name, "kind": source.kind}, "events": events,
+                "prompt": public(prompt), "ended": prompt is None, "window": prompt is not None}
+    return {"npc": {"id": source.id, "key": source.key, "name": source.name}, "events": events, "prompt": public(prompt), "ended": prompt is None}
+
+
+async def source_of(session: AsyncSession, row: NpcTalk) -> Npc | MapObject:
+    """Who or what the conversation is with."""
+    return await session.get(MapObject, row.object_id) if row.object_id is not None else await session.get(Npc, row.npc_id)
 
 
 async def _talk_of(session: AsyncSession, hero: Hero) -> NpcTalk | None:
     return await session.scalar(select(NpcTalk).where(NpcTalk.hero_id == hero.id))
 
 
-async def _may_talk(session: AsyncSession, reach: Reach, npc: Npc, hero: Hero) -> None:
+async def may_talk(session: AsyncSession, reach: Reach, source: Npc | MapObject, hero: Hero) -> None:
+    """The hero is in a fight, or out of reach of whoever they talk to. A map object is asked by the reach rule for its own
+    action; an edge event has no one to reach, and a conversation with one only needs the hero out of a fight."""
     if await in_running_fight(session, hero):
         raise NpcError(f"{hero.name} is in a fight")
-    if reason := await reach.npc(session, TALK, hero, npc):
+    if isinstance(source, MapObject):
+        if source.kind != EDGE and (reason := await reach.map_object(session, source.action, hero, source)):
+            raise NpcError(reason)
+    elif reason := await reach.npc(session, TALK, hero, source):
         raise NpcError(reason)
 
 
-async def _run(session: AsyncSession, hooks: Npcs, hero: Hero, npc: Npc, talk: NpcTalk | None, choice: int | None, rest: Rest | None = None, economy: Economy | None = None) -> dict:
+async def _run(session: AsyncSession, hooks: Npcs, hero: Hero, npc: Npc | MapObject, talk: NpcTalk | None, choice: int | None, rest: Rest | None = None, economy: Economy | None = None) -> dict:
     script: Script = parse(npc.dialog)
     who = await who_is(session, hero)
 
@@ -126,7 +143,8 @@ async def _run(session: AsyncSession, hooks: Npcs, hero: Hero, npc: Npc, talk: N
         if talk is not None:
             await session.delete(talk)
     elif talk is None:
-        session.add(NpcTalk(hero_id=hero.id, npc_id=npc.id, pos=result["pos"], prompt=result["prompt"]))
+        by = {"object_id": npc.id} if isinstance(npc, MapObject) else {"npc_id": npc.id}
+        session.add(NpcTalk(hero_id=hero.id, pos=result["pos"], prompt=result["prompt"], **by))
     else:
         talk.pos, talk.prompt = result["pos"], result["prompt"]
     await session.flush()
@@ -138,9 +156,15 @@ async def talk(session: AsyncSession, hooks: Npcs, reach: Reach, hero: Hero, npc
     npc = await session.get(Npc, npc_id)
     if npc is None:
         raise NoSuchNpc("there's no such person")
-    await _may_talk(session, reach, npc, hero)
+    await may_talk(session, reach, npc, hero)
+    return await start(session, hooks, hero, npc, rest, economy)
+
+
+async def start(session: AsyncSession, hooks: Npcs, hero: Hero, source: Npc | MapObject, rest: Rest | None = None, economy: Economy | None = None) -> dict:
+    """The hero's conversation with the NPC or map object begins (any other ends): what it says first, and what it asks. The
+    caller has checked the hero may (``talk`` for an NPC, ``maps.objects.use`` for an object)."""
     await session.execute(delete(NpcTalk).where(NpcTalk.hero_id == hero.id))
-    return await _run(session, hooks, hero, npc, None, None, rest, economy)
+    return await _run(session, hooks, hero, source, None, None, rest, economy)
 
 
 async def answer(session: AsyncSession, hooks: Npcs, reach: Reach, hero: Hero, choice: int | None, rest: Rest | None = None, economy: Economy | None = None) -> dict:
@@ -149,9 +173,9 @@ async def answer(session: AsyncSession, hooks: Npcs, reach: Reach, hero: Hero, c
     current = await _talk_of(session, hero)
     if current is None:
         raise NpcError("not in a conversation")
-    npc = await session.get(Npc, current.npc_id)
+    npc = await source_of(session, current)
     try:
-        await _may_talk(session, reach, npc, hero)
+        await may_talk(session, reach, npc, hero)
     except NpcError:
         await session.delete(current)
         await session.flush()
@@ -167,7 +191,7 @@ async def activity(session: AsyncSession, hooks: Npcs, reach: Reach, hero: Hero,
     if row is None:
         raise NpcError("not in a conversation")
     try:
-        await _may_talk(session, reach, await session.get(Npc, row.npc_id), hero)
+        await may_talk(session, reach, await source_of(session, row), hero)
     except NpcError:
         await session.delete(row)
         await session.flush()
@@ -182,7 +206,7 @@ async def current(session: AsyncSession, hero: Hero) -> dict:
     row = await _talk_of(session, hero)
     if row is None:
         return {"talking": False}
-    return {"talking": True, **frame(await session.get(Npc, row.npc_id), [], row.prompt)}
+    return {"talking": True, **frame(await source_of(session, row), [], row.prompt)}
 
 
 async def leave(session: AsyncSession, hero: Hero) -> None:

@@ -17,6 +17,8 @@ from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, ValidationError, ValidationInfo, model_validator
 
+from ..npcs.script import ScriptError, parse, tags
+
 STATS = ("HP", "MP", "Speed", "Accuracy", "Strength", "Dodge", "Block", "Power", "Resistance", "Focus")
 #: The stats that are pools (``Rules.resource_names``): effects that push a stat's current value skip them.
 RESOURCES = ("HP", "MP")
@@ -282,6 +284,18 @@ class Monster(Strict):
     ai: MonsterAi = MonsterAi()
 
 
+#: The longest an event script is (the same as a dialog's, ``npcs.script.MAX_TEXT``).
+MAX_SCRIPT = 20000
+
+
+def _check_script(text: str, what: str = "script") -> None:
+    """An event script is dialog text, checked as an NPC's is: ValueError says where it goes wrong."""
+    try:
+        parse(text)
+    except ScriptError as error:
+        raise ValueError(f"{what}: {error}") from error
+
+
 class Tile(Strict):
     """One kind of tile in a map's tileset; the map's grid says which kind each tile is, by its place in the tileset.
     ``passable`` says whether a party can step on it, ``poison`` whether stepping on it poisons (what that does is the
@@ -312,6 +326,26 @@ class Zone(Strict):
     pvp: bool = False
 
 
+class MapObjectSeed(Strict):
+    """Something that stands on a map and runs an event script when a hero uses it: a chest, a door, a sign. ``script`` is
+    dialog text (``npcs.script``; plain text is said, a ``warp`` tag moves the party). ``action`` is the kind of reach it takes
+    (``Reach.object``): ``open`` by default, ``search`` or a game's own. ``kind`` is the game's word for it (``chest``, ``door``,
+    ``sign``); the engine treats them all alike and the page may draw them differently."""
+
+    key: Key
+    name: str = Field(min_length=1, max_length=64)
+    kind: Key = "chest"
+    action: Annotated[str, Field(pattern=r"^[a-z_]{1,32}$")] = "open"
+    x: int = Field(ge=0, lt=MAP_SIDE)
+    y: int = Field(ge=0, lt=MAP_SIDE)
+    script: str = Field(min_length=1, max_length=MAX_SCRIPT)
+
+    @model_validator(mode="after")
+    def _the_script_is_dialog(self):
+        _check_script(self.script)
+        return self
+
+
 class MapSeed(Strict):
     """A map: ``tiles`` is its grid (rows, top to bottom) of places in ``tileset``; ``zone_tiles`` is a second grid of
     places in ``zones`` (left out: the whole map is the first zone). ``wrap_x`` and ``wrap_y`` make walking off the
@@ -327,6 +361,8 @@ class MapSeed(Strict):
     tiles: list[list[int]] = Field(min_length=1, max_length=MAP_SIDE)
     zones: list[Zone] = Field(default=[Zone()], min_length=1, max_length=256)
     zone_tiles: list[list[int]] | None = None
+    edges: dict[Literal["north", "south", "east", "west"], str] = Field(default={})
+    objects: list[MapObjectSeed] = Field(default=[], max_length=1000)
 
     @property
     def width(self) -> int:
@@ -347,6 +383,16 @@ class MapSeed(Strict):
                 raise ValueError("zone_tiles: must be the same size as tiles")
             if any(not 0 <= zone < len(self.zones) for row in self.zone_tiles for zone in row):
                 raise ValueError(f"zone_tiles: a zone is a place in zones (0 to {len(self.zones) - 1})")
+        for direction, script in self.edges.items():
+            if self.wrap_x if direction in ("east", "west") else self.wrap_y:
+                raise ValueError(f"edges: the {direction} edge wraps round, so it is no edge and can't have an event")
+            _check_script(script, f"edges.{direction}")
+        keys = [each.key for each in self.objects]
+        if len(set(keys)) != len(keys):
+            raise ValueError("objects: a key is used twice on this map")
+        for each in self.objects:
+            if each.x >= self.width or each.y >= self.height:
+                raise ValueError(f"objects: {each.key} stands off the map ({each.x}, {each.y})")
         return self
 
 
@@ -517,6 +563,21 @@ def check_seed(seed: dict[str, list[dict]], stats: tuple[str, ...] = STATS, reso
             for name in zone.drops:
                 if name not in keys["drop_tables"]:
                     problems.append(f"maps.json {row.key}: zone {number} drops name {name!r}, which drop_tables.json doesn't have")
+    drawn = {row.key: row for row in checked["maps"]}
+    for row in checked["maps"]:
+        scripts = [(f"object {each.key}", each.script) for each in row.objects] + [(f"{direction} edge", script) for direction, script in row.edges.items()]
+        for what, script in scripts:
+            for parts in tags(script):
+                if parts[0] != "warp":
+                    continue
+                target, x, y = parts[1], int(parts[2]), int(parts[3])
+                if target not in drawn:
+                    if target != "hub":  # the default hub is a map too, but the seed does not say how big it is
+                        problems.append(f"maps.json {row.key}: the {what} warps to {target!r}, which maps.json doesn't have")
+                elif not (x < drawn[target].width and y < drawn[target].height):
+                    problems.append(f"maps.json {row.key}: the {what} warps to ({x}, {y}), which is off {target!r}")
+                elif not drawn[target].tileset[drawn[target].tiles[y][x]].passable:
+                    problems.append(f"maps.json {row.key}: the {what} warps to ({x}, {y}) on {target!r}, which can't be stood on")
     kinds = {row.key: row.kind for row in checked["statuses"]}
     effects = [(kind, row, effect) for kind, field in (("abilities", "effect"), ("items", "use_effect"))
                for row in checked[kind] if (effect := getattr(row, field)) is not None]

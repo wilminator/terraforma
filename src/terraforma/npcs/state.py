@@ -11,8 +11,10 @@ from ..challenge import service as challenge
 from ..content.models import Item
 from ..economy import Economy, NotEnoughGold
 from ..heroes import inventory
+from ..maps import travel
 from ..heroes.models import Hero, HeroItem, Team, TeamMember
 from ..parties import service as parties
+from ..models import Map
 from ..parties.models import Party
 from ..quests import service as quests
 from ..standing import service as standing
@@ -129,6 +131,29 @@ class DialogState:
         if party is None or await parties.leader_account(self.session, party.party_id) != self.hero.account_id:
             return label
         await self.session.execute(update(Party).where(Party.id == party.party_id).values(open=setting == "on"))
+        return ""
+
+    # --- travel ---------------------------------------------------------------------------------------------------------
+
+    async def warp(self, map_key: str, x: str, y: str, label: str) -> str:
+        """Moves the party the hero acts in (the hero alone, if on no team) to the tile of the map, which is on the hero's
+        world. The label if the party cannot go now: apart in a town, or a hero of it in a fight. A map or tile that is not
+        there, or that cannot be stood on, is a mistake in the text."""
+        here = await self.session.get(Map, self.hero.map_id)
+        target = await self.session.scalar(select(Map).where(Map.world_id == here.world_id, Map.name == map_key))
+        if target is None:
+            raise ScriptError(f"warp tag: there is no map {map_key!r}")
+        spot = target.normalize(int(x), int(y))
+        if spot != (int(x), int(y)) or not target.tile(*spot)["passable"]:
+            raise ScriptError(f"warp tag: ({x}, {y}) on {map_key} can't be stood on")
+        acting = await self.party()
+        if acting is None:  # a hero on no team goes alone
+            self.hero.map_id, self.hero.x, self.hero.y = target.id, spot[0], spot[1]
+            return ""
+        party = await parties.get_party(self.session, acting.party_id)
+        if acting.ethereal or await towns.is_suspended(self.session, party.id) or await travel.in_fight(self.session, party):
+            return label
+        await travel.relocate(self.session, party, target, *spot)
         return ""
 
     # --- standing statuses ------------------------------------------------------------------------------------------------
