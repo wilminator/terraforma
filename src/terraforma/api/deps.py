@@ -14,6 +14,7 @@ from ..market.hooks import Market
 from ..guild.hooks import Guild
 from ..npcs.hooks import Npcs
 from ..npcs.inn import Inn
+from ..reach.hooks import Reach
 from ..towns.hooks import Towns
 from ..fights.rules import Rules
 from ..models import Account
@@ -111,12 +112,21 @@ def client_address(request: Request) -> str:
 
 
 def get_npcs(request: Request) -> Npcs:
-    """The game's rules for talking to NPCs (the engine's counter rule when the app runs without a game)."""
+    """The game's rules for what an NPC's dialog does with the tags the engine leaves to it."""
     game = request.app.state.game
     return game.npcs if game else Npcs()
 
 
 GameNpcs = Annotated[Npcs, Depends(get_npcs)]
+
+
+def get_reach(request: Request) -> Reach:
+    """The game's rules for what a hero can reach (the engine's default ranges when the app runs without a game)."""
+    game = request.app.state.game
+    return game.reach if game else Reach()
+
+
+GameReach = Annotated[Reach, Depends(get_reach)]
 
 
 def get_market(request: Request) -> Market:

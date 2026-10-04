@@ -8,6 +8,7 @@ from terraforma.heroes import inventory
 from terraforma.heroes.models import Team
 from terraforma.npcs import service
 from terraforma.npcs.hooks import Npcs
+from terraforma.reach.hooks import Reach
 from terraforma.npcs.script import ScriptError, parse
 
 from .test_npc_state import a_party
@@ -15,12 +16,13 @@ from .test_npc_state import a_party
 pytestmark = pytest.mark.anyio
 
 NPCS, ECONOMY = Npcs(), TeamGold()
+REACH = Reach()
 
 
 async def says(db, hero, dialog, economy=ECONOMY):
     """What the NPC says to the hero, whole."""
     npc = await service.place_npc(db, "keeper", "Keeper", hero.map_id, hero.x, hero.y + 1, dialog)
-    frame = await service.talk(db, NPCS, hero, npc.id, None, economy)
+    frame = await service.talk(db, NPCS, REACH, hero, npc.id, None, economy)
     assert frame["ended"], frame
     return "".join(event["text"] for event in frame["events"] if event["type"] == "text")
 

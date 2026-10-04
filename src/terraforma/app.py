@@ -38,6 +38,7 @@ from .guild.routes import router as guild_router
 from .standing.routes import router as standing_router
 from .market.routes import router as market_router
 from .npcs.routes import router as npcs_router
+from .reach.routes import router as reach_router
 from .parties.routes import router as parties_router
 from .profiles.routes import router as profiles_router
 from .relations.rating_routes import router as ratings_router
@@ -128,6 +129,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(profiles_router)
     app.include_router(challenge_router)
     app.include_router(npcs_router)
+    app.include_router(reach_router)
     app.include_router(market_router)
     app.include_router(guild_router)
     app.include_router(standing_router)

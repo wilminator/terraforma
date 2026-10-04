@@ -18,6 +18,7 @@ from terraforma.fights.status import BAD, GOOD, StatusSpec
 from terraforma.heroes import service as heroes
 from terraforma.npcs import service
 from terraforma.npcs.hooks import Npcs
+from terraforma.reach.hooks import Reach
 from terraforma.parties import service as parties
 from terraforma.settings import Settings
 from terraforma.standing import service as standing
@@ -34,6 +35,7 @@ pytestmark = pytest.mark.anyio
 PASSWORD = "correct horse battery"
 RULES = Rules()
 NPCS = Npcs()
+REACH = Reach()
 SEED = {
     **FIGHT_SEED,
     "statuses": [
@@ -70,7 +72,7 @@ async def rows(db):
 
 async def npc_says(db, hero, dialog):
     npc = await service.place_npc(db, "keeper", "Keeper", hero.map_id, hero.x, hero.y + 1, dialog)
-    frame = await service.talk(db, NPCS, hero, npc.id)
+    frame = await service.talk(db, NPCS, REACH, hero, npc.id)
     assert frame["ended"], frame
     return "".join(event["text"] for event in frame["events"] if event["type"] == "text")
 

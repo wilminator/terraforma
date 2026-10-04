@@ -7,6 +7,7 @@ from terraforma.heroes import inventory
 from terraforma.heroes import service as heroes
 from terraforma.npcs import service
 from terraforma.npcs.hooks import Npcs
+from terraforma.reach.hooks import Reach
 from terraforma.parties import service as parties
 from terraforma.quests import service as quests
 from terraforma.towns import service as towns_service
@@ -23,6 +24,7 @@ SEED = {
     ],
 }
 NPCS = Npcs()
+REACH = Reach()
 
 
 class Party:
@@ -51,7 +53,7 @@ async def a_party(db):
 async def npc_says(db, hero, dialog):
     """What the NPC says to the hero, whole (it never asks anything)."""
     npc = await service.place_npc(db, "keeper", "Keeper", hero.map_id, hero.x, hero.y + 1, dialog)
-    frame = await service.talk(db, NPCS, hero, npc.id)
+    frame = await service.talk(db, NPCS, REACH, hero, npc.id)
     assert frame["ended"], frame
     return "".join(event["text"] for event in frame["events"] if event["type"] == "text")
 
@@ -155,7 +157,7 @@ async def test_an_item_that_does_not_exist_ends_the_conversation_with_the_reason
     p = await a_party(db)
     npc = await service.place_npc(db, "keeper", "Keeper", p.heroes[0].map_id, 0, 1, check("have_item,unicorn,1,any,no"))
     with pytest.raises(service.NpcError, match="no item 'unicorn'"):
-        await service.talk(db, NPCS, p.heroes[0], npc.id)
+        await service.talk(db, NPCS, REACH, p.heroes[0], npc.id)
     assert await service.current(db, p.heroes[0]) == {"talking": False}
 
 
@@ -209,4 +211,4 @@ async def test_a_hero_on_no_team_has_no_quest_markers_to_set(db):
     loner = await heroes.create_hero(db, p.mike, "Loner", "fighter")
     npc = await service.place_npc(db, "keeper", "Keeper", loner.map_id, loner.x, loner.y + 1, "`set_quest_marker,rats,1`")
     with pytest.raises(service.NpcError, match="no team"):
-        await service.talk(db, NPCS, loner, npc.id)
+        await service.talk(db, NPCS, REACH, loner, npc.id)

@@ -10,7 +10,7 @@ from pydantic import Field
 
 from ..accounts import ratelimit
 from ..accounts.routes import Strict, limited
-from ..api.deps import ActingAccount, CurrentAccount, Db, GameEconomy, GameGuild, GameInn, GameNpcs, GameRules
+from ..api.deps import ActingAccount, CurrentAccount, Db, GameEconomy, GameGuild, GameInn, GameNpcs, GameReach, GameRules
 from ..heroes import service as heroes
 from ..heroes.routes import Id
 from ..heroes.routes import refuse as refuse_hero
@@ -41,13 +41,13 @@ def refuse(error: ValueError) -> HTTPException:
 
 
 @router.get("")
-async def guild(hero_id: Id, account: CurrentAccount, db: Db, hooks: GameNpcs) -> dict:
+async def guild(hero_id: Id, account: CurrentAccount, db: Db, hooks: GameNpcs, reach: GameReach) -> dict:
     """What the hero can do at the guild now, by what the conversation is waiting on: their own teams that could be added
     (``add_team``), the open parties and the teams that could ask (``find_party``), or the requests to their party (``party_requests``,
     for its leader)."""
     try:
         hero = await heroes.own_hero(db, account, hero_id)
-        prompt = await npcs.activity(db, hooks, hero, ("add_team", "find_party", "party_requests"))
+        prompt = await npcs.activity(db, hooks, reach, hero, ("add_team", "find_party", "party_requests"))
         command = prompt["command"]
         if command == "add_team":
             return {"command": command, "teams": await service.teams_to_add(db, hero)}
@@ -58,43 +58,43 @@ async def guild(hero_id: Id, account: CurrentAccount, db: Db, hooks: GameNpcs) -
         raise refuse(error) from error
 
 
-async def _then_on(db, hooks, inn, rules, economy, hero, result: dict) -> dict:
-    return {"result": result, "dialog": await npcs.answer(db, hooks, hero, None, partial(inns.rest, db, inn, rules, economy))}
+async def _then_on(db, hooks, reach, inn, rules, economy, hero, result: dict) -> dict:
+    return {"result": result, "dialog": await npcs.answer(db, hooks, reach, hero, None, partial(inns.rest, db, inn, rules, economy))}
 
 
 @router.post("/add-team")
-async def add_team(hero_id: Id, body: AddTeam, request: Request, account: ActingAccount, db: Db, hooks: GameNpcs, guild: GameGuild, inn: GameInn, rules: GameRules, economy: GameEconomy) -> dict:
+async def add_team(hero_id: Id, body: AddTeam, request: Request, account: ActingAccount, db: Db, hooks: GameNpcs, reach: GameReach, guild: GameGuild, inn: GameInn, rules: GameRules, economy: GameEconomy) -> dict:
     """Adds one of the player's own teams to the hero's party, and goes on with the dialog."""
     await limited(request, ratelimit.TRADE_BY_ACCOUNT, str(account.id))
     try:
         hero = await heroes.own_hero(db, account, hero_id)
-        await npcs.activity(db, hooks, hero, ("add_team",))
+        await npcs.activity(db, hooks, reach, hero, ("add_team",))
         result = await service.add_team(db, hero, body.team_id, rules.party_size, guild)
-        return await _then_on(db, hooks, inn, rules, economy, hero, result)
+        return await _then_on(db, hooks, reach, inn, rules, economy, hero, result)
     except (heroes.HeroError, npcs.NpcError, service.GuildError) as error:
         raise refuse(error) from error
 
 
 @router.post("/ask")
-async def ask(hero_id: Id, body: Ask, request: Request, account: ActingAccount, db: Db, hooks: GameNpcs, guild: GameGuild, inn: GameInn, rules: GameRules, economy: GameEconomy) -> dict:
+async def ask(hero_id: Id, body: Ask, request: Request, account: ActingAccount, db: Db, hooks: GameNpcs, reach: GameReach, guild: GameGuild, inn: GameInn, rules: GameRules, economy: GameEconomy) -> dict:
     """The hero's team asks to join an open party, and the dialog goes on."""
     await limited(request, ratelimit.TRADE_BY_ACCOUNT, str(account.id))
     try:
         hero = await heroes.own_hero(db, account, hero_id)
-        await npcs.activity(db, hooks, hero, ("find_party",))
+        await npcs.activity(db, hooks, reach, hero, ("find_party",))
         result = await service.ask(db, guild, hero, body.party_id, rules.party_size)
-        return await _then_on(db, hooks, inn, rules, economy, hero, result)
+        return await _then_on(db, hooks, reach, inn, rules, economy, hero, result)
     except (heroes.HeroError, npcs.NpcError, service.GuildError) as error:
         raise refuse(error) from error
 
 
 @router.post("/answer")
-async def answer(hero_id: Id, body: Answer, request: Request, account: ActingAccount, db: Db, hooks: GameNpcs, rules: GameRules) -> dict:
+async def answer(hero_id: Id, body: Answer, request: Request, account: ActingAccount, db: Db, hooks: GameNpcs, reach: GameReach, rules: GameRules) -> dict:
     """The party's leader accepts or declines a request. The conversation stays where it is."""
     await limited(request, ratelimit.TRADE_BY_ACCOUNT, str(account.id))
     try:
         hero = await heroes.own_hero(db, account, hero_id)
-        await npcs.activity(db, hooks, hero, ("party_requests",))
+        await npcs.activity(db, hooks, reach, hero, ("party_requests",))
         return await service.answer(db, hero, body.request_id, body.accept, rules.party_size)
     except (heroes.HeroError, npcs.NpcError, service.GuildError) as error:
         raise refuse(error) from error

@@ -13,6 +13,7 @@ from terraforma.heroes.models import Team
 from terraforma.npcs import inn as inns
 from terraforma.npcs import service
 from terraforma.npcs.hooks import Npcs
+from terraforma.reach.hooks import Reach
 from terraforma.npcs.inn import Inn
 from terraforma.parties import service as parties
 
@@ -21,6 +22,7 @@ pytestmark = pytest.mark.anyio
 PASSWORD = "correct horse battery"
 SEED = {"jobs": [{"key": "fighter", "name": "Fighter", "stat_growth": {"HP": 20}}]}
 NPCS, ECONOMY, RULES = Npcs(), TeamGold(), Rules()
+REACH = Reach()
 INN = "Welcome.`inn,10,no`A bed is 10 gold. Rest?`ack`Sleep well.`jump,end``label,no`Another time."
 
 
@@ -71,9 +73,9 @@ async def say_yes(db, hero, inn=None, dialog=INN):
     """The hero talks to the innkeeper and answers Yes; returns the next frame."""
     rest = partial(inns.rest, db, inn or Inn(), RULES, ECONOMY)
     npc = await service.place_npc(db, "keeper", "Keeper", hero.map_id, hero.x, hero.y + 1, dialog)
-    asked = await service.talk(db, NPCS, hero, npc.id, rest)
+    asked = await service.talk(db, NPCS, REACH, hero, npc.id, rest)
     assert asked["prompt"]["kind"] == "inn"
-    return await service.answer(db, NPCS, hero, 0, rest)
+    return await service.answer(db, NPCS, REACH, hero, 0, rest)
 
 
 def rested(hero):
@@ -86,7 +88,7 @@ async def test_the_talking_heros_team_pays_and_rests_and_the_talk_goes_on(db):
     frame = await say_yes(db, p.heroes[0])
     assert frame["prompt"] == {"type": "ack", "accepts": {"choice": [], "next": True, "cancel": False}}
     assert frame["events"] == [], "the ack comes first"
-    assert (await service.answer(db, NPCS, p.heroes[0], None))["events"][0]["text"] == "Sleep well."
+    assert (await service.answer(db, NPCS, REACH, p.heroes[0], None))["events"][0]["text"] == "Sleep well."
     assert rested(p.heroes[0]) and not rested(p.heroes[1]) and not rested(p.heroes[2]), "only the team that paid"
     assert await gold(db, p.teams[0]) == 15 and await gold(db, p.teams[1]) == 0
 
@@ -143,6 +145,6 @@ async def test_a_game_that_handles_the_yes_itself_is_left_alone(db):
 
     npc = await service.place_npc(db, "keeper", "Keeper", p.heroes[0].map_id, p.heroes[0].x, p.heroes[0].y + 1, INN)
     rest = partial(inns.rest, db, Inn(), RULES, ECONOMY)
-    await service.talk(db, Closed(), p.heroes[0], npc.id, rest)
-    frame = await service.answer(db, Closed(), p.heroes[0], 0, rest)
+    await service.talk(db, Closed(), REACH, p.heroes[0], npc.id, rest)
+    frame = await service.answer(db, Closed(), REACH, p.heroes[0], 0, rest)
     assert frame["events"][-1]["text"] == "Another time." and not rested(p.heroes[0])

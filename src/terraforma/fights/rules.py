@@ -75,6 +75,8 @@ class Rules:
     #: same numbers: a test says so).
     inventory_stacks: int = 12
     stack_size: int = 250
+    #: How many entries the nearby list shows at most (NPCs first, then parties, nearest first), so a crowd does not flood it.
+    nearby_limit: int = 20
     #: What an empty hand attacks with.
     unarmed: ItemSpec = ItemSpec(key="", name="Fists")
 

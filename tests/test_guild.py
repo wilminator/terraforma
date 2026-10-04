@@ -12,6 +12,7 @@ from terraforma.heroes import service as heroes
 from terraforma.heroes.models import Hero
 from terraforma.npcs import service as npcs
 from terraforma.npcs.hooks import Npcs
+from terraforma.reach.hooks import Reach
 from terraforma.npcs.state import DialogState
 from terraforma.parties import service as parties
 from terraforma.parties.models import Party, PartyRequest
@@ -30,6 +31,7 @@ PASSWORD = "correct horse battery"
 SEED = {"jobs": [{"key": "fighter", "name": "Fighter", "stat_growth": {"HP": 20}}], "statuses": [{"key": "guest", "name": "Guest", "kind": "good"}]}
 SIZE = 20
 NPCS, GUILD = Npcs(), Guild()
+REACH = Reach()
 
 
 class World:
@@ -208,7 +210,7 @@ async def test_deleting_a_team_withdraws_its_requests(db):
 
 async def say(db, hero, dialog):
     npc = await npcs.place_npc(db, "guildmaster", "Guildmaster", hero.map_id, hero.x, hero.y + 1, dialog)
-    frame = await npcs.talk(db, NPCS, hero, npc.id)
+    frame = await npcs.talk(db, NPCS, REACH, hero, npc.id)
     return "".join(event["text"] for event in frame["events"] if event["type"] == "text")
 
 
