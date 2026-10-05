@@ -24,8 +24,9 @@ def test_the_front_page_names_the_game_and_the_games_module_ran(page):
 
 def test_the_games_stylesheet_and_assets_are_served(page, live_server):
     page.goto("/")
-    # The stylesheet is added by the shell once it has read the manifest, so wait for it to apply.
-    page.wait_for_function("getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() === '#3b7f3a'")
+    # The stylesheet is added by the shell once it has read the manifest, so wait for it to apply. (Not wait_for_function:
+    # it evaluates a string in the page, which the Content-Security-Policy refuses, and it logs a console error.)
+    expect(page.locator("html")).to_have_css("--accent", "#3b7f3a")
     answer = page.request.get("/assets/grass.svg")
     assert answer.ok and answer.headers["content-type"].startswith("image/svg")
 
