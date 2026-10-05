@@ -1,6 +1,8 @@
 """The browser client the engine serves: its pages and files, what a game adds to it, and the CSRF token a reload needs.
 (The pages running in a real browser are tests/e2e.)"""
 
+import re
+
 import pytest
 
 from terraforma.client import ClientError, check_game_client
@@ -16,7 +18,7 @@ def game():
 
 
 def test_the_pages_are_served_with_the_security_headers(app_client):
-    for path in ("/", "/play/", "/account/"):
+    for path in ("/", "/play/", "/account/", "/confirm-email", "/change-email", "/reset-password", "/confirm-2fa"):
         page = expect(app_client.get(path), 200)
         assert page.headers["content-type"].startswith("text/html")
         assert "script-src" not in page.headers["content-security-policy"], "default-src 'self' covers scripts: nothing inline, nothing foreign"
@@ -24,6 +26,21 @@ def test_the_pages_are_served_with_the_security_headers(app_client):
         assert page.headers["x-frame-options"] == "DENY"
         assert page.headers["x-content-type-options"] == "nosniff"
         assert "<script>" not in page.text, "no inline script: the policy would refuse it"
+
+
+def test_every_address_the_engine_mails_opens_an_account_page(app_client, mailbox):
+    """The links in the emails (accounts.routes, accounts.twofa_routes) must land on a page, with the token in the query."""
+    from .test_accounts import MIKE, log_in, register, token_in
+
+    register(app_client)
+    sent = mailbox.last_to(MIKE["email"])
+    path = re.search(r"https?://[^/\s]+(/[a-z0-9-]+)\?token=", sent.body).group(1)
+    assert 'id="app"' in expect(app_client.get(f"{path}?token={token_in(sent)}"), 200).text
+
+
+def test_the_account_page_scripts_are_served(app_client):
+    for name in ("account", "forms", "register", "settings", "tokens"):
+        expect(app_client.get(f"/client/js/{name}.js"), 200)
 
 
 def test_the_engines_code_is_served_as_modules_and_styles(app_client):
