@@ -124,3 +124,15 @@ body.play { height: 100dvh; min-height: 0; overflow: hidden; }
   .play .rotate { display: grid; }
   .play #app { visibility: hidden; }
 }
+
+/* --- the account pages ---------------------------------------------------------------------- */
+
+.stack { display: grid; gap: var(--gutter); justify-items: start; }
+.cards { display: grid; gap: var(--gutter); grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); width: 100%; align-items: start; }
+.cards .card { max-width: none; }
+.card .inner { margin-top: var(--gutter); padding-top: var(--gutter); border-top: 1px solid var(--border); }
+.hint { color: var(--muted); font-size: 0.9rem; margin-top: 0; }
+.note { color: var(--accent); min-height: 1.5em; margin: 0 0 0.5rem; }
+.secret { font-size: 1.1rem; overflow-wrap: anywhere; user-select: all; }
+.codes { columns: 2; padding-left: 1.25rem; }
+.links { margin: 0; }

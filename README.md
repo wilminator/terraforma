@@ -41,7 +41,8 @@ The engine serves its own browser client: plain ES modules and CSS, no build ste
 |---|---|
 | `/` | The marketing site: the game's name and a way in. |
 | `/play/` | The game client. Landscape only: held upright it shows "turn your device sideways". Log in, then the stage (a fixed design resolution, 480 by 270, shown at the largest whole-number scale that fits). |
-| `/account/` | The account pages, for any screen and orientation. |
+| `/account/` | The account pages, for any screen and orientation: log in, create an account, ask for a password reset, and once logged in the handle, the email address and two-factor login. |
+| `/confirm-email`, `/change-email`, `/reset-password`, `/confirm-2fa` | The pages the links in the engine's emails open. Each takes the token from the address (and removes it from the address bar) and waits for a button, so a mail scanner opening the link changes nothing. The account pages' words are all in `strings.js`, so a game changes them with `shell.text.set`. |
 | `/client/...` | The engine's own code and styles (`src/terraforma/client/static/lib`). |
 | `/game/...` | The game's `client_dir`. |
 | `/assets/...` | The game's `assets_dir`. |

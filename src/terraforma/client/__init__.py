@@ -9,6 +9,7 @@ The game's pictures and sounds (``Game(assets_dir=...)``) are served at ``/asset
     /               the marketing site                  /client/...   the engine's own code and styles
     /play/          the game client (landscape)         /game/...     the game's client_dir
     /account/       the account pages                   /assets/...   the game's assets_dir
+    /confirm-email  /change-email  /reset-password  /confirm-2fa     the pages the emailed links open (account pages too)
     GET /api/client what a page needs to know: the game's name, modules, styles and assets
 """
 
@@ -76,7 +77,13 @@ async def play() -> FileResponse:
     return page("play.html")
 
 
+# The same page file answers the account pages and the pages the links in the engine's emails open (accounts.routes and
+# accounts.twofa_routes build those addresses): it shows the card its address names.
 @router.get("/account/", include_in_schema=False)
+@router.get("/confirm-email", include_in_schema=False)
+@router.get("/change-email", include_in_schema=False)
+@router.get("/reset-password", include_in_schema=False)
+@router.get("/confirm-2fa", include_in_schema=False)
 async def account() -> FileResponse:
     return page("account.html")
 
