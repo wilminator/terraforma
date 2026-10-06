@@ -19,7 +19,8 @@ def test_the_front_page_names_the_game_and_the_games_module_ran(page):
     expect(page.get_by_text("The TerraForma example game: a tiny world to try the engine in.")).to_be_visible()
     expect(page.locator("html")).to_have_attribute("data-example-ready", "true")
     page.get_by_role("link", name="Play").click()
-    expect(page).to_have_url("/play/")
+    # Nobody is logged in, so the game page sends them on to the login; wait for that, not for a page that is leaving.
+    expect(page).to_have_url("/account/?next=play")
 
 
 def test_the_games_stylesheet_and_assets_are_served(page, live_server):
