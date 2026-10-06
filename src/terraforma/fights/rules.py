@@ -60,6 +60,11 @@ class Rules:
     #: four groups of five. A party is a collection of whole teams (see ``terraforma.parties``).
     party_size: int = 20
     group_size: int = 5
+    #: How many heroes a team has (a team is saved with at least ``team_min`` and never holds more than ``team_max``; the
+    #: engine's screens draw at most ``heroes.service.TEAM_LIMIT``, 5), and how many teams one player may have.
+    team_min: int = 1
+    team_max: int = 4
+    max_teams: int = 8
     #: How long a round waits for the players' commands, in seconds, before it plays with what it has (anyone who
     #: has not committed defends). A round also plays at once when every player's fighter has committed.
     round_seconds: int = 30

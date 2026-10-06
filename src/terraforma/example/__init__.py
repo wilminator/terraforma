@@ -7,12 +7,32 @@ drawn for this repository (see ``assets/ASSETS.md``).
 
 from pathlib import Path
 
+from ..fights.rules import Rules
 from ..game import Game
+from ..heroes.hooks import Roster
 
 HERE = Path(__file__).parent
 
+
+class ExampleRules(Rules):
+    """DragonStar's rules, with its teams: up to three of them, each with one to four heroes."""
+
+    team_min = 1
+    team_max = 4
+    max_teams = 3
+
+
+class ExampleRoster(Roster):
+    """A hero may be removed from a team (or replaced), and the empty place filled later. Moving them to another team stays refused."""
+
+    async def may_remove(self, session, account, hero):
+        return None
+
+
 GAME = Game(
     name="TerraForma Example",
+    rules=ExampleRules(),
+    roster=ExampleRoster(),
     seed_dir=HERE / "seed",
     assets_dir=HERE / "assets",
     client_dir=HERE / "client",

@@ -10,6 +10,7 @@ from terraforma.content.schema import ContentError, check_seed
 from terraforma.game import Game
 from terraforma.heroes import inventory
 from terraforma.heroes.models import Hero, HeroAbility, HeroEquipment, HeroItem
+from terraforma import testing
 from terraforma.testing import in_app_db
 
 from .helpers import expect
@@ -53,7 +54,7 @@ def sign_in(client, username):
 @pytest.fixture
 def mike(app_client):
     headers = sign_in(app_client, "Mike")
-    hero = expect(app_client.post("/api/heroes", json={"name": "Aria", "job": "fighter"}, headers=headers), 201).json()
+    hero = testing.make_hero(app_client, headers, "Aria")
     return app_client, headers, hero["id"]
 
 
@@ -271,11 +272,12 @@ def test_the_inventory_calls_need_login_and_the_csrf_token(app_client):
     assert answer.status_code == 422, "unknown fields are refused"
 
 
-def test_deleting_a_hero_removes_everything_it_carried(mike):
+def test_deleting_a_heros_team_removes_everything_the_hero_carried(mike):
     client, headers, hero_id = mike
     give(client, hero_id, "sword")
     equip(client, headers, hero_id, 0)
-    expect(client.post(f"/api/heroes/{hero_id}/delete", headers=headers), 200)
+    team = expect(client.get("/api/teams"), 200).json()[0]["id"]
+    expect(client.post(f"/api/teams/{team}/delete", headers=headers), 200)
 
     async def counts(db):
         return [await db.scalar(select(func.count()).select_from(table)) for table in (HeroItem, HeroEquipment, HeroAbility)]

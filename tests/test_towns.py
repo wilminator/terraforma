@@ -17,6 +17,7 @@ from terraforma.heroes.models import Hero, Team, TeamMember
 from terraforma.models import Account, Map
 from terraforma.parties import service as parties
 from terraforma.parties.models import Party
+from terraforma import testing
 from terraforma.testing import in_app_db
 from terraforma.world.rng import WorldRng
 from terraforma.towns import service as towns_service
@@ -357,7 +358,7 @@ def sign_in(client, username):
 
 def test_a_teams_owner_reads_and_acts_in_a_town_and_nobody_else_does(app_client):
     mike = sign_in(app_client, "Mike")
-    teams = [expect(app_client.post("/api/teams", json={"name": name}, headers=mike), 201).json()["id"] for name in ("Vanguard", "Rearguard")]
+    teams = [testing.make_team(app_client, mike, name, heroes=(f"{name} hero",))["id"] for name in ("Vanguard", "Rearguard")]
     zed = sign_in(app_client, "Zed")  # (now logged in as Zed)
 
     async def form(db):

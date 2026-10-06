@@ -12,6 +12,7 @@ from ..relations.hooks import Relations
 from ..pvp.hooks import PvpZones
 from ..market.hooks import Market
 from ..guild.hooks import Guild
+from ..heroes.hooks import Roster
 from ..npcs.hooks import Npcs
 from ..npcs.inn import Inn
 from ..reach.hooks import Reach
@@ -154,3 +155,12 @@ def get_inn(request: Request) -> Inn:
 
 
 GameInn = Annotated[Inn, Depends(get_inn)]
+
+
+def get_roster(request: Request) -> Roster:
+    """The game's rule for changing the heroes of a saved team (no removing, replacing or moving when the app runs without a game)."""
+    game = request.app.state.game
+    return game.roster if game else Roster()
+
+
+GameRoster = Annotated[Roster, Depends(get_roster)]

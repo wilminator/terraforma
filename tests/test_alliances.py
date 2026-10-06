@@ -17,6 +17,7 @@ from terraforma.heroes import service as heroes
 from terraforma.relations import service as relating
 from terraforma.relations.hooks import Change, Ref, Relations
 from terraforma.relations.models import Relationship
+from terraforma import testing
 from terraforma.testing import in_app_db
 
 from .helpers import expect
@@ -335,7 +336,7 @@ def login(client, username):
 
 
 def make_team(client, headers, name):
-    return expect(client.post("/api/teams", json={"name": name}, headers=headers), 201).json()["id"]
+    return testing.make_team(client, headers, name, heroes=(f"{name} hero"[:24],))["id"]
 
 
 @pytest.fixture

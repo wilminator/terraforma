@@ -170,3 +170,16 @@ def in_app_db(client, work):
                 return await work(session)
 
     return client.portal.call(go)
+
+
+def make_team(client, headers, name="Alpha", heroes=("Aria",), job="fighter"):
+    """A team made over HTTP with its heroes, the one way a player makes either: the answer (the team's ``id``, ``name`` and ``members``)."""
+    answer = client.post("/api/teams", json={"name": name, "heroes": [{"name": each, "job": job} for each in heroes]}, headers=headers)
+    assert answer.status_code == 201, answer.text
+    return answer.json()
+
+
+def make_hero(client, headers, name="Aria", job="fighter"):
+    """A hero made over HTTP, on a team of their own ("<name> team"): the hero as ``/api/heroes`` lists them."""
+    make_team(client, headers, name=f"{name} team"[:24], heroes=(name,), job=job)
+    return next(entry for entry in client.get("/api/heroes").json() if entry["name"] == name)

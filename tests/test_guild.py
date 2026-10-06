@@ -19,6 +19,7 @@ from terraforma.parties.models import Party, PartyRequest
 from terraforma.profiles.models import TeamProfile
 from terraforma.standing import service as standing
 from terraforma.standing.models import StandingStatus
+from terraforma import testing
 from terraforma.testing import in_app_db
 from terraforma.towns import service as towns
 from terraforma.towns.hooks import Towns
@@ -238,9 +239,8 @@ def test_the_calls_add_a_team_through_the_conversation(app_client):
     headers = sign_in(client, "Mike")
     ids = {}
     for team, hero in (("Vanguard", "Aria"), ("Rearguard", "Bram")):
-        team_id = expect(client.post("/api/teams", json={"name": team}, headers=headers), 201).json()["id"]
-        hero_id = expect(client.post("/api/heroes", json={"name": hero, "job": "fighter"}, headers=headers), 201).json()["id"]
-        expect(client.post(f"/api/teams/{team_id}/add-hero", json={"hero_id": hero_id}, headers=headers), 200)
+        made = testing.make_team(client, headers, team, heroes=(hero,))
+        team_id, hero_id = made["id"], made["members"][0]["hero_id"]
         ids[team] = (team_id, hero_id)
     expect(client.post(f"/api/teams/{ids['Vanguard'][0]}/play", headers=headers), 200)
     aria = ids["Vanguard"][1]

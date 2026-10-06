@@ -17,6 +17,7 @@ from .relations.hooks import Relations
 from .pvp.hooks import PvpZones
 from .market.hooks import Market
 from .guild.hooks import Guild
+from .heroes.hooks import Roster
 from .npcs.hooks import Npcs
 from .npcs.inn import Inn
 from .reach.hooks import Reach
@@ -53,3 +54,5 @@ class Game:
     market: Market = field(default_factory=Market)
     inn: Inn = field(default_factory=Inn)
     guild: Guild = field(default_factory=Guild)
+    # What may change about the heroes of a saved team: removing, replacing and moving them (refused by default; a game may sell it).
+    roster: Roster = field(default_factory=Roster)

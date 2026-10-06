@@ -23,6 +23,7 @@ from terraforma.npcs.models import NpcTalk
 from terraforma.parties import service as parties
 from terraforma.reach import service as nearby
 from terraforma.reach.hooks import Reach
+from terraforma import testing
 from terraforma.testing import in_app_db
 
 from .helpers import expect
@@ -383,7 +384,7 @@ def game(tmp_path):
 
 def test_the_calls_show_the_maps_objects_and_let_a_hero_use_them(app_client):
     mike = sign_in(app_client, "Mike")
-    aria = expect(app_client.post("/api/heroes", json={"name": "Aria", "job": "fighter"}, headers=mike), 201).json()["id"]
+    aria = testing.make_hero(app_client, mike, "Aria")["id"]
 
     async def stand_at(db, x, y, where="yard"):
         hero = await db.get(Hero, aria)
@@ -433,9 +434,8 @@ def test_the_calls_show_the_maps_objects_and_let_a_hero_use_them(app_client):
 def test_the_step_call_runs_an_edge_script(app_client):
     mike = sign_in(app_client, "Mike")
 
-    aria = expect(app_client.post("/api/heroes", json={"name": "Aria", "job": "fighter"}, headers=mike), 201).json()["id"]
-    team = expect(app_client.post("/api/teams", json={"name": "Crew"}, headers=mike), 201).json()["id"]
-    expect(app_client.post(f"/api/teams/{team}/add-hero", json={"hero_id": aria}, headers=mike), 200)
+    made = testing.make_team(app_client, mike, "Crew")
+    team, aria = made["id"], made["members"][0]["hero_id"]
     expect(app_client.post(f"/api/teams/{team}/play", headers=mike), 200)
 
     async def place(db):

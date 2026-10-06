@@ -13,6 +13,7 @@ from terraforma.profiles import service as profiles
 from terraforma.reach import service
 from terraforma.reach.hooks import ACTIONS, FIGHT, INVITE, OPEN, SEARCH, TALK, Reach, distance
 from terraforma.parties import service as parties
+from terraforma import testing
 from terraforma.testing import in_app_db
 from terraforma.towns import service as towns
 from terraforma.towns.hooks import Towns
@@ -204,7 +205,7 @@ def game(tmp_path):
 def test_the_nearby_call_lists_what_is_in_reach(app_client):
     expect(app_client.get("/api/heroes/1/nearby/talk"), 401)
     mike = sign_in(app_client, "Mike")
-    aria = expect(app_client.post("/api/heroes", json={"name": "Aria", "job": "fighter"}, headers=mike), 201).json()["id"]
+    aria = testing.make_hero(app_client, mike, "Aria")["id"]
     npc = in_app_db(app_client, lambda db: _place(db, aria))
     assert expect(app_client.get(f"/api/heroes/{aria}/nearby/talk"), 200).json() == {
         "action": "talk", "valid_for": 60, "nearby": [{"kind": "npc", "id": npc, "key": "keeper", "name": "Keeper", "distance": 2}],

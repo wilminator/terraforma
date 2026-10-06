@@ -14,6 +14,7 @@ from terraforma.content.loader import load_content
 from terraforma.content.models import Job
 from terraforma.game import Game
 from terraforma.heroes import service as heroes
+from terraforma import testing
 from terraforma.testing import in_app_db
 
 from .helpers import expect
@@ -323,11 +324,11 @@ def post(client, who, url, body, status=200):
 def pact(app_client):
     """Mike's Vanguard leads Iron Pact; Zed's Rivals is a member; Yan's Strangers is not in it."""
     mike = sign_in(app_client, "Mike")
-    vanguard = expect(app_client.post("/api/teams", json={"name": "Vanguard"}, headers=mike), 201).json()["id"]
+    vanguard = testing.make_team(app_client, mike, "Vanguard")["id"]
     zed = sign_in(app_client, "Zed")
-    rivals = expect(app_client.post("/api/teams", json={"name": "Rivals"}, headers=zed), 201).json()["id"]
+    rivals = testing.make_team(app_client, zed, "Rivals")["id"]
     yan = sign_in(app_client, "Yan")
-    strangers = expect(app_client.post("/api/teams", json={"name": "Strangers"}, headers=yan), 201).json()["id"]
+    strangers = testing.make_team(app_client, yan, "Strangers")["id"]
     alliance = post(app_client, "Mike", "/api/alliances", {"team_id": vanguard, "name": "Iron Pact"}, 201)["id"]
     post(app_client, "Mike", f"/api/alliances/{alliance}/invite", {"team_id": vanguard, "target_team_id": rivals})
     post(app_client, "Zed", f"/api/teams/{rivals}/invitations/accept", {"alliance_id": alliance})

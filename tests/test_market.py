@@ -19,6 +19,7 @@ from terraforma.npcs import service as npcs
 from terraforma.npcs.hooks import Npcs
 from terraforma.reach.hooks import Reach
 from terraforma.npcs.script import ScriptError, parse
+from terraforma import testing
 from terraforma.testing import in_app_db
 
 from .helpers import expect
@@ -246,11 +247,14 @@ def test_the_calls_shop_from_the_conversation(app_client):
     client = app_client
     in_app_db(client, lambda db: load_content(db, SEED))
     headers = sign_in(client, "Mike")
-    hero = expect(client.post("/api/heroes", json={"name": "Aria", "job": "fighter"}, headers=headers), 201).json()["id"]
+    hero = testing.make_hero(client, headers, "Aria")["id"]
 
     async def set_up(db):
         row = await db.get(service.Hero, hero)
-        row.gold = 100  # a hero on no team spends their own gold
+        from sqlalchemy import select
+
+        member = await db.scalar(select(service.TeamMember).where(service.TeamMember.hero_id == hero))
+        (await db.get(service.Team, member.team_id)).gold = 100  # a hero on a team spends the team's gold
         return (await npcs.place_npc(db, "keeper", "Keeper", row.map_id, row.x + 1, row.y, VEND)).id
 
     npc = in_app_db(client, set_up)
