@@ -42,6 +42,10 @@ def install() -> None:
 
     def scrubbed_record(*args, **kwargs):
         record = make_record(*args, **kwargs)
+        if record.name == "uvicorn.access" and isinstance(record.args, tuple):
+            # uvicorn's access formatter unpacks the arguments (client, method, path, version, status): scrub each, keep the tuple.
+            record.args = tuple(scrub(each) if isinstance(each, str) else each for each in record.args)
+            return record
         try:
             message = record.getMessage()
         except Exception:

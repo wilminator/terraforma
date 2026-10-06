@@ -41,3 +41,17 @@ def test_every_logger_is_scrubbed_once_installed(caplog):
     assert "secretsecretsecretsecretsecret12" not in text
     assert "mike@example.com" not in text
     assert "1.2.3.4" in text, "the rest of the line is kept"
+
+
+def test_uvicorns_access_formatter_still_works_on_a_scrubbed_record():
+    """Its formatter unpacks the record's five arguments: scrubbing must leave them in place (it once set them to None, and
+    every request logged a traceback)."""
+    from uvicorn.logging import AccessFormatter
+
+    logscrub.install()
+    record = logging.getLogger("uvicorn.access").makeRecord(
+        "uvicorn.access", logging.INFO, __file__, 0, '%s - "%s %s HTTP/%s" %d',
+        ("1.2.3.4:5000", "GET", "/reset-password?token=secretsecretsecretsecretsecret12", "1.1", 200), None,
+    )
+    line = AccessFormatter('%(client_addr)s - "%(request_line)s" %(status_code)s', use_colors=False).format(record)
+    assert line == '1.2.3.4:5000 - "GET /reset-password?token=[scrubbed] HTTP/1.1" 200 OK'
