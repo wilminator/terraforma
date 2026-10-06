@@ -18,8 +18,12 @@ const t = (key, values) => shell.text.get(key, values);
 const token = new URLSearchParams(location.search).get("token");
 if (token !== null) history.replaceState(null, "", location.pathname + location.hash);
 
+// The game's page sends a logged-out player here with ?next=play; once they are in, they go back. Only "play" is understood,
+// never an address, so the link can't be used to send a player somewhere else.
+const backToGame = new URLSearchParams(location.search).get("next") === "play";
+
 const link = (href, textKey, id) => h("a", { href, id }, t(textKey));
-const toLogin = () => h("p", {}, link("/account/", "account.log_in", "to-login"));
+const toLogin = () => h("p", {}, link(backToGame ? "/account/?next=play" : "/account/", "account.log_in", "to-login"));
 
 function title(key) {
   document.title = `${t(key)} · ${shell.game.game ?? "TerraForma"}`;
@@ -37,6 +41,7 @@ function showLogin(message = null) {
     message,
     loginForm(shell, async (login) => {
       shell.signedIn(login);
+      if (backToGame) return location.assign("/play/");
       await showAccount();
     }),
     h("p", { class: "links" }, link("#register", "login.register", "to-register"), " · ", link("#reset", "login.forgot", "to-reset")),
@@ -117,7 +122,7 @@ async function route() {
     case "/confirm-2fa":
       return twoFactorPage();
     default:
-      if (await shell.restore()) return showAccount();
+      if (await shell.restore()) return backToGame ? location.replace("/play/") : showAccount();
       if (location.hash === "#register") return showRegister();
       if (location.hash === "#reset") return showReset();
       return showLogin();
