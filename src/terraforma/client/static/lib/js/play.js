@@ -15,7 +15,15 @@ let stopFitting = null;
 
 function showLogin() {
   stopFitting?.();
-  replace(app, h("div", { class: "centered" }, loginForm(shell, (login) => { shell.signedIn(login); showGame(); })));
+  // The ways to a new account and a new password are on the account page, which the same words link to.
+  const links = h(
+    "p",
+    { class: "links" },
+    h("a", { href: "/account/#register", id: "to-register" }, t("login.register")),
+    " · ",
+    h("a", { href: "/account/#reset", id: "to-reset" }, t("login.forgot")),
+  );
+  replace(app, h("div", { class: "centered" }, h("div", { class: "stack" }, loginForm(shell, (login) => { shell.signedIn(login); showGame(); }), links)));
 }
 
 async function showGame() {
