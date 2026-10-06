@@ -106,7 +106,48 @@ body.play { height: 100dvh; min-height: 0; overflow: hidden; }
 .stage-frame { display: grid; place-items: center; min-height: 0; background: #000; overflow: hidden; }
 .stage { overflow: hidden; background: #101612; image-rendering: pixelated; }
 .stage-canvas { transform-origin: 0 0; }
-.bar { display: flex; justify-content: space-between; align-items: center; gap: var(--gutter); padding: 0.4rem var(--gutter); background: var(--surface); border-top: 1px solid var(--border); }
+.bar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.25rem var(--gutter); padding: 0.4rem var(--gutter); background: var(--surface); border-top: 1px solid var(--border); }
+.bar .problem { margin: 0; min-height: 0; }
+.main { position: relative; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); }
+.tabs { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+.tabs button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+
+/* The panel the bar's buttons open: over the stage's right side, so the stage keeps its size. */
+.drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(30rem, 100%);
+  overflow: auto;
+  padding: var(--gutter);
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+}
+.drawer .close { position: absolute; top: 0.4rem; right: 0.4rem; padding: 0.1em 0.6em; }
+.panel h2 { margin-top: 0; }
+.panel h3 { margin: 0 0 0.5rem; font-size: 1rem; }
+.panel .card { max-width: none; margin-top: var(--gutter); }
+.rows { list-style: none; margin: 0 0 var(--gutter); padding: 0; display: grid; gap: 0.5rem; }
+.row { padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); display: grid; gap: 0.25rem; }
+.row.chosen { border-color: var(--accent); }
+.row-actions, .inline { display: flex; gap: 0.35rem; flex-wrap: wrap; align-items: center; }
+.members { margin: 0; padding-left: 1.25rem; }
+.members button { margin-left: 0.5rem; padding: 0 0.5em; }
+.muted { color: var(--muted); }
+.small { font-size: 0.85rem; }
+.stale { opacity: 0.55; }
+button.danger { background: var(--danger); border-color: var(--danger); color: var(--surface); }
+select, .inline input {
+  font: inherit;
+  padding: 0.4em;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  max-width: 100%;
+}
+.field select { width: 100%; }
 
 /* While the device is upright the game says to turn it, and nothing else shows. */
 .rotate {

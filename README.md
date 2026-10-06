@@ -40,13 +40,14 @@ The engine serves its own browser client: plain ES modules and CSS, no build ste
 | URL | What it is |
 |---|---|
 | `/` | The marketing site: the game's name and a way in. |
-| `/play/` | The game client. Landscape only: held upright it shows "turn your device sideways". Log in, then the stage (a fixed design resolution, 480 by 270, shown at the largest whole-number scale that fits). |
+| `/play/` | The game client. Landscape only: held upright it shows "turn your device sideways". Log in, then the stage (a fixed design resolution, 480 by 270, shown at the largest whole-number scale that fits) with the menu in the bar below it: **Heroes** (make, rename and delete heroes; a hero's job and stats), **Teams** (make, rename and delete teams; put heroes on them and take them off), **Party** (a team plays as a party; in a town it says when it is ready to leave, comes back or leaves the party) and **Nearby** (what a hero can reach for an action, nearest first). A panel opens over the stage's right side, so the stage keeps its size. |
 | `/account/` | The account pages, for any screen and orientation: log in, create an account, ask for a password reset, and once logged in the handle, the email address and two-factor login. |
 | `/confirm-email`, `/change-email`, `/reset-password`, `/confirm-2fa` | The pages the links in the engine's emails open. Each takes the token from the address (and removes it from the address bar) and waits for a button, so a mail scanner opening the link changes nothing. The account pages' words are all in `strings.js`, so a game changes them with `shell.text.set`. |
 | `/client/...` | The engine's own code and styles (`src/terraforma/client/static/lib`). |
 | `/game/...` | The game's `client_dir`. |
 | `/assets/...` | The game's `assets_dir`. |
 | `GET /api/client` | What a page needs to start: the game's name, the URLs of its modules and styles, and its assets folder. |
+| `GET /api/jobs` | The jobs a new hero can take (login), each with its `key`, `name` and the `stats` a hero of it starts with; the Heroes panel's job list. |
 | `GET /api/session` | Who is logged in (or `account: null`, still a 200) and the CSRF token to send back; a page that reloads has lost the token it got at login. |
 
 **Pages run only files of the engine's and the game's own**: every page answers with a Content-Security-Policy that allows nothing inline and nothing from another site, so a game's code goes in files, not in the page.
@@ -74,13 +75,15 @@ export default function register(shell) {
 | `shell.text.get(key, values)` and `shell.text.set({key: text})` | The page's words; `{name}` in a text is filled in. An element with `data-text="key"` shows the key's text. |
 | `shell.api` | `get`, `post`, `call` and `ApiError`: the server's calls, with the CSRF token added to the ones that change something. |
 | `shell.account` | `null`, or `{username, handle}` once logged in. |
-| `shell.on(event, handler)` | Events `ready` (every module registered, nothing drawn yet), `login` and `logout`. Returns a function that stops listening. |
+| `shell.on(event, handler)` | Events `ready` (every module registered, nothing drawn yet), `login` and `logout`, and on the play page `game` (the panels are drawn; the detail is `{roster}`). Returns a function that stops listening. |
+| `shell.panels.add(id, build)` | Adds a panel to the play page's menu after the engine's. `build(shell, roster)` runs once the player is logged in and returns an element, or `{element, show}` where `show()` runs each time the panel is opened. The menu button says `shell.text.get("panel.<id>")`. `roster` is the player's heroes, teams and jobs (`heroes`, `teams`, `jobs`, `heroId`, `teamId`, `onChange(listener)`, and the calls that change them). |
+| `shell.actions` | The actions the Nearby panel can ask for: `talk`, `invite`, `open`, `search`, `fight`, `help`. A game pushes the names of the ones it adds (the words are `action.<name>`). |
 
-A module that fails to load is reported in the console and on the page, and skipped; the rest still run. A game changes the look with a stylesheet, usually by setting the custom properties at the top of `engine.css`. Each later client slice adds its own hooks here (activity panels, map objects).
+A module that fails to load is reported in the console and on the page, and skipped; the rest still run. A game changes the look with a stylesheet, usually by setting the custom properties at the top of `engine.css`. Each later client slice adds its own hooks here (map objects).
 
 The client's files are checked when the app is made: a module or style that isn't in `client_dir`, a name with a path out of it, or a folder that doesn't exist stops the server at start.
 
-**The example game** (`terraforma.example`) is the smallest game that uses all of this: a seed with one small map, a tileset of six pictures, and a browser module and stylesheet that use the hooks above. `python -m terraforma serve` runs it, and it is the game the browser tests play. A game of your own can start from it. Its pictures are drawn for this repository; every asset's source and license are recorded beside it (`assets/ASSETS.md`).
+**The example game** (`terraforma.example`) is the smallest game that uses all of this: a seed with one small map and two jobs (Fighter and Scout), a tileset of six pictures, and a browser module and stylesheet that use the hooks above. `python -m terraforma serve` runs it, and it is the game the browser tests play. A game of your own can start from it. Its pictures are drawn for this repository; every asset's source and license are recorded beside it (`assets/ASSETS.md`).
 
 ## Running it
 

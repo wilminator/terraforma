@@ -48,6 +48,16 @@ def new_hero(client, headers, name="Aria", job="fighter"):
 
 # --- heroes -------------------------------------------------------------------------------
 
+def test_the_jobs_a_hero_can_take_are_listed_with_their_starting_stats_to_a_logged_in_player(mike, app_client):
+    client, _ = mike
+    jobs = client.get("/api/jobs").json()
+    assert [(job["key"], job["name"]) for job in jobs] == [("fighter", "Fighter"), ("mage", "Mage")]
+    assert {name: value for name, value in jobs[0]["stats"].items() if value} == {"HP": 10, "Strength": 4}, "one level of growth, rounded"
+    assert {name: value for name, value in jobs[1]["stats"].items() if value} == {"MP": 8}
+    client.cookies.clear()
+    assert client.get("/api/jobs").status_code == 401
+
+
 def test_a_new_hero_starts_at_level_one_with_the_jobs_stats_on_the_hub(mike):
     client, headers = mike
     answer = new_hero(client, headers)

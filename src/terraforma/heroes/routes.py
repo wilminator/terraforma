@@ -35,6 +35,12 @@ def refuse(error: ValueError) -> HTTPException:
     return HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error))
 
 
+@router.get("/jobs")
+async def jobs(account: CurrentAccount, db: Db) -> list[dict]:
+    """The jobs a new hero can take, with the stats a hero of each starts with."""
+    return await service.list_jobs(db)
+
+
 @router.get("/heroes")
 async def heroes(account: CurrentAccount, db: Db) -> list[dict]:
     return await service.list_heroes(db, account)
