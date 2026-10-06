@@ -270,10 +270,6 @@ def team_rules(rules: Rules) -> dict:
     return {"team_min": rules.team_min, "team_max": team_most(rules), "max_teams": rules.max_teams}
 
 
-def _count_words(low: int, high: int) -> str:
-    return f"a team has {high} heroes" if low == high else f"a team has {low} to {high} heroes"
-
-
 async def member_count(session: AsyncSession, team_id: int) -> int:
     return await session.scalar(select(func.count()).select_from(TeamMember).where(TeamMember.team_id == team_id)) or 0
 
@@ -290,11 +286,12 @@ async def _team_of_hero(session: AsyncSession, hero: Hero) -> TeamMember:
 
 
 async def save_team(session: AsyncSession, account: Account, name: str, heroes: list[tuple[str, str]], rules: Rules) -> Team:
-    """Makes a team with its heroes ($heroes: a name and a job key each), in one go: refused unless there are between the game's
-    ``team_min`` and ``team_max`` of them, and unless the player has room for another team."""
+    """Makes a team, with heroes ($heroes: a name and a job key each, none at all for a team that is filled in on its own page), in one
+    go: refused unless there are at most the game's ``team_max`` of them, and unless the player has room for another team. A team
+    with fewer than ``team_min`` heroes is incomplete: it cannot play until it is filled."""
     most = team_most(rules)
-    if not rules.team_min <= len(heroes) <= most:
-        raise HeroError(_count_words(rules.team_min, most))
+    if len(heroes) > most:
+        raise HeroError(f"a team has room for {most} heroes")
     team = await create_team(session, account, name, rules.max_teams)
     for slot, (hero_name, job_key) in enumerate(heroes):
         hero = await create_hero(session, account, hero_name, job_key)

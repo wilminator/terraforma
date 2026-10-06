@@ -169,22 +169,33 @@ def test_a_team_is_saved_with_its_heroes_in_slots(mike):
     assert client.get("/api/teams").json() == [team]
 
 
-def test_a_team_needs_the_games_number_of_heroes_to_be_saved(mike, monkeypatch):
+def test_a_team_is_made_first_and_filled_in_after_and_holds_the_games_maximum_of_heroes(mike, monkeypatch):
     client, headers = mike
     assert client.get("/api/team-rules").json() == {"team_min": 1, "team_max": 4, "max_teams": 8}
-    assert save_team(client, headers, heroes=()).status_code == 422, "below the minimum"
-    assert save_team(client, headers, heroes=("A1", "A2", "A3", "A4", "A5")).status_code == 422, "above the maximum"
-    assert client.get("/api/teams").json() == [] and client.get("/api/heroes").json() == []
+    empty = save_team(client, headers, heroes=())
+    assert empty.status_code == 201 and empty.json()["members"] == [], "a team can be made with nobody on it"
+    assert client.post("/api/teams", json={"name": "Beta"}, headers=headers).status_code == 201, "the heroes may be left out of the call"
+    assert save_team(client, headers, name="Gamma", heroes=("A1", "A2", "A3", "A4", "A5")).status_code == 422, "above the maximum"
+    assert len(client.get("/api/teams").json()) == 2 and client.get("/api/heroes").json() == []
     monkeypatch.setattr(Rules, "team_min", 2)
     monkeypatch.setattr(Rules, "team_max", 3)
     assert client.get("/api/team-rules").json() == {"team_min": 2, "team_max": 3, "max_teams": 8}
-    assert save_team(client, headers, heroes=("Aria",)).status_code == 422
-    assert save_team(client, headers, heroes=("A1", "A2", "A3", "A4")).status_code == 422
-    assert save_team(client, headers, heroes=("A1", "A2")).status_code == 201
+    assert save_team(client, headers, name="Delta", heroes=("A1", "A2", "A3", "A4")).status_code == 422
+    assert save_team(client, headers, name="Delta", heroes=("A1", "A2")).status_code == 201
     monkeypatch.setattr(Rules, "team_max", 9)
     assert client.get("/api/team-rules").json()["team_max"] == 5, "the engine's screens draw at most five"
-    assert save_team(client, headers, name="Beta", heroes=("B1", "B2", "B3", "B4", "B5")).status_code == 201
-    assert save_team(client, headers, name="Gamma", heroes=("C1", "C2", "C3", "C4", "C5", "C6")).status_code == 422
+    assert save_team(client, headers, name="Eps", heroes=("B1", "B2", "B3", "B4", "B5")).status_code == 201
+    assert save_team(client, headers, name="Zeta", heroes=("C1", "C2", "C3", "C4", "C5", "C6")).status_code == 422
+
+
+def test_a_team_with_too_few_heroes_cannot_play_until_it_has_the_minimum(mike, monkeypatch):
+    client, headers = mike
+    monkeypatch.setattr(Rules, "team_min", 2)
+    team = save_team(client, headers, heroes=("Aria",)).json()["id"]
+    refused = client.post(f"/api/teams/{team}/play", headers=headers)
+    assert refused.status_code == 409 and "at least 2 heroes" in refused.json()["detail"]
+    assert client.post(f"/api/teams/{team}/heroes", json=hero_spec("Bob"), headers=headers).status_code == 201
+    assert client.post(f"/api/teams/{team}/play", headers=headers).status_code == 200
 
 
 def test_a_player_has_the_number_of_teams_the_game_allows(mike, monkeypatch):

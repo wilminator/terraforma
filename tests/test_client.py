@@ -18,7 +18,7 @@ def game():
 
 
 def test_the_pages_are_served_with_the_security_headers(app_client):
-    for path in ("/", "/play/", "/account/", "/confirm-email", "/change-email", "/reset-password", "/confirm-2fa"):
+    for path in ("/", "/play/", "/account/", "/team/1", "/confirm-email", "/change-email", "/reset-password", "/confirm-2fa"):
         page = expect(app_client.get(path), 200)
         assert page.headers["content-type"].startswith("text/html")
         assert "script-src" not in page.headers["content-security-policy"], "default-src 'self' covers scripts: nothing inline, nothing foreign"
@@ -38,8 +38,8 @@ def test_every_address_the_engine_mails_opens_an_account_page(app_client, mailbo
     assert 'id="app"' in expect(app_client.get(f"{path}?token={token_in(sent)}"), 200).text
 
 
-def test_the_account_page_scripts_are_served(app_client):
-    for name in ("account", "forms", "register", "settings", "tokens"):
+def test_the_account_and_team_page_scripts_are_served(app_client):
+    for name in ("account", "forms", "register", "settings", "tokens", "team", "team-editor"):
         expect(app_client.get(f"/client/js/{name}.js"), 200)
 
 
