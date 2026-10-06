@@ -31,16 +31,28 @@ def test_the_games_stylesheet_and_assets_are_served(page, live_server):
     assert answer.ok and answer.headers["content-type"].startswith("image/svg")
 
 
-def test_the_games_login_links_to_creating_an_account_and_to_a_new_password(page):
+def test_a_logged_out_player_is_sent_to_the_account_page_and_back_to_the_game_after_logging_in(page, live_server):
+    live_server.make_account()
     page.goto("/play/")
-    page.get_by_role("link", name="Create an account").click()
-    expect(page).to_have_url("/account/#register")
+    expect(page).to_have_url("/account/?next=play")
+    expect(page.get_by_role("heading", name="Log in")).to_be_visible()
+    page.get_by_role("link", name="Create an account").click()  # the way to a new account is on the same page
     expect(page.get_by_role("heading", name="Create an account")).to_be_visible()
+    page.get_by_role("link", name="Log in").click()
 
-    page.goto("/play/")
-    page.get_by_role("link", name="Forgot your password?").click()
-    expect(page).to_have_url("/account/#reset")
-    expect(page.get_by_role("heading", name="Reset your password")).to_be_visible()
+    log_in(page)
+    expect(page).to_have_url("/play/")
+    expect(page.locator("#who")).to_have_text("Playing as Mike")
+
+    page.goto("/account/?next=play")  # already logged in: straight back to the game
+    expect(page).to_have_url("/play/")
+
+
+def test_the_account_page_goes_nowhere_but_the_game_after_logging_in(page, live_server):
+    live_server.make_account()
+    page.goto("/account/?next=https://example.com/")
+    log_in(page)
+    expect(page.locator("#who")).to_have_text("Logged in as Mike.")
 
 
 def test_a_player_logs_in_sees_the_stage_keeps_the_login_on_reload_and_logs_out(page, live_server):
@@ -78,16 +90,20 @@ def test_the_account_page_logs_in_and_out_too(page, live_server):
     expect(page.get_by_role("heading", name="Log in")).to_be_visible()
 
 
-def test_the_game_asks_for_landscape_and_the_pages_do_not(new_page):
+def test_the_game_asks_for_landscape_and_the_pages_do_not(new_page, live_server):
+    live_server.make_account()
     portrait = new_page({"width": 390, "height": 800})
     portrait.goto("/play/")
+    expect(portrait.get_by_role("heading", name="Log in")).to_be_visible()  # the login page works upright
+    log_in(portrait)
     expect(portrait.locator("#rotate")).to_be_visible()
     expect(portrait.locator("#rotate")).to_have_text("Turn your device sideways to play.")
 
     landscape = new_page({"width": 800, "height": 390})
     landscape.goto("/play/")
+    log_in(landscape)
     expect(landscape.locator("#rotate")).to_be_hidden()
-    expect(landscape.get_by_role("heading", name="Log in")).to_be_visible()
+    expect(landscape.locator("#who")).to_have_text("Playing as Mike")
 
     # The marketing page is for any orientation.
     portrait.goto("/")
