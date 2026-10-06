@@ -105,7 +105,7 @@ def test_a_map_wraps_only_the_directions_that_wrap():
 def test_a_map_without_a_grid_is_open_ground_in_a_plain_zone():
     hub = Map(name="hub", width=4, height=4)
     assert hub.tile(2, 2)["passable"] and hub.tile(2, 2)["encounter_rate"] == 0
-    assert hub.zone(2, 2) == {"name": "", "encounters": [], "drops": [], "pvp": False}
+    assert hub.zone(2, 2) == {"name": "", "encounters": [], "drops": [], "pvp": False, "can_flee": True}
 
 
 # --- loading ----------------------------------------------------------------------
@@ -131,7 +131,7 @@ async def test_loading_with_no_zone_grid_makes_the_whole_map_the_first_zone(db):
     await load_content(db, {"maps": [{"key": "hall", "name": "Hall", "tileset": [{}], "tiles": [[0, 0], [0, 0]], "zones": [{"name": "all", "pvp": True}]}]})
     await db.commit()
     hall = await db.scalar(select(Map).where(Map.name == "hall"))
-    assert hall.zone_tiles == [[0, 0], [0, 0]] and hall.zone(1, 1) == {"name": "all", "encounters": [], "drops": [], "pvp": True}
+    assert hall.zone_tiles == [[0, 0], [0, 0]] and hall.zone(1, 1) == {"name": "all", "encounters": [], "drops": [], "pvp": True, "can_flee": True}
 
 
 @pytest.mark.anyio

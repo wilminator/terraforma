@@ -159,7 +159,28 @@ async def play_round(session: AsyncSession, record: FightRecord, commands: list[
             await session.flush()
     except IntegrityError as error:
         raise SequenceConflict(f"round {sequence} of fight {record.id} was already played") from error
+    await _release_fled(session, record, fight, events)
     return events
+
+
+async def _release_fled(session: AsyncSession, record: FightRecord, fight: Fight, events: list[Event]) -> None:
+    """The heroes that left the fight in this round are free of it (``FightParticipant.fled``), and what they stand at (HP, MP)
+    is saved to them now, since nothing more happens to them in it and they may rest or fight elsewhere before it ends."""
+    for each in events:
+        if each.type is not EventType.FLED:
+            continue
+        address = tuple(each.data[:3])
+        row = await session.scalar(select(FightParticipant).where(
+            FightParticipant.fight_id == record.id, FightParticipant.party == address[0], FightParticipant.group_index == address[1],
+            FightParticipant.character == address[2]))
+        if row is None or row.fled:
+            continue
+        row.fled = True
+        fighter = fight.get(address)
+        hero = await session.get(Hero, fighter.charid) if fighter.charid is not None else None
+        if hero is not None:
+            hero.vitals = {name: fighter.current[name] for name in fighter.current}
+    await session.flush()
 
 
 # --- checking the log ---------------------------------------------------------------------------------------
@@ -211,13 +232,29 @@ async def apply_results(session: AsyncSession, record: FightRecord, rules: Rules
     if not fight.over:
         raise FightNotOver(f"fight {record.id} is not over")
     updated = []
+    gains = await _gains(session, record)
     for address in fight.addresses():
         fighter = fight.get(address)
         hero = await session.get(Hero, fighter.charid) if fighter.charid is not None else None
         if hero is None:  # a monster, or a hero deleted since the fight began
             continue
-        hero.xp, hero.level, hero.stats = fighter.exp, fighter.level, dict(fighter.base)
-        hero.vitals = {name: fighter.current[name] for name in rules.resource_names if name in fighter.current}
+        if fighter.fled:
+            # It left the fight and may have fought, rested or levelled since: what the end of the fight paid it is added to
+            # the hero (once), and its resources were saved when it left (``play_round``).
+            row = await session.scalar(select(FightParticipant).where(
+                FightParticipant.fight_id == record.id, FightParticipant.party == address[0], FightParticipant.group_index == address[1],
+                FightParticipant.character == address[2]))
+            if row is not None and row.settled:
+                continue
+            earned, levels, stats = gains.get(address, (0, 0, {}))
+            hero.xp += earned
+            hero.level += levels
+            hero.stats = {name: value + stats.get(name, 0) for name, value in hero.stats.items()}
+            if row is not None:
+                row.settled = True
+        else:
+            hero.xp, hero.level, hero.stats = fighter.exp, fighter.level, dict(fighter.base)
+            hero.vitals = {name: fighter.current[name] for name in rules.resource_names if name in fighter.current}
         await session.flush()
         await inventory.grant_abilities(session, hero)
         updated.append(hero)
@@ -226,6 +263,25 @@ async def apply_results(session: AsyncSession, record: FightRecord, rules: Rules
     await save_relations(session, record, relations or Relations())
     await challenge.pay_fight(session, record, fight, rules)
     return updated
+
+
+async def _gains(session: AsyncSession, record: FightRecord) -> dict[Address, tuple[int, int, dict[str, int]]]:
+    """What the log paid each fighter: ``(experience, levels, stat gains)`` from its ``XpEarned`` and ``LevelUp`` events."""
+    paid: dict[Address, tuple[int, int, dict[str, int]]] = {}
+    for action in await actions(session, record):
+        for raw in action.events:
+            each = Event.from_list(raw)
+            if each.type not in (EventType.XP_EARNED, EventType.LEVEL_UP):
+                continue
+            address = tuple(each.data[:3])
+            earned, levels, stats = paid.get(address, (0, 0, {}))
+            if each.type is EventType.XP_EARNED:
+                earned += each.data[3]
+            else:
+                levels += 1
+                stats = {name: stats.get(name, 0) + each.data[4].get(name, 0) for name in {*stats, *each.data[4]}}
+            paid[address] = (earned, levels, stats)
+    return paid
 
 
 async def save_relations(session: AsyncSession, record: FightRecord, relations: Relations) -> bool:

@@ -38,11 +38,11 @@ class Towns:
 
     async def may_wait(self, session: AsyncSession, team_id: int) -> str | None:
         """Whether a team may start waiting to leave: None if it may, otherwise why not. By default a team with a hero in a
-        running fight may not (a game's rule for fleeing, by party, team or hero, will replace this)."""
+        running fight may not, but a hero that fled from it is free (``FightParticipant.fled``); a game may ask more or less."""
         busy = await session.scalar(
             select(FightParticipant.id).join(FightRecord, FightRecord.id == FightParticipant.fight_id)
             .join(TeamMember, TeamMember.hero_id == FightParticipant.hero_id)
-            .where(TeamMember.team_id == team_id, FightRecord.finished.is_(False)).limit(1)
+            .where(TeamMember.team_id == team_id, FightRecord.finished.is_(False), FightParticipant.fled.is_(False)).limit(1)
         )
         return "a hero of that team is in a fight" if busy is not None else None
 

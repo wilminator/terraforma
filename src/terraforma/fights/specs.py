@@ -44,11 +44,14 @@ REMOVE_GOOD_STATUS = "remove_good_status"
 CAUSE_BAD_STATUS = "cause_bad_status"
 REMOVE_BAD_STATUS = "remove_bad_status"
 RESTORE_MP = "restore_mp"
+#: Forces the target out of the fight, as a flee that is not its own choice (``Rules.eject_chance``): ``base`` is the chance
+#: out of 100, before the user's Power against the target's Resistance move it between half and double.
+EJECT = "eject"
 
 DETRIMENTAL = {HURT, SLAY, REMOVE_GOOD_STATUS, CAUSE_BAD_STATUS}
 ONLY_LIVING = {
     HEAL, HURT, SLAY, CAUSE_GOOD_STATUS,
-    REMOVE_GOOD_STATUS, CAUSE_BAD_STATUS, REMOVE_BAD_STATUS, RESTORE_MP,
+    REMOVE_GOOD_STATUS, CAUSE_BAD_STATUS, REMOVE_BAD_STATUS, RESTORE_MP, EJECT,
 }
 
 
@@ -70,6 +73,8 @@ class EffectSpec:
     status: str = ""
     #: Rounds a placed status lasts, overriding the status's own. None: the status's own.
     duration: int | None = None
+    #: For ``eject`` only: whether it may be aimed at the user's own side (its allies and itself). Off, it only ejects enemies.
+    friendly: bool = False
 
     @classmethod
     def from_dict(cls, data: dict | None) -> "EffectSpec":
@@ -77,7 +82,7 @@ class EffectSpec:
             return cls()
         return cls(data.get("effect", NONE), scope_number(data.get("targets", INDIVIDUAL)),
                    data.get("base", 0), data.get("added", 0), data.get("attribute", "none"),
-                   data.get("status") or "", data.get("duration"))
+                   data.get("status") or "", data.get("duration"), bool(data.get("friendly", False)))
 
     @property
     def detrimental(self) -> bool:

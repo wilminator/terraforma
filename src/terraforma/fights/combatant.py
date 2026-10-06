@@ -69,10 +69,18 @@ class Combatant:
     #: fighter (they count as having helped it when drops are shared out).
     drops: tuple[str, ...] = ()
     buffed_by: list[Address] = field(default_factory=list)
+    #: Whether it has left the fight (fled, or was ejected: ``Rules.flee_party``). It stays in the fight's layout, so its
+    #: address and what it earned are kept, but it no longer acts, can't be reached and doesn't count as standing.
+    fled: bool = False
 
     # --- stats ----------------------------------------------------------------------------
     def alive(self, rules: Rules) -> bool:
         return self.current[rules.vital] > 0
+
+    def present(self, rules: Rules) -> bool:
+        """Alive and still in the fight: what acts, can be aimed at and keeps its party standing. A fighter that fled is
+        still ``alive`` (it counts as having survived, for gold and drops) but not present."""
+        return self.alive(rules) and not self.fled
 
     def worn(self, command: int | bool | None = None, every: bool = False, stat: str = "", rules: Rules | None = None) -> list[ItemSpec]:
         """The items worn that count towards $stat: all of them, except a hand's gear counts for a hand stat

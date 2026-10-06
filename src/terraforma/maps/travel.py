@@ -11,11 +11,11 @@ from ..parties.models import Party
 
 
 async def in_fight(session: AsyncSession, party: Party) -> bool:
-    """Whether any hero of the party is in a fight that is still running."""
+    """Whether any hero of the party is in a fight that is still running (one that fled from it is not)."""
     heroes = await parties.hero_ids(session, party.id)
     return heroes != [] and await session.scalar(
         select(FightParticipant.id).join(FightRecord, FightRecord.id == FightParticipant.fight_id)
-        .where(FightParticipant.hero_id.in_(heroes), FightRecord.finished.is_(False)).limit(1)
+        .where(FightParticipant.hero_id.in_(heroes), FightRecord.finished.is_(False), FightParticipant.fled.is_(False)).limit(1)
     ) is not None
 
 

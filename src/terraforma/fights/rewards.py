@@ -33,7 +33,7 @@ def experience_parties(rules: Rules, fight: Fight) -> list[Party]:
                 continue
             fighter = fight.get(address)
             debts = [Debt((debt[0], debt[1], debt[2]), debt[3], debt[4]) for debt in fighter.xp_debts]
-            fighters.append(Fighter(address, debts, fighter.charid))
+            fighters.append(Fighter(address, debts, fighter.charid, fighter.fled))
         parties.append(Party(index, fighters, party.dead(rules), frozenset(allies), frozenset(enemies), party.teams))
     return parties
 
@@ -59,9 +59,11 @@ def settle(rules: Rules, fight: Fight, rng: random.Random) -> list[Event]:
             for address in fight.addresses()
             if address[0] in enemies and not fight.get(address).alive(rules)
         ]
-        share = gold_per_team(dropped, len(party.teams))
+        # only a team with a hero alive at the end (one who fled counts) is paid; a team that is all down gets no gold
+        paid = [team for team in party.teams if fight.team_survives(index, team, rules)]
+        share = gold_per_team(dropped, len(paid))
         if share:
-            events.extend(event(EventType.GOLD, index, team, share) for team in party.teams)
+            events.extend(event(EventType.GOLD, index, team, share) for team in paid)
 
     apply_events(fight, rules, events)  # experience first: advancing reads it
     for address in earned:
@@ -69,4 +71,8 @@ def settle(rules: Rules, fight: Fight, rng: random.Random) -> list[Event]:
         apply_events(fight, rules, level_ups)
         events.extend(level_ups)
     events.extend(rules.roll_drops(fight, rng))  # after the experience and the gold, so adding it changes nothing before it
+    for index, party in fight.parties.items():
+        if party.teams and party.lost(rules):
+            lost = [event(EventType.PARTY_LOST, index), *rules.party_lost(fight, index)]
+            events.extend(lost)
     return events

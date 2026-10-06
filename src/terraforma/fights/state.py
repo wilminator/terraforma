@@ -15,10 +15,13 @@ from .status import Curve, Modifier, StatusSpec, StatusToken, Tick
 
 
 def _effect(effect: EffectSpec) -> dict:
-    return {
+    raw = {
         "effect": effect.effect, "targets": effect.targets, "base": effect.base, "added": effect.added, "attribute": effect.attribute,
         "status": effect.status, "duration": effect.duration,
     }
+    if effect.friendly:  # (only written when set, like an unremovable token: a stored fight's state reads back as it was written)
+        raw["friendly"] = True
+    return raw
 
 
 def _build_effect(raw: dict) -> EffectSpec:
@@ -99,11 +102,12 @@ def _fighter(fighter: Combatant) -> dict:
         },
         "tokens": [_token(token) for token in fighter.tokens],
         "drops": list(fighter.drops), "buffed_by": [list(address) for address in fighter.buffed_by],
+        **({"fled": True} if fighter.fled else {}),
     }
 
 
 def dehydrate(fight: Fight) -> dict:
-    return {"over": fight.over, "area_drops": list(fight.area_drops), "drop_tables": {key: _drop_table(table) for key, table in fight.drop_tables.items()}, "statuses": {key: _status(spec) for key, spec in fight.statuses.items()}, "parties": [
+    return {**({"can_flee": False} if not fight.can_flee else {}), "over": fight.over, "area_drops": list(fight.area_drops), "drop_tables": {key: _drop_table(table) for key, table in fight.drop_tables.items()}, "statuses": {key: _status(spec) for key, spec in fight.statuses.items()}, "parties": [
         {
             "index": party_index,
             "allies": None if party.allies is None else sorted(party.allies),
@@ -145,6 +149,7 @@ def _build_fighter(raw: dict, statuses: dict[str, StatusSpec]) -> Combatant:
         command=raw["command"], using=raw["using"], target=tuple(raw["target"]),
         **dict(zip(("ai_action", "ai_goal", "ai_target", "ai_experience"), raw.get("ai", (0, 0, 0, 0)), strict=True)),
         **_progress(raw.get("progress", {})),
+        fled=raw.get("fled", False),
         drops=tuple(raw.get("drops", ())), buffed_by=[tuple(address) for address in raw.get("buffed_by", ())],
         tokens=[
             StatusToken(statuses[token["status"]], tuple(token["source"]), token["duration"], token["rounds"], token["turns"], token.get("unremovable", False))
@@ -166,5 +171,5 @@ def hydrate(raw: dict) -> Fight:
             None if party["enemies"] is None else set(party["enemies"]),
             {int(team): list(members) for team, members in party.get("teams", {}).items()},
         )
-    return Fight(parties, statuses, over=raw.get("over", False), area_drops=list(raw.get("area_drops", ())),
+    return Fight(parties, statuses, over=raw.get("over", False), can_flee=raw.get("can_flee", True), area_drops=list(raw.get("area_drops", ())),
                  drop_tables={key: _build_drop_table(table) for key, table in raw.get("drop_tables", {}).items()})

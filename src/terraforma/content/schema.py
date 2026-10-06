@@ -69,7 +69,7 @@ Targets = (
 )
 Effect = Literal[
     "none", "heal", "hurt", "revive", "slay",
-    "cause_good_status", "remove_good_status", "cause_bad_status", "remove_bad_status", "restore_mp",
+    "cause_good_status", "remove_good_status", "cause_bad_status", "remove_bad_status", "restore_mp", "eject",
 ]
 
 
@@ -86,7 +86,9 @@ class EffectSpec(Strict):
 
     ``status`` (the status a ``cause_`` effect places, required; a ``remove_`` effect takes off that one, or every one of its
     kind if left out) and ``duration`` (rounds a placed status lasts, over the status's own) are for those effects only. A
-    stat is raised or lowered by a status with a ``stat`` modifier, not by an effect of its own."""
+    stat is raised or lowered by a status with a ``stat`` modifier, not by an effect of its own. ``eject`` forces its target out
+    of the fight like a flee that is not its own choice: ``base`` is its chance out of 100 (moved between half and double by Power
+    against Resistance) and ``friendly`` lets it be aimed at the user's own side, which it refuses by default."""
 
     effect: Effect = "none"
     targets: Targets = "individual"
@@ -95,9 +97,14 @@ class EffectSpec(Strict):
     attribute: str = Field(default="none", max_length=32)
     status: Key | None = None
     duration: int | None = Field(default=None, ge=1)
+    friendly: bool = False
 
     @model_validator(mode="after")
     def _right_fields_for_the_effect(self, info: ValidationInfo):
+        if self.friendly and self.effect != "eject":
+            raise ValueError("friendly is only for the eject effect")
+        if self.effect == "eject" and self.base > 100:
+            raise ValueError("an eject's base is its chance out of 100")
         if self.effect in CAUSE_EFFECTS:
             if self.status is None:
                 raise ValueError(f"{self.effect} needs a status")
@@ -318,12 +325,14 @@ class Encounter(Strict):
 
 class Zone(Strict):
     """A kind of area: what walking in it meets (``encounters``), what a fight there drops on top of the monsters' own
-    (``drops``: drop table keys), and whether parties may fight each other there (``pvp``)."""
+    (``drops``: drop table keys), whether parties may fight each other there (``pvp``), and whether a fighter may flee from a
+    fight there (``can_flee``, on by default)."""
 
     name: str = Field(default="", max_length=64)
     encounters: list[Encounter] = Field(default=[], max_length=100)
     drops: list[Key] = Field(default=[], max_length=20)
     pvp: bool = False
+    can_flee: bool = True
 
 
 class MapObjectSeed(Strict):

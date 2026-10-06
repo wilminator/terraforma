@@ -76,7 +76,7 @@ async def look_at_map(name: Annotated[MapName, Path()], db: Db, account: Current
         "tileset": [{key: kind[key] for key in ("name", "passable", "poison", "art")} for kind in found.tileset or []],
         "objects": [{"id": each.id, "key": each.key, "name": each.name, "kind": each.kind, "action": each.action, "x": each.x, "y": each.y} for each in things],
         "edges": sorted(each.edge for each in edges),
-        "tiles": found.tiles, "zones": [{key: kind[key] for key in ("name", "pvp")} for kind in found.zones or []], "zone_tiles": found.zone_tiles,
+        "tiles": found.tiles, "zones": [{key: kind[key] for key in ("name", "pvp", "can_flee")} for kind in found.zones or []], "zone_tiles": found.zone_tiles,
     }
 
 

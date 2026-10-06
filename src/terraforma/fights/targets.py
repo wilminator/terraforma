@@ -11,7 +11,7 @@ from .specs import EffectSpec
 
 
 def _skip(rules: Rules, effect: EffectSpec, character: Combatant) -> bool:
-    return effect.only_living and not character.alive(rules)
+    return character.fled or (effect.only_living and not character.alive(rules))
 
 
 def _whole_group(party: int, group_index: int, group: Group, rules: Rules, effect: EffectSpec) -> Iterator[tuple]:
@@ -109,10 +109,10 @@ def lost_target(fight: Fight, rules: Rules, rng: random.Random, fighter: Combata
     group = groups[group_index]
     reach = max(0, scope)
     near = [group.characters.get(index + character_index) for index in range(-reach, reach + 1)]
-    if any(other is not None and other.alive(rules) for other in near):
+    if any(other is not None and other.present(rules) for other in near):
         return False
     if group.dead(rules):
         return True
-    living = [index for index, other in group.characters.items() if other.alive(rules)]
+    living = [index for index, other in group.characters.items() if other.present(rules)]
     fighter.target = (party, group_index, rng.choice(living))
     return False

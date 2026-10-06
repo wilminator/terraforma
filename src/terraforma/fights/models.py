@@ -69,6 +69,11 @@ class FightParticipant(Base):
     name: Mapped[str] = mapped_column(String(64))
     hero_id: Mapped[int | None] = mapped_column(ForeignKey("heroes.id"), index=True)
     monster_key: Mapped[str | None] = mapped_column(String(64))
+    # The fighter has left the fight (it fled or was ejected: ``fights.store.play_round`` sets it from the log's ``Fled`` event):
+    # its hero is free of the fight, for walking, leaving a town or starting another, while the rest play on.
+    fled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # A fled hero's share of the result (experience, level-ups) was added to the hero once the fight ended (``store.apply_results``).
+    settled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
 
 class FightActionRecord(Base):

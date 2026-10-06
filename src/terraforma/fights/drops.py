@@ -103,10 +103,13 @@ def contributors(fight, monsters: Sequence[Address]) -> set[Address]:
     return pool
 
 
-def default_recipients(fight, party: int, monsters: Sequence[Address], share: str, rng: random.Random) -> list[Address]:
+def default_recipients(fight, party: int, monsters: Sequence[Address], share: str, rng: random.Random, rules=None) -> list[Address]:
     """The engine's way: one at random among the heroes who contributed (all the party's heroes if none did); one per
-    team the same way; or every hero of the party."""
+    team the same way; or every hero of the party. With $rules, only heroes of a team that has someone alive (one who fled
+    counts) are in line: a team with everyone down gets nothing."""
     heroes = [address for address in fight.addresses() if address[0] == party and fight.get(address).charid is not None]
+    if rules is not None:
+        heroes = [address for address in heroes if (team := fight.team_of(address)) is None or fight.team_survives(party, team, rules)]
     if not heroes:
         return []
     if share == EACH_MEMBER:
@@ -124,10 +127,11 @@ def default_recipients(fight, party: int, monsters: Sequence[Address], share: st
 
 
 def settle(rules, fight, rng: random.Random) -> list[Event]:
-    """Rolls the drops of a finished fight for each party of players that won. Returns its events, already applied."""
+    """Rolls the drops of a finished fight for each party of players that won (one that fled, or has anyone alive, counts as
+    having won: a party with everyone down gets nothing). Returns its events, already applied."""
     events: list[Event] = []
     for index, party in fight.parties.items():
-        if not party.teams or party.dead(rules):
+        if not party.teams or not party.survives(rules):
             continue
         _, enemies = rules.alignment(fight, index)
         dead = [address for address in fight.addresses() if address[0] in enemies and not fight.get(address).alive(rules)]

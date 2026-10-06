@@ -366,7 +366,7 @@ def test_the_calls_walk_a_party_and_refuse_the_wrong_requests(app_client):
     seen = expect(app_client.get("/api/maps/field"), 200).json()
     assert (seen["width"], seen["height"], seen["revision"], seen["wrap_x"]) == (5, 3, 1, True)
     assert seen["tileset"][2] == {"name": "grass", "passable": True, "poison": False, "art": None}, "no encounter rates for the page"
-    assert seen["zones"] == [{"name": "wilds", "pvp": False}] and seen["tiles"][2] == [2] * 5
+    assert seen["zones"] == [{"name": "wilds", "pvp": False, "can_flee": True}] and seen["tiles"][2] == [2] * 5
     expect(app_client.get("/api/maps/nowhere"), 404)
 
     expect(app_client.post(url, json={"destination": {"x": 1, "y": 2}}), 403)  # no CSRF token
