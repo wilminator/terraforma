@@ -68,6 +68,12 @@ def starting_stats(job: Job) -> dict[str, int]:
     return {stat: round(amount) for stat, amount in job.stat_growth.items()}
 
 
+async def list_jobs(session: AsyncSession) -> list[dict]:
+    """The jobs a new hero can take, in the game's order: what a hero of each starts with."""
+    jobs = (await session.scalars(select(Job).where(Job.active.is_(True)).order_by(Job.id))).all()
+    return [{"key": job.key, "name": job.name, "stats": starting_stats(job)} for job in jobs]
+
+
 async def create_hero(session: AsyncSession, account: Account, name: str, job_key: str) -> Hero:
     name = check_name(name)
     job = await session.scalar(select(Job).where(Job.key == job_key, Job.active.is_(True)))

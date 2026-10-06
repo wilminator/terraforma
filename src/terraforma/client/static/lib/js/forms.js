@@ -15,6 +15,16 @@ export function problemText(shell, error) {
   return error.status === 429 && error.retryAfter ? shell.text.get("problem.retry", { seconds: error.retryAfter }) : error.message;
 }
 
+/** Runs $work (async); a refusal is shown in the $problem element, in the server's own words. */
+export async function attempt(shell, problem, work) {
+  problem.textContent = "";
+  try {
+    await work();
+  } catch (error) {
+    problem.textContent = problemText(shell, error);
+  }
+}
+
 /**
  * A card with a form: $rows go in, a button submits, and $run (async) does the call. A refusal is shown under the fields;
  * $card.note is where $run puts what went well. Returns { form, problem, note, button }.

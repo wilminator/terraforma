@@ -1,7 +1,10 @@
 // The game client's page: log in, then the stage and its panels.
 
 import { h, replace } from "./dom.js";
+import { problemText } from "./forms.js";
 import { loginForm } from "./login.js";
+import { mountPanels } from "./panels.js";
+import { Roster } from "./roster.js";
 import { Shell } from "./shell.js";
 import { fitStage } from "./stage.js";
 
@@ -15,16 +18,31 @@ function showLogin() {
   replace(app, h("div", { class: "centered" }, loginForm(shell, (login) => { shell.signedIn(login); showGame(); })));
 }
 
-function showGame() {
+async function showGame() {
   const canvas = h("div", { class: "stage-canvas", id: "stage-canvas" });
   const stage = h("div", { class: "stage", id: "stage", role: "img", "aria-label": t("play.stage") }, canvas);
   const frame = h("div", { class: "stage-frame" }, stage);
+  const main = h("div", { class: "main" }, frame);
+  const tabs = h("div", { class: "tabs-host" });
+  const problem = h("p", { class: "problem", role: "alert" });
   const logout = h("button", { type: "button", id: "logout", onclick: async () => { await shell.logout(); showLogin(); } }, t("play.logout"));
   replace(
     app,
-    h("div", { class: "game" }, frame, h("header", { class: "bar" }, h("span", { id: "who" }, t("play.signed_in", { username: shell.account.username })), logout)),
+    h("div", { class: "game" }, main, h("header", { class: "bar" }, h("span", { id: "who" }, t("play.signed_in", { username: shell.account.username })), tabs, problem, logout)),
   );
   stopFitting = fitStage(frame, stage, canvas);
+
+  const roster = new Roster();
+  try {
+    await roster.load();
+  } catch (error) {
+    problem.textContent = problemText(shell, error);
+    return;
+  }
+  const { buttons, drawer } = mountPanels(shell, roster, roster.heroes.length ? null : "heroes");
+  replace(tabs, buttons);
+  main.append(drawer);
+  shell.emit("game", { roster });
 }
 
 async function main() {

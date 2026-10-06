@@ -12,9 +12,13 @@
 // shell.text      the page's words (get, set); an element with data-text="key" shows that text
 // shell.api       { get, post, call, ApiError }
 // shell.account   null, or { username, handle } once logged in
-// shell.on(event, handler)   "ready" (every module registered, nothing drawn yet), "login", "logout"; returns a function that stops listening
+// shell.on(event, handler)   "ready" (every module registered, nothing drawn yet), "login", "logout", and on the play page "game"
+//                            (the panels are drawn; the detail is { roster }); returns a function that stops listening
+// shell.panels    the game client's panels: the engine's (heroes, teams, party, nearby), and shell.panels.add(id, build) for a game's own
+// shell.actions   the actions the nearby list can ask for (talk, invite, open, search, fight, help); a game pushes the names it adds
 
 import * as api from "./api.js";
+import { Panels } from "./panels.js";
 import { Text } from "./strings.js";
 
 export class Shell {
@@ -23,11 +27,14 @@ export class Shell {
   account = null;
   text = new Text();
   api = api;
+  panels = new Panels();
+  actions = ["talk", "invite", "open", "search", "fight", "help"];
   problems = [];
   #handlers = new Map();
 
   constructor(page) {
     this.page = page;
+    this.panels.addEngine();
   }
 
   on(event, handler) {

@@ -1,0 +1,28 @@
+[
+ {
+  "key": "fighter",
+  "name": "Fighter",
+  "xp_needed": 20,
+  "stat_growth": {
+   "HP": 24,
+   "Strength": 5,
+   "Speed": 3,
+   "Accuracy": 4,
+   "Dodge": 2,
+   "Block": 4
+  }
+ },
+ {
+  "key": "scout",
+  "name": "Scout",
+  "xp_needed": 20,
+  "stat_growth": {
+   "HP": 16,
+   "Strength": 3,
+   "Speed": 6,
+   "Accuracy": 6,
+   "Dodge": 5,
+   "Block": 1
+  }
+ }
+]
