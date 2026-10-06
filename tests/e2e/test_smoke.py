@@ -31,6 +31,18 @@ def test_the_games_stylesheet_and_assets_are_served(page, live_server):
     assert answer.ok and answer.headers["content-type"].startswith("image/svg")
 
 
+def test_the_games_login_links_to_creating_an_account_and_to_a_new_password(page):
+    page.goto("/play/")
+    page.get_by_role("link", name="Create an account").click()
+    expect(page).to_have_url("/account/#register")
+    expect(page.get_by_role("heading", name="Create an account")).to_be_visible()
+
+    page.goto("/play/")
+    page.get_by_role("link", name="Forgot your password?").click()
+    expect(page).to_have_url("/account/#reset")
+    expect(page.get_by_role("heading", name="Reset your password")).to_be_visible()
+
+
 def test_a_player_logs_in_sees_the_stage_keeps_the_login_on_reload_and_logs_out(page, live_server):
     live_server.make_account()
     page.goto("/play/")
