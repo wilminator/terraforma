@@ -274,6 +274,34 @@ class Rules:
     #: 0.85. A stronger target is always allowed.
     pvp_window: float = 0.85
 
+    # --- joining a running fight ----------------------------------------------------------------------------------
+    #: The chance (0 to 1) that the hub offers a party about to fight a running fight to join instead: 2 to 5 percent is the plan.
+    #: Drawn from a stream of the world (``fights.joining``), so a test fixes the world's seed or sets this to 0 or 1.
+    join_chance: float = 0.03
+    #: How many running fights, picked at random, are looked at for one that suits the party, so a busy world is not searched whole.
+    join_looked_at: int = 10
+    #: The most parties one fight holds, the ones that joined it included.
+    max_fight_parties: int = 4
+
+    def may_join_fight(self, joiner_pxp: int, fight_pxps: list[int]) -> str | None:
+        """Whether a party of $joiner_pxp may be offered (and join) a fight whose parties' strengths are $fight_pxps: None if it may,
+        otherwise why not. By default the PvP window: the fight's strongest party must be at least ``pvp_window`` as strong as the
+        joiner, and a stronger fight is always fine."""
+        strongest = max(fight_pxps, default=0)
+        if strongest >= joiner_pxp or strongest >= joiner_pxp * self.pvp_window:
+            return None
+        return "That fight is too weak for this party."
+
+    def party_stance(self, stances: list[str]) -> str:
+        """How a party that joins a fight counts another party there, given the stances ("ally", "enemy" or "neutral") its teams hold
+        toward the other party's teams, one for each pair (``Relations.stance``): any allies and no enemies make an ally, enemies and
+        no allies make an enemy, and both make it neutral. Neutral pairs have no bearing, so none at all (strangers, or a party with no
+        player teams, such as monsters) is an enemy, as it is in any fight whose parties are not told otherwise."""
+        allies, enemies = "ally" in stances, "enemy" in stances
+        if allies and enemies:
+            return "neutral"
+        return "ally" if allies else "enemy"
+
     #: The longest route (steps) a party may be given in one go, however far the client asked it to go.
     route_limit: int = 100
 
@@ -367,9 +395,12 @@ class Rules:
     max_level: int = 100
 
     def fight_is_over(self, fight) -> bool:
-        """Whether the fight has ended: one party or none is left standing, or those left are all allies."""
+        """Whether the fight has ended: one party or none is left standing, or those left are all allies, or none of those left
+        counts another as an enemy (neutral parties, which a party that joined may be, don't fight on forever)."""
         live = [index for index, party in fight.parties.items() if not party.dead(self)]
-        return len(live) < 2 or all(set(live) <= self.alignment(fight, index)[0] for index in live)
+        return len(live) < 2 or all(set(live) <= self.alignment(fight, index)[0] for index in live) or not any(
+            set(live) & self.alignment(fight, index)[1] for index in live
+        )
 
     def on_fight_end(self, fight, rng) -> list:
         """Called when ``fight_is_over`` first holds: pays out experience and gold and advances whoever earned

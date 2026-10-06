@@ -24,7 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..content.schema import ENCOUNTER_SCALE
-from ..fights import live
+from ..fights import joining, live
 from ..fights.models import FightRecord
 from ..fights.rules import Rules
 from ..heroes.models import Hero
@@ -102,6 +102,8 @@ async def _check_free(session: AsyncSession, party: Party) -> None:
         raise WalkError("a party in a fight can't walk")
     if await towns.is_suspended(session, party.id):
         raise WalkError("a party in a town is apart: it must be put back together first")
+    if await joining.offer_of(session, party.id) is not None:
+        raise WalkError("the hub has offered the party a fight to join: answer it first")
 
 
 async def _edges(session: AsyncSession, game_map: Map) -> dict[str, MapObject]:
