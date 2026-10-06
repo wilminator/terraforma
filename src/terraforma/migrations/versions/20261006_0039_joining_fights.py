@@ -38,8 +38,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    with op.batch_alter_table('join_offers', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_join_offers_fight_id'))
-
     op.drop_table('join_offers')
     op.drop_table('fight_joins')
