@@ -28,12 +28,14 @@ class Mailer(Protocol):
     async def send(self, mail: Mail) -> None: ...
 
 
-def _message(mail: Mail, sender: str) -> EmailMessage:
+def _message(mail: Mail, sender: str, readable: bool = False) -> EmailMessage:
+    """$readable keeps the body as typed (8bit) instead of letting long lines become quoted-printable, where "=" is "=3D" and
+    a link is cut with "=" at the end of a line: a developer reading the file in the outbox can copy a link out of it."""
     message = EmailMessage()
     message["From"] = sender
     message["To"] = mail.to
     message["Subject"] = mail.subject
-    message.set_content(mail.body)
+    message.set_content(mail.body, cte="8bit" if readable else None)
     return message
 
 
@@ -64,7 +66,7 @@ class OutboxMailer:
     async def send(self, mail: Mail) -> None:
         self.folder.mkdir(parents=True, exist_ok=True)
         name = f"{wallclock.now():%Y%m%d-%H%M%S-%f}.eml"
-        (self.folder / name).write_bytes(bytes(_message(mail, self.sender)))
+        (self.folder / name).write_bytes(bytes(_message(mail, self.sender, readable=True)))
 
 
 @dataclass
