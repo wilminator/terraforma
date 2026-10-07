@@ -32,6 +32,7 @@ from ..models import Map, World
 from ..parties import service as parties
 from ..parties.models import Party
 from ..towns import service as towns
+from ..towns.hooks import Towns
 from ..world.rng import WorldRng
 from .models import EDGE, EDGES, MapObject
 from .travel import in_fight, move_heroes
@@ -192,13 +193,15 @@ async def _stop(session: AsyncSession, party: Party, game_map: Map, why: str) ->
 
 async def step(
     session: AsyncSession, rules: Rules, account_id: int, party_id: int, x: int, y: int,
-    run_edge: Callable[[Hero, MapObject], Awaitable[dict]] | None = None,
+    run_edge: Callable[[Hero, MapObject], Awaitable[dict]] | None = None, town_hooks: Towns | None = None,
 ) -> dict:
     """The client has arrived on (x, y), the next tile of the party's route. Confirms it (the party moves there and may meet
     monsters: ``fight`` is then the fight's number and ``monsters`` its keys, and the route is over) or, if it can't, says
     where the party stands (``confirmed`` false) and ends the route. ``done`` is true on the route's last tile. A step off an edge
     that has an event (the route's last tile, beyond the map) leaves the party where it stands, runs the edge's script with
-    $run_edge (hero, edge row) -> the first frame of its conversation, and answers with that as ``dialog`` and the ``edge``."""
+    $run_edge (hero, edge row) -> the first frame of its conversation, and answers with that as ``dialog`` and the ``edge``.
+    A party that arrives in a town (the game's ``Towns.is_town``, given as $town_hooks) and meets no monsters there is
+    suspended on arrival: the route is over and ``town`` is true."""
     party = await own_party(session, account_id, party_id)
     game_map = await _map_of(session, party)
     route = party.route
@@ -228,6 +231,8 @@ async def step(
     record, monsters = await _meet(session, rules, party, game_map)
     if record is not None:
         result |= {"fight": record.id, "monsters": monsters, "done": True}
+    elif town_hooks is not None and await towns.settle(session, town_hooks, party.id) is not None:
+        result |= {"town": True, "done": True}
     if result["done"]:
         party.route = None
     else:

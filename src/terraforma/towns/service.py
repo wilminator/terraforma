@@ -14,7 +14,8 @@ from ..fights import live
 from ..fights.build import hero_fighter
 from ..fights.models import FightParticipant, FightRecord
 from ..fights.rules import Rules
-from ..heroes.models import Hero, Team
+from ..heroes.models import Hero, Team, TeamMember
+from ..maps.travel import in_fight
 from ..models import Map, World
 from ..world.rng import WorldRng
 from ..parties import service as parties
@@ -93,6 +94,16 @@ async def settle(session: AsyncSession, towns: Towns, party_id: int) -> TownVisi
     if await visit_of_party(session, party.id) is not None or not await towns.is_town(session, party.map_id, party.x, party.y):
         return None
     return await enter_town(session, towns, party.id)
+
+
+async def settle_hero(session: AsyncSession, towns: Towns, hero_id: int) -> TownVisit | None:
+    """``settle`` for the party the hero's team is in, for the calls that can bring a party to a town (a warp in a dialog, a
+    team entering the game). Nothing happens for a hero on no team, a party in a fight, or a party that is not in a town."""
+    team_id = await session.scalar(select(TeamMember.team_id).where(TeamMember.hero_id == hero_id))
+    party = None if team_id is None else await parties.party_of(session, team_id)
+    if party is None or await in_fight(session, party):
+        return None
+    return await settle(session, towns, party.id)
 
 
 async def leave(session: AsyncSession, towns: Towns, rules: Rules, team_id: int) -> tuple[str, FightRecord | None]:

@@ -7,10 +7,11 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import Field
 
 from ..accounts.routes import Strict
-from ..api.deps import ActingAccount, CurrentAccount, Db, GameEconomy, GameInn, GameNpcs, GameReach, GameRules
+from ..api.deps import ActingAccount, CurrentAccount, Db, GameEconomy, GameInn, GameNpcs, GameReach, GameRules, GameTowns
 from ..heroes import service as heroes
 from ..heroes.routes import Id
 from ..heroes.routes import refuse as refuse_hero
+from ..towns import service as towns
 from . import inn as inns
 from . import service
 
@@ -63,11 +64,13 @@ async def dialog(hero_id: Id, account: CurrentAccount, db: Db) -> dict:
 
 
 @router.post("/dialog/next")
-async def next_step(hero_id: Id, body: Next, account: ActingAccount, db: Db, npcs: GameNpcs, reach: GameReach, inn: GameInn, rules: GameRules, economy: GameEconomy) -> dict:
-    """Goes on: Next (no choice), or the answer picked."""
+async def next_step(hero_id: Id, body: Next, account: ActingAccount, db: Db, npcs: GameNpcs, reach: GameReach, inn: GameInn, rules: GameRules, economy: GameEconomy, town: GameTowns) -> dict:
+    """Goes on: Next (no choice), or the answer picked. A warp into a town suspends the party there."""
     try:
         hero = await heroes.own_hero(db, account, hero_id)
-        return await service.answer(db, npcs, reach, hero, body.choice, partial(inns.rest, db, inn, rules, economy), economy)
+        frame = await service.answer(db, npcs, reach, hero, body.choice, partial(inns.rest, db, inn, rules, economy), economy)
+        await towns.settle_hero(db, town, hero.id)
+        return frame
     except (heroes.HeroError, service.NpcError) as error:
         raise refuse(error) from error
 

@@ -23,7 +23,10 @@ from terraforma.npcs.models import NpcTalk
 from terraforma.parties import service as parties
 from terraforma.reach import service as nearby
 from terraforma.reach.hooks import Reach
+from terraforma.parties.models import Party
 from terraforma.testing import in_app_db
+from terraforma.towns import service as towns
+from terraforma.towns.hooks import Towns
 
 from .helpers import expect
 from .test_npcs import sign_in
@@ -448,3 +451,70 @@ def test_the_step_call_runs_an_edge_script(app_client):
     expect(app_client.post(url, json={"destination": {"x": -1, "y": 1}}, headers=mike), 200)
     answer = expect(app_client.post(f"{url}/step", json={"x": -1, "y": 1}, headers=mike), 200).json()
     assert answer["edge"] == "west" and answer["dialog"]["events"] == [{"type": "text", "text": "A wall of thorns."}]
+
+
+# --- arriving in a town ----------------------------------------------------------------------------------------------
+
+class CellarTown(Towns):
+    """The cellar is a town; the yard is not."""
+
+    async def is_town(self, session, map_id, x, y):
+        return (await session.get(Map, map_id)).name == "cellar"
+
+
+class DoorstepTown(Towns):
+    """Only the tile in front of the yard's door is a town."""
+
+    async def is_town(self, session, map_id, x, y):
+        return (await session.get(Map, map_id)).name == "yard" and (x, y) == (3, 2)
+
+
+async def test_a_party_that_walks_into_a_town_is_suspended_there_and_its_route_ends(seeded):
+    owner, _, party = await crew(seeded, at=(1, 2))
+    await walking.plan(seeded, RULES, owner.id, party.id, [(4, 2)])
+    first = await walking.step(seeded, RULES, owner.id, party.id, 2, 2, town_hooks=DoorstepTown())
+    assert first["confirmed"] and not first["done"] and "town" not in first and not await towns.is_suspended(seeded, party.id)
+    second = await walking.step(seeded, RULES, owner.id, party.id, 3, 2, town_hooks=DoorstepTown())
+    assert second["confirmed"] and second["done"] and second["town"] is True and (second["x"], second["y"]) == (3, 2)
+    assert await towns.is_suspended(seeded, party.id) and (await seeded.get(Party, party.id)).route is None
+    with pytest.raises(walking.WalkError, match="put back together"):
+        await walking.plan(seeded, RULES, owner.id, party.id, [(4, 2)])
+
+
+async def test_a_game_with_no_town_hooks_never_suspends_a_walking_party(seeded):
+    owner, _, party = await crew(seeded, at=(2, 2))
+    await walking.plan(seeded, RULES, owner.id, party.id, [(3, 2)])
+    answer = await walking.step(seeded, RULES, owner.id, party.id, 3, 2)
+    assert answer["done"] and "town" not in answer and not await towns.is_suspended(seeded, party.id)
+
+
+async def test_a_door_that_leads_to_a_town_suspends_the_party_once_the_dialog_has_run(seeded):
+    _, hero, party = await crew(seeded, at=(4, 1))
+    await objects.use(seeded, NPCS, REACH, hero, (await on_map(seeded, "door")).id)
+    await npcs.answer(seeded, NPCS, REACH, hero, 0)
+    assert not await towns.is_suspended(seeded, party.id), "the warp itself only moves the party"
+    visit = await towns.settle_hero(seeded, CellarTown(), hero.id)
+    assert visit is not None and await towns.is_suspended(seeded, party.id)
+    assert await towns.settle_hero(seeded, CellarTown(), hero.id) is None, "settling twice changes nothing"
+
+
+async def test_settling_a_hero_does_nothing_off_a_town_or_with_no_team(seeded):
+    _, hero, party = await crew(seeded, at=(1, 1))
+    assert await towns.settle_hero(seeded, CellarTown(), hero.id) is None and not await towns.is_suspended(seeded, party.id)
+    owner = await create_account(seeded, "Solo", PASSWORD, email="solo@example.com", confirmed=True)
+    alone = await heroes.create_hero(seeded, owner, "Solo-hero", "fighter")
+    assert await towns.settle_hero(seeded, CellarTown(), alone.id) is None
+
+
+async def test_a_party_in_a_fight_is_not_suspended_until_it_is_over(seeded, monkeypatch):
+    _, hero, party = await crew(seeded, at=(1, 1))
+    cellar = await seeded.scalar(select(Map).where(Map.name == "cellar"))
+    await travel.relocate(seeded, party, cellar, 1, 1)
+
+    async def busy(session, party):
+        return True
+
+    monkeypatch.setattr(towns, "in_fight", busy)
+    assert await towns.settle_hero(seeded, CellarTown(), hero.id) is None and not await towns.is_suspended(seeded, party.id)
+    monkeypatch.undo()
+    assert await towns.settle_hero(seeded, CellarTown(), hero.id) is not None
