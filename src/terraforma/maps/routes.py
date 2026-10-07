@@ -11,13 +11,14 @@ from fastapi import APIRouter, HTTPException, Path, status
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 
-from ..api.deps import ActingAccount, CurrentAccount, Db, GameEconomy, GameInn, GameNpcs, GameReach, GameRules
+from ..api.deps import ActingAccount, CurrentAccount, Db, GameEconomy, GameInn, GameNpcs, GameReach, GameRules, GameTowns
 from ..heroes import service as heroes
 from ..heroes.routes import Id as HeroId
 from ..heroes.routes import refuse as refuse_hero
 from ..models import Map
 from ..npcs import inn as inns
 from ..npcs import service as npcs
+from ..towns import service as towns
 from ..world.location import MapName
 from . import objects, walking
 from .models import EDGE, MapObject
@@ -100,29 +101,32 @@ async def make_route(party_id: PartyId, body: RouteRequest, db: Db, account: Act
 
 
 @router.post("/parties/{party_id}/route/step")
-async def check_in(party_id: PartyId, body: TileRef, db: Db, account: ActingAccount, rules: GameRules, hooks: GameNpcs, inn: GameInn, economy: GameEconomy) -> dict:
+async def check_in(party_id: PartyId, body: TileRef, db: Db, account: ActingAccount, rules: GameRules, hooks: GameNpcs, inn: GameInn, economy: GameEconomy, town: GameTowns) -> dict:
     """The page has reached a tile of the route. Answers whether the server confirms it (and any fight it ran into), or
     where the party really is when it doesn't (``confirmed`` false), so the page can go back there. A step off an edge of the
     map that has an event leaves the party where it stands and answers with ``edge`` (its direction) and ``dialog``, the
-    first step of the event's script (a conversation frame; ``window`` says whether to open the dialog window)."""
+    first step of the event's script (a conversation frame; ``window`` says whether to open the dialog window). A party that walks
+    into a town is suspended there (the game's ``Towns.is_town``): the answer says ``town`` and the route is over."""
     try:
         async def run(hero, edge: MapObject) -> dict:
             return await npcs.start(db, hooks, hero, edge, partial(inns.rest, db, inn, rules, economy), economy)
 
-        return await walking.step(db, rules, account.id, party_id, body.x, body.y, run)
+        return await walking.step(db, rules, account.id, party_id, body.x, body.y, run, town)
     except walking.WalkError as error:
         raise refuse(error) from error
 
 
 @router.post("/heroes/{hero_id}/objects/{object_id}/use")
-async def use_object(hero_id: HeroId, object_id: ObjectId, db: Db, account: ActingAccount, hooks: GameNpcs, reach: GameReach, inn: GameInn, rules: GameRules, economy: GameEconomy) -> dict:
+async def use_object(hero_id: HeroId, object_id: ObjectId, db: Db, account: ActingAccount, hooks: GameNpcs, reach: GameReach, inn: GameInn, rules: GameRules, economy: GameEconomy, town: GameTowns) -> dict:
     """The hero uses a chest, door or the like in reach of them (the game's ``Reach.map_object``, for the object's own action;
     the nearby list for that action shows what is). Answers with the first step of its script: ``events`` to show, the
     ``prompt`` if it asks something, and ``window``: whether the page should open its dialog window. Refused (409) out of reach
     or in a fight, and 404 for a thing that isn't there."""
     try:
         hero = await heroes.own_hero(db, account, hero_id)
-        return await objects.use(db, hooks, reach, hero, object_id, partial(inns.rest, db, inn, rules, economy), economy)
+        frame = await objects.use(db, hooks, reach, hero, object_id, partial(inns.rest, db, inn, rules, economy), economy)
+        await towns.settle_hero(db, town, hero.id)  # (a door may have warped the party into a town)
+        return frame
     except objects.NoSuchObject as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
     except npcs.NpcError as error:
