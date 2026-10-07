@@ -17,6 +17,8 @@ COPY src ./src
 # --- the engine, for development -------------------------------------------------------------
 FROM base AS app
 RUN pip install ".[all-databases]"
+# Without a [mail] section, messages are written as .eml files to outbox/: the engine runs as terraforma and needs a place it can write.
+RUN mkdir /app/outbox && chown terraforma:terraforma /app/outbox
 USER terraforma
 # settings.toml (and keys/) are mounted into /app: no env vars needed.
 EXPOSE 8000
