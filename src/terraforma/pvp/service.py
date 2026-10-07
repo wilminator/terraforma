@@ -74,7 +74,7 @@ async def start_pvp_fight(session: AsyncSession, zones: PvpZones, rules: Rules, 
         raise PvpError("a party with no heroes can't fight")
     if await session.scalar(
         select(FightParticipant.id).join(FightRecord, FightRecord.id == FightParticipant.fight_id)
-        .where(FightParticipant.hero_id.in_(hero_ids), FightRecord.finished.is_(False)).limit(1)
+        .where(FightParticipant.hero_id.in_(hero_ids), FightRecord.finished.is_(False), FightParticipant.fled.is_(False)).limit(1)
     ) is not None:
         raise PvpError("a hero of one of those parties is already in a fight")
     if reason := await refusal(session, zones, rules, sides[0], sides[1], mine.map_id, mine.x, mine.y):
@@ -84,7 +84,9 @@ async def start_pvp_fight(session: AsyncSession, zones: PvpZones, rules: Rules, 
     fight = build_fight({number: _groups(fighters, rules.group_size) for number, fighters in enumerate(sides)}, await known_statuses(session), {}, [])
     for number, teams in enumerate(side_teams):
         fight.parties[number].teams = teams
-    record = await store.create_fight(session, await session.get(Map, mine.map_id), fight, mine.x, mine.y)
+    game_map = await session.get(Map, mine.map_id)
+    fight.can_flee = game_map.zone(mine.x, mine.y)["can_flee"]
+    record = await store.create_fight(session, game_map, fight, mine.x, mine.y)
     record.time_multiplier = multiplier
     record.round_deadline = wallclock.now() + timedelta(seconds=rules.round_length(multiplier))
     await session.flush()

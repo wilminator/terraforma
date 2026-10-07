@@ -32,7 +32,7 @@ from ..standing import service as standing
 from ..world.rng import WorldRng
 from . import ai, store, timing
 from .build import known_drop_tables, known_statuses, monster_fighter, team_party
-from .combatant import Address
+from .combatant import Address, Command
 from .events import Event
 from .fight import build_fight
 from .models import FightActionRecord, FightCommandRecord, FightParticipant, FightRecord
@@ -83,9 +83,11 @@ def _groups(fighters: list, size: int) -> dict[int, list]:
     return {number: fighters[start:start + size] for number, start in enumerate(range(0, len(fighters), size))}
 
 
-async def start_team_fight(session: AsyncSession, team: Team, monster_keys: list[str], rules: Rules, area_drops: list[str] | None = None) -> FightRecord:
+async def start_team_fight(session: AsyncSession, team: Team, monster_keys: list[str], rules: Rules, area_drops: list[str] | None = None,
+                           can_flee: bool | None = None) -> FightRecord:
     """A fight between a player's team (party 0) and monsters (party 1), where the team's first hero stands. The round
-    clock starts now. $area_drops are the keys of the area's own drop tables, rolled when the team wins (the zone's where the fight is, unless given). Raises Refused for a team with no heroes, no monsters, too many of them, or a hero who is in a
+    clock starts now. $area_drops are the keys of the area's own drop tables, rolled when the team wins (the zone's where the fight is, unless given).
+    $can_flee says whether fighters may flee (the zone's ``can_flee`` where the fight is, unless given; a scripted fight passes False). Raises Refused for a team with no heroes, no monsters, too many of them, or a hero who is in a
     fight already."""
     heroes, teams = await team_party(session, team, rules)
     if not heroes:
@@ -94,7 +96,8 @@ async def start_team_fight(session: AsyncSession, team: Team, monster_keys: list
         raise Refused(f"a fight needs between 1 and {rules.party_size} monsters")
     busy = await session.scalar(
         select(FightParticipant.id).join(FightRecord, FightRecord.id == FightParticipant.fight_id)
-        .where(FightParticipant.hero_id.in_([hero for members in teams.values() for hero in members]), FightRecord.finished.is_(False)).limit(1)
+        .where(FightParticipant.hero_id.in_([hero for members in teams.values() for hero in members]), FightRecord.finished.is_(False),
+               FightParticipant.fled.is_(False)).limit(1)
     )
     if busy is not None:
         raise Refused("a hero of that team is already in a fight")
@@ -111,6 +114,7 @@ async def start_team_fight(session: AsyncSession, team: Team, monster_keys: list
         raise Refused(f"there is no drop table {sorted(missing)[0]!r}")
     fight = build_fight({0: _groups(heroes, rules.group_size), 1: _groups(monsters, rules.group_size)}, await known_statuses(session), tables, list(area_drops or ()))
     fight.parties[0].teams = teams
+    fight.can_flee = game_map.zone(first.x, first.y)["can_flee"] if can_flee is None else can_flee
     await standing.attach(session, fight)
     record = await store.create_fight(session, game_map, fight, first.x, first.y)
     if (own := await parties.party_of(session, team.id)) is not None:
@@ -121,7 +125,8 @@ async def start_team_fight(session: AsyncSession, team: Team, monster_keys: list
     return record
 
 
-async def start_party_fight(session: AsyncSession, party_id: int, monster_keys: list[str], rules: Rules, area_drops: list[str] | None = None) -> FightRecord:
+async def start_party_fight(session: AsyncSession, party_id: int, monster_keys: list[str], rules: Rules, area_drops: list[str] | None = None,
+                            can_flee: bool | None = None) -> FightRecord:
     """A fight between a whole party (every team of it, side 0) and monsters (side 1), at the party's spot. Like ``start_team_fight``,
     which it shares its refusals with."""
     party = await session.get(Party, party_id)
@@ -137,7 +142,7 @@ async def start_party_fight(session: AsyncSession, party_id: int, monster_keys: 
     hero_ids = [hero for members in teams.values() for hero in members]
     busy = await session.scalar(
         select(FightParticipant.id).join(FightRecord, FightRecord.id == FightParticipant.fight_id)
-        .where(FightParticipant.hero_id.in_(hero_ids), FightRecord.finished.is_(False)).limit(1)
+        .where(FightParticipant.hero_id.in_(hero_ids), FightRecord.finished.is_(False), FightParticipant.fled.is_(False)).limit(1)
     )
     if busy is not None:
         raise Refused("a hero of that party is already in a fight")
@@ -154,6 +159,7 @@ async def start_party_fight(session: AsyncSession, party_id: int, monster_keys: 
         raise Refused(f"there is no drop table {sorted(missing)[0]!r}")
     fight = build_fight({0: _groups(heroes, rules.group_size), 1: _groups(monsters, rules.group_size)}, await known_statuses(session), tables, list(area_drops or ()))
     fight.parties[0].teams = teams
+    fight.can_flee = game_map.zone(party.x, party.y)["can_flee"] if can_flee is None else can_flee
     await standing.attach(session, fight)
     record = await store.create_fight(session, game_map, fight, party.x, party.y)
     party.steps = 0  # the walk to the next fight starts over (``Map.safe_steps``)
@@ -200,8 +206,12 @@ async def submit_command(session: AsyncSession, record: FightRecord, account_id:
     if mine.get(address) != account_id:
         raise NotYours("that fighter isn't yours")
     fighter = fight.get(address)
+    if fighter.fled:
+        raise Refused("that fighter has left the fight")
     if not fighter.alive(rules):
         raise Refused("that fighter is down")
+    if command == Command.RUN and not rules.flee_allowed(fight, address):
+        raise Refused("there is no running from this fight")
     fighter.command, fighter.using, fighter.target = command, using, target
     if not valid_action(fighter):
         raise Refused("that fighter can't do that")
@@ -217,10 +227,10 @@ async def submit_command(session: AsyncSession, record: FightRecord, account_id:
 
 
 async def everyone_committed(session: AsyncSession, record: FightRecord, rules: Rules) -> bool:
-    """Whether every living fighter that a player commands has a command waiting for this round."""
+    """Whether every fighter that a player commands and that is still in the fight (alive, and not fled) has a command waiting for this round."""
     fight, played = await store.load_state(session, record, rules)
     mine, ready = await owners(session, record), await waiting(session, record, played + 1)
-    return all(address in ready for address in mine if address in fight.addresses() and fight.get(address).alive(rules))
+    return all(address in ready for address in mine if address in fight.addresses() and fight.get(address).present(rules))
 
 
 # --- playing a round ---------------------------------------------------------------------------------------------
@@ -246,7 +256,7 @@ async def resolve_round(session: AsyncSession, record: FightRecord, rules: Rules
     commands = []
     for address in fight.addresses():
         fighter = fight.get(address)
-        if not fighter.alive(rules):
+        if not fighter.present(rules):
             continue
         if address in mine:
             if address in ready:
@@ -314,7 +324,7 @@ async def view(session: AsyncSession, record: FightRecord, rules: Rules, account
         "fighters": [
             {
                 "party": address[0], "group": address[1], "character": address[2], "name": fight.get(address).name,
-                "alive": fight.get(address).alive(rules),
+                "alive": fight.get(address).alive(rules), "fled": fight.get(address).fled,
                 "resources": {name: [fight.get(address).current[name], fight.get(address).get_base(rules, name)] for name in rules.resource_names},
                 "statuses": [token.spec.key for token in fight.get(address).tokens],
                 "yours": account_id is not None and mine.get(address) == account_id,

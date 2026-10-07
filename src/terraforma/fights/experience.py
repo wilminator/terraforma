@@ -50,6 +50,9 @@ class Fighter:
     debts: Sequence[Debt] = ()
     #: The hero's id, if it is played by someone. None: a monster or NPC, which earns no experience.
     charid: int | None = None
+    #: Whether it left the fight (fled, or was ejected): it keeps what it earned itself, but not its share of the party's
+    #: and its team's pools. The others' pools are worked out as if it had stayed.
+    fled: bool = False
 
 
 @dataclass(frozen=True)
@@ -188,7 +191,7 @@ def _award(parties: Sequence[Party], credits: Mapping[int, Credits]) -> dict[Add
             if team_id is None:
                 continue
             own = round_half_up(party_credits.per_fighter[fighter.address] * 0.5)
-            earned[fighter.address] = own + pool + team_pools[team_id]
+            earned[fighter.address] = own if fighter.fled else own + pool + team_pools[team_id]
     return earned
 
 

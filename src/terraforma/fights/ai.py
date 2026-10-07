@@ -322,7 +322,7 @@ def goal_value(
 
     ``alignment`` is True for an ally (or itself), False for an enemy, None for a neutral party.
     """
-    if effect.effect in ONLY_LIVING and not target.alive(rules):
+    if target.fled or (effect.effect in ONLY_LIVING and not target.alive(rules)):
         return 0
     detrimental = effect.effect in DETRIMENTAL
     weight = 1 if (alignment is True and not detrimental) or (alignment is False and detrimental) else -1
@@ -360,7 +360,7 @@ def weak_links(rules: Rules, fight: Fight, party: int, percent: int) -> list[Add
     for group_index, group in fight.parties[party].groups.items():
         for char_index, fighter in group.characters.items():
             ratio = fighter.current[vital] * 100 / fighter.get_base(rules, vital)
-            if 0 < ratio <= percent:
+            if 0 < ratio <= percent and not fighter.fled:
                 weak.append((party, group_index, char_index))
     return weak
 
@@ -444,7 +444,7 @@ def _leader(rules: Rules, fight: Fight, address: Address) -> Combatant | None:
     for index in sorted(fight.parties[party].groups[group].characters, reverse=True):
         if index < character:
             leader = fight.get((party, group, index))
-            if leader.alive(rules):
+            if leader.present(rules):
                 return leader
     return None
 
@@ -461,7 +461,7 @@ def narrow(rules: Rules, fight: Fight, address: Address, fighter: Combatant, tar
         for key, value in targets.items():
             if key[2] in enemies:
                 target = fight.get(key[2:])
-                if target.current[vital] > 0 and target.current[vital] / target.get_base(rules, vital) <= 0.1:
+                if target.present(rules) and target.current[vital] / target.get_base(rules, vital) <= 0.1:
                     dying[key] = value
         return dying or targets
     if aim in (Aim.GROUP, Aim.TEAM):
@@ -646,7 +646,7 @@ def _afflicted(rules: Rules, fight: Fight, party: int) -> list[Address]:
         address
         for address in fight.addresses()
         if address[0] == party
-        and fight.get(address).alive(rules)
+        and fight.get(address).present(rules)
         and any(token.spec.kind == "bad" for token in fight.get(address).tokens)
     ]
 

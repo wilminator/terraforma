@@ -26,7 +26,7 @@ class FieldUseError(InventoryError):
 async def in_running_fight(session: AsyncSession, hero: Hero) -> bool:
     return await session.scalar(
         select(FightRecord.id).join(FightParticipant, FightParticipant.fight_id == FightRecord.id)
-        .where(FightParticipant.hero_id == hero.id, FightRecord.finished.is_(False)).limit(1)
+        .where(FightParticipant.hero_id == hero.id, FightRecord.finished.is_(False), FightParticipant.fled.is_(False)).limit(1)
     ) is not None
 
 

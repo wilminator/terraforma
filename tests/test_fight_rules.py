@@ -22,7 +22,15 @@ from terraforma.fights.rules import Resource, Rules
 from terraforma.fights.specs import AbilitySpec, EffectSpec, ItemSpec
 from terraforma.world.rng import WorldRng
 
-RULES = Rules()
+class Pinned(Rules):
+    """These tests use the flee command as "does nothing" with the dice scripted, so no one gets away in them (``tests/test_fleeing.py``
+    plays the real thing)."""
+
+    def flee_allowed(self, fight, address):
+        return False
+
+
+RULES = Pinned()
 
 
 class Scripted:
@@ -554,7 +562,7 @@ def test_the_same_fight_with_the_same_stream_plays_out_identically_and_another_m
 # --- the framework a game overrides ---------------------------------------------------------------------------------------------
 
 def test_a_game_can_replace_a_formula():
-    class Brutal(Rules):
+    class Brutal(Pinned):
         def hit_damage(self, strength, block, window, roll, defending, impact, critical=False):
             return 99
 
@@ -581,7 +589,7 @@ def test_a_game_can_define_its_own_stats_and_the_seed_follows():
 
 
 def test_a_game_can_have_resources_of_its_own_that_the_fight_treats_as_pools():
-    class Rageful(Rules):
+    class Rageful(Pinned):
         stats = (*Rules.stats, "Rage")
         resources = (*Rules.resources, Resource("Rage"))
 
@@ -603,7 +611,7 @@ def test_a_game_can_have_resources_of_its_own_that_the_fight_treats_as_pools():
 
 
 def test_the_rules_hear_about_every_event_and_may_add_more():
-    class Echo(Rules):
+    class Echo(Pinned):
         def after_event(self, fight, event):
             return [Event(EventType.DEFEND)] if event.type is EventType.RUN else []
 

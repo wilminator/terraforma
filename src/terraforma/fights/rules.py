@@ -220,6 +220,44 @@ class Rules:
         """Whether a slay takes: $base is the chance out of 100."""
         return rng.randint(1, 100) <= effect.base
 
+    # --- fleeing -----------------------------------------------------------------------------------------------
+    def flee_allowed(self, fight, address: tuple) -> bool:
+        """Whether the fighter at $address may flee, or be ejected, at all: the fight's ``can_flee`` flag (set by the map's zone,
+        or off for a scripted fight). A game may add to it: no fleeing from a boss, or from a fighter that is held."""
+        return fight.can_flee
+
+    def flee_chance(self, fight, address: tuple) -> float:
+        """The chance, in percent, that the fighter at $address gets away when it tries to flee: its Speed against the sum of the
+        Speed of every fighter still in the fight on a party that is its enemy (never less than 1 each). The default is
+        that share, ``100 * mine / (mine + theirs)``; a game overrides it (a flat chance, Focus, the number of foes)."""
+        _, enemies = self.alignment(fight, address[0])
+        mine = max(fight.get(address).get_current(self, "Speed"), 1)
+        theirs = sum(max(fight.get(each).get_current(self, "Speed"), 1) for each in fight.addresses() if each[0] in enemies and fight.get(each).present(self))
+        return 100.0 * mine / (mine + theirs)
+
+    def flee_succeeds(self, rng: random.Random, chance: float) -> bool:
+        """Rolls a flee (or an eject) of $chance percent, from the fight's stream: 1 to 100, and it works on a roll within the chance."""
+        return rng.randint(1, 100) <= chance
+
+    def flee_party(self, fight, address: tuple) -> list:
+        """Who leaves the fight when the fighter at $address flees (or is ejected) and it works: the addresses. The default is
+        the whole party it is in, every one still standing: a party gets away together and nobody pays for it. A game with
+        another idea overrides this; Vanguard Tavern's is the fighter alone, back in its party's place when the fight is over."""
+        return [each for each in fight.addresses() if each[0] == address[0] and fight.get(each).present(self)]
+
+    def eject_chance(self, rating: int, power: int, resistance: int) -> float:
+        """The chance, in percent, that an eject of $rating (the ability's ``base``, out of 100) works on a fighter: the
+        rating, moved by the user's $power against the target's $resistance (each at least 1) to between half and double of it, and
+        never over 100."""
+        return min(100.0, rating * min(2.0, max(0.5, max(power, 1) / max(resistance, 1))))
+
+    def party_lost(self, fight, party: int) -> list:
+        """Called once as a fight ends for each party of players that suffered a loss (``Party.lost``: some stayed to the end and every
+        one that stayed is down; a party that all fled has lost nothing), after the experience, gold and drops, with a ``PartyLost``
+        event already made. Returns more events, already applied to the fight, for the game's rule: where the party wakes up, what
+        it pays. Nothing by default. Which fights are lost by how many fled is also for a game to say, here or in ``fight_is_over``."""
+        return []
+
     # --- stat values -------------------------------------------------------------------------------------
     def stat_value(self, stat: str, geared: int, bonus: int) -> int:
         """What a stat that is not a resource is worth right now: $geared is its base with the worn gear counted and $bonus what the
@@ -358,7 +396,7 @@ class Rules:
         a bad status on it, or buffed one who did; healing does not count), every one with an equal chance."""
         from .drops import default_recipients
 
-        return default_recipients(fight, party, monsters, share, rng)
+        return default_recipients(fight, party, monsters, share, rng, self)
 
     def drop_mode(self, fight, party: int, monsters, share: str, rng) -> str:
         """How one drop is given out in $party: ``"auto"`` (the default: ``drop_recipients`` picks at once), ``"need_want"``

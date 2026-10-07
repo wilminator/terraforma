@@ -62,7 +62,7 @@ def participants(fight: Fight, rules: Rules, rng: random.Random) -> list[Address
     pool: dict[int, list[Address]] = {}
     for address in fight.addresses():
         fighter = fight.get(address)
-        if not fighter.alive(rules) or fighter.command == Command.DEFEND:
+        if not fighter.present(rules) or fighter.command == Command.DEFEND:
             continue
         casting = None
         if fighter.command in (Command.SKILL, Command.SPELL) and 0 <= fighter.using < len(fighter.abilities):
@@ -95,7 +95,7 @@ def do_combat(fight: Fight, rules: Rules, rng: random.Random) -> list[Event]:
     while queue and fight.live_parties(rules) > 1:
         address = queue.pop(0)
         fighter = fight.get(address)
-        if not fighter.alive(rules):
+        if not fighter.present(rules):
             continue
         perform_action(fight, rules, rng, address, fighter, log)
     for address in fight.addresses():
@@ -133,10 +133,10 @@ def perform_action(fight: Fight, rules: Rules, rng: random.Random, address: Addr
     """One fighter's turn: it starts (and may be lost to a status), the fighter acts, and it ends."""
     log.add(EventType.TURN, *address)
     status.count_turn(fighter)
-    if fire(fight, rules, rng, address, status.TURN_START, log) or not fighter.alive(rules):
+    if fire(fight, rules, rng, address, status.TURN_START, log) or not fighter.present(rules):
         return
     act(fight, rules, rng, address, fighter, log)
-    if fighter.alive(rules):
+    if fighter.present(rules):
         fire(fight, rules, rng, address, status.TURN_END, log)
 
 
@@ -181,7 +181,7 @@ def act(fight: Fight, rules: Rules, rng: random.Random, address: Address, fighte
         log.add(EventType.DEFEND)
         return
     elif command == Command.RUN:
-        log.add(EventType.RUN)
+        flee(fight, rules, rng, address, log)
         return
 
     if not may_affect:
@@ -207,6 +207,44 @@ def act(fight: Fight, rules: Rules, rng: random.Random, address: Address, fighte
     if command in (Command.ATTACK_LEFT, Command.ATTACK_RIGHT) and not isinstance(ammo_used, bool):
         fighter.remove_item(ammo_used, 1)
         log.add(EventType.EXPEND_AMMO, ammo_used)
+
+
+def leave(fight: Fight, rules: Rules, address: Address, how: str, log: Log) -> None:
+    """The fighter at $address gets out of the fight (a flee or an eject that worked) and, as ``Rules.flee_party`` says, whoever
+    goes with it. Each is a ``Fled`` event; they act and are hit no more but count as having survived."""
+    for each in rules.flee_party(fight, address):
+        if not fight.get(each).fled:
+            fight.get(each).fled = True
+            log.add(EventType.FLED, *each, how)
+
+
+def flee(fight: Fight, rules: Rules, rng: random.Random, address: Address, log: Log) -> None:
+    """A fighter tries to flee: a roll against ``Rules.flee_chance``. Where fleeing is not allowed (``Rules.flee_allowed``) the try
+    only shows (``Run``) and nothing comes of it: the live fight refuses the command before it gets here. A try that fails costs
+    the fighter its turn and no more."""
+    log.add(EventType.RUN)
+    if not rules.flee_allowed(fight, address):
+        return
+    if rules.flee_succeeds(rng, rules.flee_chance(fight, address)):
+        leave(fight, rules, address, "flee", log)
+    else:
+        log.add(EventType.FLEE_FAILED, *address)
+
+
+def eject(fight: Fight, rules: Rules, rng: random.Random, effect: EffectSpec, actor: Address, target: Combatant, target_address: Address, log: Log) -> None:
+    """An eject lands on $target: it works with ``Rules.eject_chance`` (the ability's base moved by Power against Resistance),
+    and then is a flee that was not the target's choice, so ``Rules.flee_party`` says who goes. Aimed at the user's own side it
+    does nothing unless the effect is ``friendly``; where fleeing is not allowed it does nothing."""
+    allies, _ = rules.alignment(fight, actor[0])
+    if (target_address[0] in allies and not effect.friendly) or not rules.flee_allowed(fight, target_address):
+        log.add(EventType.NO_EFFECT, *target_address)
+        return
+    power = fight.get(actor).get_current(rules, "Power")
+    chance = rules.eject_chance(effect.base, power, target.get_current(rules, "Resistance"))
+    if rules.flee_succeeds(rng, chance):
+        leave(fight, rules, target_address, "eject", log)
+    else:
+        log.add(EventType.NO_EFFECT, *target_address)
 
 
 def equip_in_fight(fighter: Combatant, log: Log) -> None:
@@ -330,6 +368,10 @@ def do_effect(fight, rules, rng, effect, actor, target, target_address, impact, 
         if target.get_current(rules, vital) == 0:
             return False
         place_status(fight, effect, actor, target, target_address, log)
+    elif effect.effect == specs.EJECT:
+        if target.get_current(rules, vital) == 0 or target.fled:
+            return False
+        eject(fight, rules, rng, effect, actor, target, target_address, log)
     elif effect.effect in (specs.REMOVE_GOOD_STATUS, specs.REMOVE_BAD_STATUS):
         if target.get_current(rules, vital) == 0:
             return False
@@ -434,7 +476,7 @@ def remove_token(fighter: Combatant, address: Address, token: status.StatusToken
 def fire(fight: Fight, rules: Rules, rng: random.Random | None, address: Address, when: str, log: Log) -> bool:
     """Plays the ticks of every token on the fighter that are due at $when. True if one of them takes the turn."""
     fighter = fight.get(address)
-    if not fighter.alive(rules):
+    if not fighter.present(rules):
         return False
     skipped = False
     for token in list(fighter.tokens):

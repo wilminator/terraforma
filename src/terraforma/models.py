@@ -101,7 +101,7 @@ class Map(Timestamps, Base):
 
 
 OPEN_GROUND = {"name": "", "passable": True, "poison": False, "encounter_rate": 0, "art": None}
-PLAIN_ZONE = {"name": "", "encounters": [], "drops": [], "pvp": False}
+PLAIN_ZONE = {"name": "", "encounters": [], "drops": [], "pvp": False, "can_flee": True}
 
 
 class Account(Timestamps, Base):

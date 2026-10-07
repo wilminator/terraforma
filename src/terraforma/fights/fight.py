@@ -18,7 +18,8 @@ class Group:
     characters: dict[int, Combatant] = field(default_factory=dict)
 
     def dead(self, rules: Rules) -> bool:
-        return not any(character.alive(rules) for character in self.characters.values())
+        """Nobody here is left in the fight: all down, or fled."""
+        return not any(character.present(rules) for character in self.characters.values())
 
 
 @dataclass
@@ -33,7 +34,21 @@ class Party:
     teams: dict[int, list[int]] = field(default_factory=dict)
 
     def dead(self, rules: Rules) -> bool:
+        """Nobody of the party is left in the fight (all down or fled): it has left, and plays no more."""
         return all(group.dead(rules) for group in self.groups.values())
+
+    def members(self) -> list[Combatant]:
+        return [character for group in self.groups.values() for character in group.characters.values()]
+
+    def survives(self, rules: Rules) -> bool:
+        """Whether anyone of the party is alive, those who fled included."""
+        return any(member.alive(rules) for member in self.members())
+
+    def lost(self, rules: Rules) -> bool:
+        """Whether the party suffered a loss: some of it stayed to the end and every one that stayed is down. A party
+        that all fled has lost nothing, and one with no one in it could lose nothing."""
+        staying = [member for member in self.members() if not member.fled]
+        return bool(staying) and not any(member.alive(rules) for member in staying)
 
 
 @dataclass
@@ -47,6 +62,8 @@ class Fight:
     #: (the map's), rolled when the fight ends (``fights.drops``).
     drop_tables: dict[str, DropTable] = field(default_factory=dict)
     area_drops: list[str] = field(default_factory=list)
+    #: Whether fighters may flee (or be ejected) at all: the map's zone or a scripted fight can turn it off.
+    can_flee: bool = True
 
     def drop_item(self, key: str):
         """The item a drop table names by $key."""
@@ -63,6 +80,13 @@ class Fight:
             if charid is not None and charid in heroes:
                 return team
         return None
+
+    def team_survives(self, party: int, team: int, rules: Rules) -> bool:
+        """Whether a team of $party has a hero alive (one that fled counts): only such a team gets gold and drops."""
+        members = self.parties[party].teams.get(team, [])
+        return any(
+            fighter.alive(rules) for fighter in self.parties[party].members() if fighter.charid is not None and fighter.charid in members
+        )
 
     def get(self, address: Address) -> Combatant:
         party, group, character = address
