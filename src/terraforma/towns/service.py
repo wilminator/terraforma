@@ -10,10 +10,11 @@ from dataclasses import dataclass
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..fights import live
+from ..fights import joining, live
 from ..fights.build import hero_fighter
 from ..fights.models import FightParticipant, FightRecord
 from ..fights.rules import Rules
+from ..relations.hooks import Relations
 from ..heroes.models import Hero, Team, TeamMember
 from ..maps.travel import in_fight
 from ..models import Map, World
@@ -106,25 +107,81 @@ async def settle_hero(session: AsyncSession, towns: Towns, hero_id: int) -> Town
     return await settle(session, towns, party.id)
 
 
-async def leave(session: AsyncSession, towns: Towns, rules: Rules, team_id: int) -> tuple[str, FightRecord | None]:
-    """The Leave Town button: ``ready``, and when that puts the party back together, the fight the game's ``Towns.encounter``
-    picks starts at once (None when it picks no monsters, or the fight is refused). Returns the result of ``ready`` and the fight."""
-    party = await parties.party_of(session, team_id)
-    result = await ready(session, towns, team_id)
-    if result != "reformed" or party is None:
-        return result, None
+async def _ready_to_fight(session: AsyncSession, rules: Rules, party: Party) -> tuple[int, int, WorldRng]:
+    """What the hub reads about a party that is whole again and about to fight: its strength, how many fights it has had (so the
+    same party meeting monsters twice meets different ones) and the world's streams."""
     heroes = await parties.hero_ids(session, party.id)
     fighters = [await hero_fighter(session, await session.get(Hero, hero), rules) for hero in heroes]
     number = await session.scalar(select(func.count(func.distinct(FightParticipant.fight_id))).where(FightParticipant.hero_id.in_(heroes))) or 0
     world = await session.get(World, (await session.get(Map, party.map_id)).world_id)
-    keys = await towns.encounter(session, rules, party.id, sum(rules.pxp(fighter) for fighter in fighters), WorldRng(world.seed), number)
+    return sum(rules.pxp(fighter) for fighter in fighters), number, WorldRng(world.seed)
+
+
+async def _start_fight(session: AsyncSession, towns: Towns, rules: Rules, party: Party) -> FightRecord | None:
+    """The fight the game's ``Towns.encounter`` picks for the party starts (None when it picks no monsters, or the fight is refused)."""
+    strength, number, rng = await _ready_to_fight(session, rules, party)
+    keys = await towns.encounter(session, rules, party.id, strength, rng, number)
     if not keys:
-        return result, None
+        return None
     try:
         async with session.begin_nested():
-            return result, await live.start_party_fight(session, party.id, keys, rules)
+            return await live.start_party_fight(session, party.id, keys, rules)
     except live.Refused:
+        return None
+
+
+async def leave(session: AsyncSession, towns: Towns, rules: Rules, team_id: int) -> tuple[str, FightRecord | None]:
+    """The Leave Town button: ``ready``, and when that puts the party back together, the fight the game's ``Towns.encounter``
+    picks starts at once (None when it picks no monsters, or the fight is refused). Or, on a small chance
+    (``Rules.join_chance``), the hub offers the party a running fight to join instead, and no fight starts until its leader answers
+    (``accept_join``, ``decline_join``; ``join_offer`` says whether one stands). Returns the result of ``ready`` and the fight."""
+    party = await parties.party_of(session, team_id)
+    result = await ready(session, towns, team_id)
+    if result != "reformed" or party is None:
         return result, None
+    strength, number, rng = await _ready_to_fight(session, rules, party)
+    if await joining.offer(session, rules, party.id, strength, rng.stream("town", "party", party.id, "join", number)) is not None:
+        return result, None
+    return result, await _start_fight(session, towns, rules, party)
+
+
+async def join_offer(session: AsyncSession, team_id: int) -> bool:
+    """Whether the hub has offered the team's party a running fight and waits for the leader's answer. (What fight is never said.)"""
+    party = await parties.party_of(session, team_id)
+    return party is not None and await joining.offer_of(session, party.id) is not None
+
+
+async def _offered(session: AsyncSession, account_id: int, team_id: int) -> Party:
+    """The party of the team that has an offer standing, for its leader ($account_id) to answer."""
+    party = await parties.party_of(session, team_id)
+    if party is None or await joining.offer_of(session, party.id) is None:
+        raise TownError("the hub has offered that party nothing")
+    if await parties.leader_account(session, party.id) != account_id:
+        raise TownError("only the party's leader answers the hub's offer")
+    return party
+
+
+async def accept_join(session: AsyncSession, towns: Towns, rules: Rules, relations: Relations, account_id: int, team_id: int) -> tuple[bool, FightRecord | None]:
+    """The party's leader accepts the hub's offer: the party becomes the next party of that fight and acts from its next round.
+    If the fight can't take it any more (it ended, filled up or the party is out of its range now) the party's own fight starts
+    as it would have. Returns whether it joined, and the fight (the one joined, or the one that started: None if none did)."""
+    party = await _offered(session, account_id, team_id)
+    offer = await joining.offer_of(session, party.id)
+    fight_id = offer.fight_id
+    await joining.withdraw(session, party.id)
+    try:
+        async with session.begin_nested():
+            record, _number = await joining.join(session, rules, relations, fight_id, party.id)
+        return True, record
+    except live.Refused:
+        return False, await _start_fight(session, towns, rules, party)
+
+
+async def decline_join(session: AsyncSession, towns: Towns, rules: Rules, account_id: int, team_id: int) -> FightRecord | None:
+    """The party's leader declines the hub's offer: the party's own fight starts as usual (None when the game picks no monsters)."""
+    party = await _offered(session, account_id, team_id)
+    await joining.withdraw(session, party.id)
+    return await _start_fight(session, towns, rules, party)
 
 
 async def _group_of(session: AsyncSession, row: TownTeam) -> list[TownTeam]:

@@ -103,6 +103,28 @@ class FightCommandRecord(Base):
     target: Mapped[list] = mapped_column(JSON)
 
 
+class FightJoinRecord(Base):
+    """A party that joined a running fight and has not acted in a round yet: the ``PartyJoined`` event's data. The fight now is its
+    rounds' events plus these (``store.load_state``); the next round that plays takes them into its own events (first of them, so the
+    hash chain covers them) and they are gone from here, like a ``FightCommandRecord``."""
+
+    __tablename__ = "fight_joins"
+
+    fight_id: Mapped[int] = mapped_column(ForeignKey("fights.id"), primary_key=True, autoincrement=False)
+    party: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    event: Mapped[list] = mapped_column(ExactJSON)
+
+
+class JoinOffer(Timestamps, Base):
+    """A running fight the hub offered a party that is about to fight (``fights.joining``), until its leader answers. The fight
+    isn't named to the players. One offer per party; the party's sides are a plain id like a relationship's, and it goes with the party."""
+
+    __tablename__ = "join_offers"
+
+    party_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    fight_id: Mapped[int] = mapped_column(ForeignKey("fights.id"), index=True)
+
+
 class PendingDrop(Located, Timestamps, Base):
     """A drop the game held for the party's players to settle (``Rules.drop_mode``), one row per ``DropHeld`` event of a
     fight. ``status`` is ``open`` until it is given (``awarded``: to ``winner_id``, with ``lost`` of it not fitting the pack)

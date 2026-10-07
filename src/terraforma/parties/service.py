@@ -20,6 +20,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..fights.models import JoinOffer
 from ..heroes.models import Hero, Team, TeamMember
 from ..world.start import ensure_start
 from ..towns.models import TownTeam, TownVisit
@@ -187,6 +188,7 @@ async def leave_party(session: AsyncSession, team_id: int) -> int | None:
         await session.execute(delete(TownTeam).where(TownTeam.visit_id.in_(visits)))
         await session.execute(delete(TownVisit).where(TownVisit.party_id == party_id))
         await session.execute(delete(PartyRequest).where(PartyRequest.party_id == party_id))
+        await session.execute(delete(JoinOffer).where(JoinOffer.party_id == party_id))
         await session.execute(delete(StandingStatus).where(StandingStatus.target_kind == PARTY, StandingStatus.target_id == party_id))
         await session.execute(delete(Party).where(Party.id == party_id))
     else:
@@ -214,6 +216,7 @@ async def merge_parties(session: AsyncSession, keep_id: int, absorb_id: int, par
         row.party_id, row.position = keep.id, position + offset
     await session.flush()
     await session.execute(delete(PartyRequest).where(PartyRequest.party_id == absorb.id))
+    await session.execute(delete(JoinOffer).where(JoinOffer.party_id == absorb.id))
     await session.execute(delete(StandingStatus).where(StandingStatus.target_kind == PARTY, StandingStatus.target_id == absorb.id))
     await session.execute(delete(Party).where(Party.id == absorb.id))
     return keep

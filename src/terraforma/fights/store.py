@@ -17,7 +17,7 @@ import hashlib
 import json
 import secrets
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,7 +34,7 @@ from .events import Event, EventType
 from .fight import Fight
 from . import pending
 from ..challenge import service as challenge
-from .models import FightActionRecord, FightParticipant, FightRecord
+from .models import FightActionRecord, FightJoinRecord, FightParticipant, FightRecord
 from .replay import apply_events
 from .resolve import do_combat, fight_stream
 from .rules import Rules
@@ -95,6 +95,21 @@ async def create_fight(session: AsyncSession, game_map: Map, fight: Fight, x: in
     return record
 
 
+async def add_party(session: AsyncSession, record: FightRecord, fight: Fight, rules: Rules, joined: Event) -> None:
+    """A party joins the running fight $fight (as it stands now): the ``PartyJoined`` event $joined is applied to it and kept to
+    take into the next round, and its fighters are listed as in the fight. They act in the next round that plays."""
+    apply_events(fight, rules, [joined])
+    session.add(FightJoinRecord(fight_id=record.id, party=joined.data[0], event=list(joined.data)))
+    for address in fight.addresses():
+        if address[0] == joined.data[0]:
+            fighter = fight.get(address)
+            session.add(FightParticipant(
+                fight_id=record.id, party=address[0], group_index=address[1], character=address[2], name=fighter.name,
+                hero_id=fighter.charid, monster_key=fighter.monster,
+            ))
+    await session.flush()
+
+
 async def find_by_guid(session: AsyncSession, guid: str) -> FightRecord | None:
     return await session.scalar(select(FightRecord).where(FightRecord.guid == guid))
 
@@ -113,10 +128,19 @@ def _replayed(initial_state: dict, rules: Rules, logged: list[FightActionRecord]
     return fight
 
 
+async def pending_joins(session: AsyncSession, record: FightRecord) -> list[Event]:
+    """The ``PartyJoined`` events of the parties that joined and have not acted in a round yet, in the order they joined."""
+    rows = await session.scalars(select(FightJoinRecord).where(FightJoinRecord.fight_id == record.id).order_by(FightJoinRecord.party))
+    return [Event(EventType.PARTY_JOINED, tuple(row.event)) for row in rows.all()]
+
+
 async def load_state(session: AsyncSession, record: FightRecord, rules: Rules) -> tuple[Fight, int]:
-    """The fight as it stands now (the initial state with every round replayed), and how many rounds have been played."""
+    """The fight as it stands now (the initial state with every round replayed, then the parties that joined since), and how many
+    rounds have been played."""
     logged = await actions(session, record)
-    return _replayed(record.initial_state, rules, logged), len(logged)
+    fight = _replayed(record.initial_state, rules, logged)
+    apply_events(fight, rules, await pending_joins(session, record))
+    return fight, len(logged)
 
 
 async def _stream(session: AsyncSession, record: FightRecord, sequence: int):
@@ -145,8 +169,10 @@ async def play_round(session: AsyncSession, record: FightRecord, commands: list[
     if fight.over:
         raise FightOver(f"fight {record.id} is over")
     sequence = len(logged) + 1
+    joined = await pending_joins(session, record)  # the parties that joined since the last round act in this one: it starts with their joining
+    apply_events(fight, rules, joined)
     _set_commands(fight, commands)
-    events = do_combat(fight, rules, await _stream(session, record, sequence))
+    events = joined + do_combat(fight, rules, await _stream(session, record, sequence))
     previous = logged[-1].hash if logged else initial_hash(record.initial_state)
     listed = [each.to_list() for each in events]
     row = FightActionRecord(
@@ -159,6 +185,8 @@ async def play_round(session: AsyncSession, record: FightRecord, commands: list[
             await session.flush()
     except IntegrityError as error:
         raise SequenceConflict(f"round {sequence} of fight {record.id} was already played") from error
+    if joined:
+        await session.execute(delete(FightJoinRecord).where(FightJoinRecord.fight_id == record.id, FightJoinRecord.party.in_([each.data[0] for each in joined])))
     return events
 
 
@@ -185,8 +213,10 @@ async def verify(session: AsyncSession, record: FightRecord, rules: Rules, *, de
     if deep:
         for number, action in enumerate(logged, start=1):
             fight = _replayed(record.initial_state, rules, logged[: number - 1])
+            joined = [each for each in action.events if each[0] == EventType.PARTY_JOINED.value]  # (they come first in the round)
+            apply_events(fight, rules, [Event.from_list(each) for each in joined])
             _set_commands(fight, action.commands)
-            again = [each.to_list() for each in do_combat(fight, rules, await _stream(session, record, number))]
+            again = joined + [each.to_list() for each in do_combat(fight, rules, await _stream(session, record, number))]
             if again != action.events:
                 raise FightLogError(number, "playing it again gave different events")
             if action.final_state is not None and dehydrate(fight) != action.final_state:
