@@ -28,7 +28,9 @@ async def get_db(request: Request) -> AsyncIterator[AsyncSession]:
             yield session
 
 
-Db = Annotated[AsyncSession, Depends(get_db)]
+# scope="function": the transaction is committed when the call's function returns, before the answer is sent. (By default a
+# yield dependency exits after the answer has gone out, so a browser reading straight after a write could see the old data.)
+Db = Annotated[AsyncSession, Depends(get_db, scope="function")]
 
 
 def get_rules(request: Request) -> Rules:
