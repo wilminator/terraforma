@@ -58,11 +58,12 @@ export class Roster {
     this.#changed();
   }
 
-  /** Saves a team with its heroes ($heroes: [{name, job}]) in one go. */
-  async saveTeam(name, heroes) {
+  /** Makes a team; its heroes ($heroes: [{name, job}]) may come with it or be added later, on its page. Returns the team. */
+  async saveTeam(name, heroes = []) {
     const team = await api.post("/api/teams", { name, heroes });
     this.teamId = team.id;
     await this.load();
+    return team;
   }
 
   async renameTeam(id, name) {

@@ -29,7 +29,7 @@ class NameOnly(Strict):
 
 class NewTeam(Strict):
     name: str = Field(min_length=1, max_length=24)
-    heroes: list[NewHero] = Field(max_length=service.TEAM_LIMIT)
+    heroes: list[NewHero] = Field(default=[], max_length=service.TEAM_LIMIT)
 
 
 class ToTeam(Strict):
@@ -102,7 +102,8 @@ async def teams(account: CurrentAccount, db: Db) -> list[dict]:
 
 @router.post("/teams", status_code=status.HTTP_201_CREATED)
 async def create_team(body: NewTeam, account: ActingAccount, db: Db, rules: GameRules) -> dict:
-    """Saves a team with its heroes in one go. Refused unless it has the game's number of heroes (``team_min`` to ``team_max``)."""
+    """Makes a team, with its heroes if the browser sends them (at most the game's ``team_max``). A team with fewer than ``team_min``
+    heroes is incomplete and cannot play until the player has filled it."""
     try:
         team = await service.save_team(db, account, body.name, [(each.name, each.job) for each in body.heroes], rules)
     except service.HeroError as error:
