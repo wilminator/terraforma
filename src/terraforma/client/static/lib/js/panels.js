@@ -1,5 +1,5 @@
 // The panels of the game client: a row of buttons in the bar, and the panel they open over the stage's right side.
-// The engine adds its own (heroes, teams, party, nearby); a game adds more with shell.panels.add(id, build) in its module:
+// The engine adds its own (teams, party, nearby); a game adds more with shell.panels.add(id, build) in its module:
 //
 //   shell.text.set({ "panel.inn": "Inn" });
 //   shell.panels.add("inn", (shell, roster) => h("div", { class: "panel" }, h("h2", {}, shell.text.get("panel.inn")), ...));
@@ -8,7 +8,6 @@
 // the panel is opened. The panel's button says shell.text.get("panel.<id>").
 
 import { h, replace } from "./dom.js";
-import { heroesPanel } from "./heroes.js";
 import { nearbyPanel } from "./nearby.js";
 import { partyPanel } from "./party.js";
 import { teamsPanel } from "./teams.js";
@@ -23,7 +22,6 @@ export class Panels {
 
   /** Puts the engine's panels first, so a game's come after them. */
   addEngine() {
-    this.add("heroes", heroesPanel);
     this.add("teams", teamsPanel);
     this.add("party", partyPanel);
     this.add("nearby", nearbyPanel);

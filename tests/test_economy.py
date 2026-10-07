@@ -13,6 +13,7 @@ from terraforma.fights.models import FightRecord
 from terraforma.game import Game
 from terraforma.heroes import service
 from terraforma.heroes.models import Hero, Team
+from terraforma import testing
 from terraforma.testing import in_app_db
 from terraforma.world.start import ensure_start
 pytestmark = pytest.mark.anyio
@@ -175,9 +176,8 @@ def test_the_inventory_shows_the_gold_the_games_economy_says(app_client, game):
     client = app_client
     in_app_db(client, lambda db: create_account(db, "Mike", PASSWORD, email="mike@example.com", confirmed=True))
     headers = {"X-CSRF-Token": client.post("/api/login", json={"username": "Mike", "password": PASSWORD}).json()["csrf_token"]}
-    team = client.post("/api/teams", json={"name": "Vanguard"}, headers=headers).json()["id"]
-    hero = client.post("/api/heroes", json={"name": "Aria", "job": "fighter"}, headers=headers).json()["id"]
-    assert client.post(f"/api/teams/{team}/add-hero", json={"hero_id": hero}, headers=headers).status_code == 200
+    made = testing.make_team(client, headers, "Vanguard")
+    team, hero = made["id"], made["members"][0]["hero_id"]
 
     async def give(db):
         await add_gold(db, await db.get(Team, team), 7)

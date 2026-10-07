@@ -37,7 +37,7 @@ async function showGame() {
     problem.textContent = problemText(shell, error);
     return;
   }
-  const { buttons, drawer } = mountPanels(shell, roster, roster.heroes.length ? null : "heroes");
+  const { buttons, drawer } = mountPanels(shell, roster, roster.teams.length ? null : "teams");
   replace(tabs, buttons);
   main.append(drawer);
   shell.emit("game", { roster });

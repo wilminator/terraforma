@@ -18,6 +18,8 @@ async def play(team_id: Id, account: ActingAccount, db: Db, rules: GameRules) ->
     keeps it: safe to repeat). Refused (409) for a team with no heroes."""
     try:
         team = await heroes.own_team(db, account, team_id)
+        if await heroes.member_count(db, team.id) < rules.team_min:
+            raise service.PartyError(f"a team needs at least {rules.team_min} heroes to play")
         party = await service.play(db, team.id, rules.party_size)
     except heroes.HeroError as error:
         raise refuse_hero(error) from error
