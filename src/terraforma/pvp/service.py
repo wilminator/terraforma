@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import wallclock
-from ..fights import store, timing
+from ..fights import joining, store, timing
 from ..fights.build import known_statuses, team_party
 from ..fights.fight import build_fight
 from ..fights.live import _groups
@@ -56,6 +56,8 @@ async def start_pvp_fight(session: AsyncSession, zones: PvpZones, rules: Rules, 
     for party in (mine, theirs):
         if await towns.visit_of_party(session, party.id) is not None:
             raise PvpError("a party that is in a town can't fight")
+        if await joining.offer_of(session, party.id) is not None:
+            raise PvpError("a party the hub has offered a fight to join must answer it first")
     if (mine.map_id, mine.x, mine.y) != (theirs.map_id, theirs.x, theirs.y):
         raise PvpError("that party is not here")
     sides, hero_ids, side_teams = [], [], []

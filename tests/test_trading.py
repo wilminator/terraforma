@@ -14,6 +14,7 @@ from terraforma.game import Game
 from terraforma.heroes import inventory, service
 from terraforma.heroes.models import Hero, HeroItem
 from terraforma.parties import service as parties
+from terraforma import testing
 from terraforma.testing import in_app_db
 from terraforma.trading import policy
 from terraforma.trading import service as trading
@@ -269,14 +270,7 @@ def sign_in(client, username):
 
 
 def make_hero(client, headers, name):
-    return expect(client.post("/api/heroes", json={"name": name, "job": "fighter"}, headers=headers), 201).json()["id"]
-
-
-def make_team(client, headers, name, hero_ids):
-    team = expect(client.post("/api/teams", json={"name": name}, headers=headers), 201).json()["id"]
-    for hero_id in hero_ids:
-        expect(client.post(f"/api/teams/{team}/add-hero", json={"hero_id": hero_id}, headers=headers), 200)
-    return team
+    return testing.make_hero(client, headers, name)["id"]
 
 
 def stock_over_http(client, hero_id, key, qty=1):
@@ -290,8 +284,7 @@ def stock_over_http(client, hero_id, key, qty=1):
 def pair(app_client):
     """Mike's Aria and Bram on one team, and Zed's Zara on his own."""
     mike = sign_in(app_client, "Mike")
-    aria, bram = make_hero(app_client, mike, "Aria"), make_hero(app_client, mike, "Bram")
-    make_team(app_client, mike, "Vanguard", [aria, bram])
+    aria, bram = (member["hero_id"] for member in testing.make_team(app_client, mike, "Vanguard", heroes=("Aria", "Bram"))["members"])
     zed = sign_in(app_client, "Zed")
     zara = make_hero(app_client, zed, "Zara")
     # (sign_in left Zed logged in: act as Mike again for the calls below)

@@ -106,21 +106,24 @@ def _fighter(fighter: Combatant) -> dict:
     }
 
 
+def dehydrate_party(party_index: int, party: Party) -> dict:
+    return {
+        "index": party_index,
+        "allies": None if party.allies is None else sorted(party.allies),
+        "enemies": None if party.enemies is None else sorted(party.enemies),
+        "teams": {str(team): list(members) for team, members in party.teams.items()},
+        "groups": [
+            {"index": group_index, "characters": [
+                {"index": character_index, **_fighter(fighter)} for character_index, fighter in group.characters.items()
+            ]}
+            for group_index, group in party.groups.items()
+        ],
+    }
+
+
 def dehydrate(fight: Fight) -> dict:
     return {**({"can_flee": False} if not fight.can_flee else {}), "over": fight.over, "area_drops": list(fight.area_drops), "drop_tables": {key: _drop_table(table) for key, table in fight.drop_tables.items()}, "statuses": {key: _status(spec) for key, spec in fight.statuses.items()}, "parties": [
-        {
-            "index": party_index,
-            "allies": None if party.allies is None else sorted(party.allies),
-            "enemies": None if party.enemies is None else sorted(party.enemies),
-            "teams": {str(team): list(members) for team, members in party.teams.items()},
-            "groups": [
-                {"index": group_index, "characters": [
-                    {"index": character_index, **_fighter(fighter)} for character_index, fighter in group.characters.items()
-                ]}
-                for group_index, group in party.groups.items()
-            ],
-        }
-        for party_index, party in fight.parties.items()
+        dehydrate_party(party_index, party) for party_index, party in fight.parties.items()
     ]}
 
 
@@ -158,18 +161,20 @@ def _build_fighter(raw: dict, statuses: dict[str, StatusSpec]) -> Combatant:
     )
 
 
+def hydrate_party(raw: dict, statuses: dict[str, StatusSpec]) -> Party:
+    groups = {
+        group["index"]: Group({each["index"]: _build_fighter(each, statuses) for each in group["characters"]})
+        for group in raw["groups"]
+    }
+    return Party(
+        groups, None if raw["allies"] is None else set(raw["allies"]),
+        None if raw["enemies"] is None else set(raw["enemies"]),
+        {int(team): list(members) for team, members in raw.get("teams", {}).items()},
+    )
+
+
 def hydrate(raw: dict) -> Fight:
     statuses = {key: _build_status(spec) for key, spec in raw.get("statuses", {}).items()}
-    parties = {}
-    for party in raw["parties"]:
-        groups = {
-            group["index"]: Group({each["index"]: _build_fighter(each, statuses) for each in group["characters"]})
-            for group in party["groups"]
-        }
-        parties[party["index"]] = Party(
-            groups, None if party["allies"] is None else set(party["allies"]),
-            None if party["enemies"] is None else set(party["enemies"]),
-            {int(team): list(members) for team, members in party.get("teams", {}).items()},
-        )
+    parties = {party["index"]: hydrate_party(party, statuses) for party in raw["parties"]}
     return Fight(parties, statuses, over=raw.get("over", False), can_flee=raw.get("can_flee", True), area_drops=list(raw.get("area_drops", ())),
                  drop_tables={key: _build_drop_table(table) for key, table in raw.get("drop_tables", {}).items()})

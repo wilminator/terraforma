@@ -11,6 +11,7 @@ from terraforma.fights.rules import Rules
 from terraforma.fights.specs import EffectSpec
 from terraforma.game import Game
 from terraforma.heroes.models import Hero
+from terraforma import testing
 from terraforma.testing import in_app_db
 
 from .helpers import expect
@@ -58,8 +59,8 @@ async def _vitals(db, hero_id):
 @pytest.fixture
 def mike(app_client):
     headers = sign_in(app_client, "Mike")
-    first = expect(app_client.post("/api/heroes", json={"name": "Aria", "job": "fighter"}, headers=headers), 201).json()["id"]
-    second = expect(app_client.post("/api/heroes", json={"name": "Bram", "job": "fighter"}, headers=headers), 201).json()["id"]
+    first = testing.make_hero(app_client, headers, "Aria")["id"]
+    second = testing.make_hero(app_client, headers, "Bram")["id"]
     return app_client, headers, first, second
 
 
@@ -180,5 +181,5 @@ def test_only_the_owner_can_use_it_and_it_needs_login_and_the_csrf_token(app_cli
     assert client.post(f"/api/heroes/{aria}/use-item", json={"position": 0, "extra": 1}, headers=headers).status_code == 422
     other = sign_in(client, "Zed")
     expect(use(client, other, aria, 0), 404)
-    zed = expect(client.post("/api/heroes", json={"name": "Zara", "job": "fighter"}, headers=other), 201).json()["id"]
+    zed = testing.make_hero(client, other, "Zara")["id"]
     expect(use(client, other, zed, 0, target=aria), 404)

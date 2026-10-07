@@ -75,6 +75,11 @@ class Relations:
                 return band.name
         return ""
 
+    def stance(self, score: int) -> str:
+        """How a team that holds $score counts the other when their parties meet in a fight (``Rules.party_stance``): "ally",
+        "enemy" or "neutral". By default the bands decide: friendly and close are allies, wary and enemy are enemies, neutral is neutral."""
+        return {"friendly": "ally", "close": "ally", "wary": "enemy", "enemy": "enemy"}.get(self.band(score), "neutral")
+
     async def may_form(self, session, subject: Ref, object: Ref, change: Change) -> bool:
         """Whether ``subject`` may start a relationship with ``object`` (the first time a score or note is set). Yes by default."""
         return True

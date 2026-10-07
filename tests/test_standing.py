@@ -23,6 +23,7 @@ from terraforma.parties import service as parties
 from terraforma.settings import Settings
 from terraforma.standing import service as standing
 from terraforma.standing.models import HERO, PARTY, TEAM, StandingStatus
+from terraforma import testing
 from terraforma.testing import in_app_db
 
 from .helpers import expect
@@ -201,7 +202,7 @@ def test_the_call_lists_the_statuses_a_hero_is_under(app_client):
     in_app_db(client, lambda db: load_content(db, SEED))
     in_app_db(client, lambda db: create_account(db, "Mike", PASSWORD, email="mike@example.com", confirmed=True))
     headers = {"X-CSRF-Token": client.post("/api/login", json={"username": "Mike", "password": PASSWORD}).json()["csrf_token"]}
-    hero = expect(client.post("/api/heroes", json={"name": "Aria", "job": "fighter"}, headers=headers), 201).json()["id"]
+    hero = testing.make_hero(client, headers, "Aria")["id"]
     assert expect(client.get(f"/api/heroes/{hero}/statuses"), 200).json() == []
     in_app_db(client, lambda db: standing.place(db, HERO, hero, "ward", None, unremovable=True))
     assert expect(client.get(f"/api/heroes/{hero}/statuses"), 200).json() == [{"on": "hero", "status": "ward", "unremovable": True, "seconds_left": None}]

@@ -1,10 +1,13 @@
 """Making, renaming and removing heroes and teams, and who is on which team.
 
 Every call takes the account and only ever touches that account's own
-heroes and teams. Limits are plain numbers for now (a game will be able to
-set them later). They are checked by counting first, so two calls at the
-same instant could each slip one past; names can't collide, the database
+heroes and teams. The limits are the game's (``Rules.team_min``, ``team_max`` and ``max_teams``). They are checked by
+counting first, so two calls at the same instant could each slip one past; names can't collide, the database
 refuses that.
+
+The calls the browser makes keep every hero on a team: a team is saved with its heroes (``save_team``), a hero is added to
+one, and removing, replacing or moving a hero is the game's to allow (``Game.roster``). ``create_hero``, ``create_team``,
+``add_to_team`` and ``delete_team`` are the building blocks under them, and what tests and seeds use.
 """
 
 import re
@@ -29,11 +32,11 @@ from ..alliances.service import remove_team
 from ..relations.hooks import Ref
 from ..relations.service import forget
 from . import field, inventory
+from .hooks import Roster
 from .models import Hero, HeroAbility, HeroEquipment, HeroItem, Team, TeamMember
 
-MAX_HEROES = 12
-MAX_TEAMS = 8
-TEAM_SIZE = 4
+#: The most heroes a team ever holds, whatever the game's ``Rules.team_max``: the engine's screens draw no more.
+TEAM_LIMIT = 5
 
 NAME = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9 _.'-]{0,22}[A-Za-z0-9])$")
 
@@ -79,8 +82,6 @@ async def create_hero(session: AsyncSession, account: Account, name: str, job_ke
     job = await session.scalar(select(Job).where(Job.key == job_key, Job.active.is_(True)))
     if job is None:
         raise NotFound("there's no such job")
-    if await session.scalar(select(func.count()).select_from(Hero).where(Hero.account_id == account.id)) >= MAX_HEROES:
-        raise HeroError(f"an account can have {MAX_HEROES} heroes")
     hub = await ensure_start(session)
     hero = Hero(
         account_id=account.id, name=name, name_key=name_key(name), job_id=job.id,
@@ -161,10 +162,10 @@ def hero_view(hero: Hero, job_key: str, map_name: str) -> dict:
 
 # --- teams --------------------------------------------------------------------------
 
-async def create_team(session: AsyncSession, account: Account, name: str) -> Team:
+async def create_team(session: AsyncSession, account: Account, name: str, max_teams: int = Rules.max_teams) -> Team:
     name = check_name(name)
-    if await session.scalar(select(func.count()).select_from(Team).where(Team.account_id == account.id)) >= MAX_TEAMS:
-        raise HeroError(f"an account can have {MAX_TEAMS} teams")
+    if await session.scalar(select(func.count()).select_from(Team).where(Team.account_id == account.id)) >= max_teams:
+        raise HeroError(f"you can have {max_teams} teams" if max_teams != 1 else "you can have 1 team")
     team = Team(account_id=account.id, name=name, name_key=name_key(name))
     session.add(team)
     try:
@@ -213,17 +214,19 @@ async def delete_team(session: AsyncSession, account: Account, team_id: int, all
     await session.flush()
 
 
-async def add_to_team(session: AsyncSession, account: Account, team_id: int, hero_id: int, party_size: int = Rules.party_size) -> TeamMember:
+async def add_to_team(session: AsyncSession, account: Account, team_id: int, hero_id: int, party_size: int = Rules.party_size, most: int = Rules.team_max) -> TeamMember:
     """Puts the hero in the team's first free slot. A hero on another team must leave it first, and if the team is
-    in a party the party needs a place for the hero ($party_size is the game's: ``Rules.party_size``)."""
+    in a party the party needs a place for the hero ($party_size is the game's: ``Rules.party_size``; $most is its
+    ``Rules.team_max``, never more than ``TEAM_LIMIT``)."""
     team = await own_team(session, account, team_id)
     hero = await own_hero(session, account, hero_id)
     if await session.scalar(select(TeamMember.id).where(TeamMember.hero_id == hero.id)):
         raise HeroError("that hero is already on a team: take them off it first")
+    most = min(most, TEAM_LIMIT)
     taken = set((await session.scalars(select(TeamMember.slot).where(TeamMember.team_id == team.id))).all())
-    free = [slot for slot in range(TEAM_SIZE) if slot not in taken]
-    if not free:
-        raise HeroError(f"a team has room for {TEAM_SIZE} heroes")
+    free = [slot for slot in range(TEAM_LIMIT) if slot not in taken]
+    if len(taken) >= most or not free:
+        raise HeroError(f"a team has room for {most} heroes")
     try:
         await parties.check_room(session, team.id, party_size)
     except parties.PartyError as error:
@@ -253,3 +256,154 @@ async def list_teams(session: AsyncSession, account: Account) -> list[dict]:
     for team_id, slot, hero_id, hero_name in rows.all():
         members[team_id].append({"slot": slot, "hero_id": hero_id, "name": hero_name})
     return [{"id": team.id, "name": team.name, "members": members[team.id]} for team in teams]
+
+
+# --- teams with their heroes: what the browser's calls do ---------------------------------
+
+def team_most(rules: Rules) -> int:
+    """The most heroes a team holds: the game's ``team_max``, never more than ``TEAM_LIMIT``."""
+    return max(0, min(rules.team_max, TEAM_LIMIT))
+
+
+def team_rules(rules: Rules) -> dict:
+    """What the game says about teams, for the screen that makes them."""
+    return {"team_min": rules.team_min, "team_max": team_most(rules), "max_teams": rules.max_teams}
+
+
+async def member_count(session: AsyncSession, team_id: int) -> int:
+    return await session.scalar(select(func.count()).select_from(TeamMember).where(TeamMember.team_id == team_id)) or 0
+
+
+async def _members(session: AsyncSession, team_id: int) -> list[TeamMember]:
+    return list((await session.scalars(select(TeamMember).where(TeamMember.team_id == team_id).order_by(TeamMember.slot))).all())
+
+
+async def _team_of_hero(session: AsyncSession, hero: Hero) -> TeamMember:
+    member = await session.scalar(select(TeamMember).where(TeamMember.hero_id == hero.id))
+    if member is None:
+        raise NotFound("that hero isn't on a team")
+    return member
+
+
+async def save_team(session: AsyncSession, account: Account, name: str, heroes: list[tuple[str, str]], rules: Rules) -> Team:
+    """Makes a team, with heroes ($heroes: a name and a job key each, none at all for a team that is filled in on its own page), in one
+    go: refused unless there are at most the game's ``team_max`` of them, and unless the player has room for another team. A team
+    with fewer than ``team_min`` heroes is incomplete: it cannot play until it is filled."""
+    most = team_most(rules)
+    if len(heroes) > most:
+        raise HeroError(f"a team has room for {most} heroes")
+    team = await create_team(session, account, name, rules.max_teams)
+    for slot, (hero_name, job_key) in enumerate(heroes):
+        hero = await create_hero(session, account, hero_name, job_key)
+        session.add(TeamMember(team_id=team.id, hero_id=hero.id, slot=slot))
+    await session.flush()
+    return team
+
+
+async def add_new_hero(session: AsyncSession, account: Account, team_id: int, name: str, job_key: str, rules: Rules) -> Hero:
+    """Makes a hero in the team's first free place: allowed while the team has room (``team_max``)."""
+    team = await own_team(session, account, team_id)
+    most = team_most(rules)
+    taken = {member.slot for member in await _members(session, team.id)}
+    if len(taken) >= most:
+        raise HeroError(f"a team has room for {most} heroes")
+    try:
+        await parties.check_room(session, team.id, rules.party_size)
+    except parties.PartyError as error:
+        raise HeroError(str(error)) from error
+    hero = await create_hero(session, account, name, job_key)
+    session.add(TeamMember(team_id=team.id, hero_id=hero.id, slot=min(set(range(TEAM_LIMIT)) - taken)))
+    await session.flush()
+    return hero
+
+
+async def _on_team(session: AsyncSession, account: Account, team_id: int, hero_id: int) -> tuple[Team, Hero, TeamMember]:
+    team = await own_team(session, account, team_id)
+    hero = await own_hero(session, account, hero_id)
+    member = await session.scalar(select(TeamMember).where(TeamMember.team_id == team.id, TeamMember.hero_id == hero.id))
+    if member is None:
+        raise NotFound("that hero isn't on this team")
+    return team, hero, member
+
+
+async def remove_hero(session: AsyncSession, account: Account, team_id: int, hero_id: int, rules: Rules, roster: Roster) -> None:
+    """Removes the hero for good, if the game's ``Roster.may_remove`` allows it. The place stays empty for a new hero (the team
+    cannot play while it has fewer than the game's ``team_min``)."""
+    team, hero, _ = await _on_team(session, account, team_id, hero_id)
+    if why := await roster.may_remove(session, account, hero):
+        raise HeroError(why)
+    await delete_hero(session, account, hero.id)
+
+
+async def replace_hero(session: AsyncSession, account: Account, team_id: int, hero_id: int, name: str, job_key: str, roster: Roster) -> Hero:
+    """Removes the hero and makes a new one in the same place, if the game's ``Roster.may_remove`` allows it."""
+    _, hero, member = await _on_team(session, account, team_id, hero_id)
+    check_name(name)
+    if await session.scalar(select(Job.id).where(Job.key == job_key, Job.active.is_(True))) is None:
+        raise NotFound("there's no such job")
+    if why := await roster.may_remove(session, account, hero):
+        raise HeroError(why)
+    team_id, slot = member.team_id, member.slot
+    await delete_hero(session, account, hero.id)
+    new = await create_hero(session, account, name, job_key)
+    session.add(TeamMember(team_id=team_id, hero_id=new.id, slot=slot))
+    await session.flush()
+    return new
+
+
+async def move_hero(session: AsyncSession, account: Account, hero_id: int, to_team_id: int, rules: Rules, roster: Roster) -> TeamMember:
+    """Moves the hero to another of the player's teams, if that team has room and the game's ``Roster.may_move`` allows it."""
+    hero = await own_hero(session, account, hero_id)
+    to_team = await own_team(session, account, to_team_id)
+    member = await _team_of_hero(session, hero)
+    if member.team_id == to_team.id:
+        raise HeroError("that hero is already on that team")
+    if await field.in_running_fight(session, hero):
+        raise HeroError(f"{hero.name} is in a fight: move them when it is over")
+    there = await _members(session, to_team.id)
+    if len(there) >= team_most(rules):
+        raise HeroError(f"a team has room for {team_most(rules)} heroes")
+    try:
+        await parties.check_room(session, to_team.id, rules.party_size)
+    except parties.PartyError as error:
+        raise HeroError(str(error)) from error
+    if why := await roster.may_move(session, account, hero, to_team):
+        raise HeroError(why)
+    member.team_id, member.slot = to_team.id, min(set(range(TEAM_LIMIT)) - {each.slot for each in there})
+    await session.flush()
+    return member
+
+
+async def swap_heroes(session: AsyncSession, account: Account, hero_id: int, with_id: int, roster: Roster) -> None:
+    """Exchanges the places of two heroes on two of the player's teams (each team keeps its number of heroes), if the game's
+    ``Roster.may_move`` allows both moves."""
+    if hero_id == with_id:
+        raise HeroError("pick two different heroes")
+    first, second = await own_hero(session, account, hero_id), await own_hero(session, account, with_id)
+    one, two = await _team_of_hero(session, first), await _team_of_hero(session, second)
+    if one.team_id == two.team_id:
+        raise HeroError("those heroes are on the same team")
+    for hero in (first, second):
+        if await field.in_running_fight(session, hero):
+            raise HeroError(f"{hero.name} is in a fight: swap them when it is over")
+    team_one, team_two = await own_team(session, account, one.team_id), await own_team(session, account, two.team_id)
+    for hero, to_team in ((first, team_two), (second, team_one)):
+        if why := await roster.may_move(session, account, hero, to_team):
+            raise HeroError(why)
+    (team_a, slot_a), (team_b, slot_b) = (one.team_id, one.slot), (two.team_id, two.slot)
+    one.slot = -1  # out of the way for a moment, so neither place is taken when the other hero moves in
+    await session.flush()
+    two.team_id, two.slot = team_a, slot_a
+    await session.flush()
+    one.team_id, one.slot = team_b, slot_b
+    await session.flush()
+
+
+async def disband_team(session: AsyncSession, account: Account, team_id: int, roster: Roster, alliances: Alliances | None = None) -> None:
+    """Deletes the team and its heroes, if the game's ``Roster.may_disband`` allows it."""
+    team = await own_team(session, account, team_id)
+    if why := await roster.may_disband(session, account, team):
+        raise HeroError(why)
+    for member in await _members(session, team.id):
+        await delete_hero(session, account, member.hero_id)
+    await delete_team(session, account, team.id, alliances)

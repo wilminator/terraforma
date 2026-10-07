@@ -10,6 +10,7 @@ from .combatant import Combatant
 from .events import Event, EventType
 from .fight import Fight
 from .rules import Rules
+from .state import hydrate_party
 from .status import age, count_turn, place, take_off
 
 
@@ -52,6 +53,10 @@ def apply_events(fight: Fight, rules: Rules, events: list[Event]) -> None:
             place(fight.get(tuple(data[:3])), fight.statuses[data[3]], tuple(data[4:7]), data[7])
         elif kind is EventType.STATUS_REMOVED:
             take_off(fight.get(tuple(data[:3])), data[3], tuple(data[4:7]))
+        elif kind is EventType.PARTY_JOINED:
+            fight.parties[data[0]] = hydrate_party(data[1], fight.statuses)
+            for party, (allies, enemies) in data[2].items():  # (a stored event's keys are text)
+                fight.parties[int(party)].allies, fight.parties[int(party)].enemies = set(allies), set(enemies)
         elif kind is EventType.ROUND_END:
             for address in fight.addresses():
                 age(fight.get(address))

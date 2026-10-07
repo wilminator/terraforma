@@ -55,6 +55,7 @@ class EventType(StrEnum):
     STATUS_REMOVED = "StatusRemoved"  # [party, group, character, status key, source party, group, character, reason]
     TURN_SKIPPED = "TurnSkipped"  # [party, group, character, status key]
     ROUND_END = "RoundEnd"  # []: every status token's round counter goes up by one
+    PARTY_JOINED = "PartyJoined"  # [party, the party as ``state.dehydrate_party`` writes it, {party: [allies, enemies]}]: a party joined the running fight (first in the round it first acts in); the others' alignment after it
 
 
 @dataclass(frozen=True)

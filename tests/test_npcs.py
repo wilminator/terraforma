@@ -18,6 +18,7 @@ from terraforma.reach.hooks import Reach
 from terraforma.npcs.models import Npc, NpcTalk
 from terraforma.npcs.script import ScriptError
 from terraforma.parties import service as parties
+from terraforma import testing
 from terraforma.testing import in_app_db
 
 from .helpers import expect
@@ -259,14 +260,14 @@ def sign_in(client, username):
 @pytest.fixture
 def tavern(app_client):
     mike = sign_in(app_client, "Mike")
-    aria = expect(app_client.post("/api/heroes", json={"name": "Aria", "job": "fighter"}, headers=mike), 201).json()["id"]
+    aria = testing.make_hero(app_client, mike, "Aria")["id"]
 
     async def set_up(db):
         return (await keeper(db, await db.get(Hero, aria))).id
 
     npc = in_app_db(app_client, set_up)
     zed = sign_in(app_client, "Zed")
-    zara = expect(app_client.post("/api/heroes", json={"name": "Zara", "job": "fighter"}, headers=zed), 201).json()["id"]
+    zara = testing.make_hero(app_client, zed, "Zara")["id"]
     mike = {"X-CSRF-Token": app_client.post("/api/login", json={"username": "Mike", "password": PASSWORD}).json()["csrf_token"]}
     return app_client, mike, aria, zara, npc
 

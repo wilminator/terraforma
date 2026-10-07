@@ -61,7 +61,7 @@ def pact(app_client):
     sign_in(app_client, "Yan")
     ids = {}
     for who, name in (("Mike", "Vanguard"), ("Mike", "Rivals"), ("Zed", "Strangers")):
-        ids[name] = call(app_client, "POST", who, "/api/teams", {"name": name}, 201)["id"]
+        ids[name] = call(app_client, "POST", who, "/api/teams", {"name": name, "heroes": [{"name": f"{name} hero", "job": "fighter"}]}, 201)["id"]
     ids["alliance"] = call(app_client, "POST", "Mike", "/api/alliances", {"team_id": ids["Vanguard"], "name": "Iron Pact"}, 201)["id"]
     call(app_client, "POST", "Mike", f"/api/alliances/{ids['alliance']}/invite", {"team_id": ids["Vanguard"], "target_team_id": ids["Strangers"]})
     call(app_client, "POST", "Zed", f"/api/teams/{ids['Strangers']}/invitations/accept", {"alliance_id": ids["alliance"]})

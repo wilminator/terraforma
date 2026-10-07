@@ -50,7 +50,7 @@ export function partyPanel(shell, roster) {
       return;
     }
     const members = team.members.length ? team.members.map((member) => member.name).join(", ") : t("teams.empty");
-    const playing = h("button", { type: "button", class: "primary", id: "party-play", disabled: !team.members.length, onclick: () => act("play") }, t("party.play"));
+    const playing = h("button", { type: "button", class: "primary", id: "party-play", disabled: team.members.length < roster.rules.team_min, onclick: () => act("play") }, t("party.play"));
     const parts = [h("p", {}, t("party.members", { team: team.name, members })), playing];
     if (town?.in_town) {
       parts.push(

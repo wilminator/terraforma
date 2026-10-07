@@ -9,6 +9,7 @@ The game's pictures and sounds (``Game(assets_dir=...)``) are served at ``/asset
     /               the marketing site                  /client/...   the engine's own code and styles
     /play/          the game client (landscape)         /game/...     the game's client_dir
     /account/       the account pages                   /assets/...   the game's assets_dir
+    /team/{id}      a team's own page (its heroes)
     /confirm-email  /change-email  /reset-password  /confirm-2fa     the pages the emailed links open (account pages too)
     GET /api/client what a page needs to know: the game's name, modules, styles and assets
 """
@@ -86,6 +87,12 @@ async def play() -> FileResponse:
 @router.get("/confirm-2fa", include_in_schema=False)
 async def account() -> FileResponse:
     return page("account.html")
+
+
+@router.get("/team/{team_id}", include_in_schema=False)
+async def team(team_id: int) -> FileResponse:
+    """A team's own page (the browser asks the server for the team: only its player gets it)."""
+    return page("team.html")
 
 
 @router.get("/api/client")

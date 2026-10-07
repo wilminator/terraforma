@@ -16,6 +16,7 @@ from terraforma.heroes import service
 from terraforma.heroes.models import Hero, TeamMember
 from terraforma.parties import service as parties
 from terraforma.parties.models import Party, PartyTeam
+from terraforma import testing
 from terraforma.testing import in_app_db
 from terraforma.world.start import ensure_start
 
@@ -192,12 +193,9 @@ def test_the_add_hero_call_follows_the_games_party_size(app_client):
     client = app_client
     in_app_db(client, lambda db: create_account(db, "Mike", PASSWORD, email="mike@example.com", confirmed=True))
     headers = {"X-CSRF-Token": client.post("/api/login", json={"username": "Mike", "password": PASSWORD}).json()["csrf_token"]}
-    team = client.post("/api/teams", json={"name": "Team A"}, headers=headers).json()["id"]
-    heroes = [client.post("/api/heroes", json={"name": name, "job": "fighter"}, headers=headers).json()["id"] for name in ("Aria", "Bram", "Cato")]
-    for hero in heroes[:2]:
-        assert client.post(f"/api/teams/{team}/add-hero", json={"hero_id": hero}, headers=headers).status_code == 200
+    team = testing.make_team(client, headers, "Team A", heroes=("Aria", "Bram"))["id"]
     in_app_db(client, lambda db: parties.create_party(db, team, 2))
-    refused = client.post(f"/api/teams/{team}/add-hero", json={"hero_id": heroes[2]}, headers=headers)
+    refused = client.post(f"/api/teams/{team}/heroes", json={"name": "Cato", "job": "fighter"}, headers=headers)
     assert refused.status_code >= 400 and "party" in refused.text
 
 
@@ -231,11 +229,7 @@ def test_the_play_call_makes_the_party_and_is_for_the_teams_owner_only(app_clien
         in_app_db(client, lambda db, name=name: create_account(db, name, PASSWORD, email=f"{name.lower()}@example.com", confirmed=True))
     login = lambda name: {"X-CSRF-Token": client.post("/api/login", json={"username": name, "password": PASSWORD}).json()["csrf_token"]}  # noqa: E731
     mike = login("Mike")
-    team = client.post("/api/teams", json={"name": "Vanguard"}, headers=mike).json()["id"]
-    empty = client.post("/api/teams", json={"name": "Empty"}, headers=mike).json()["id"]
-    hero = client.post("/api/heroes", json={"name": "Aria", "job": "fighter"}, headers=mike).json()["id"]
-    assert client.post(f"/api/teams/{team}/add-hero", json={"hero_id": hero}, headers=mike).status_code == 200
-    assert client.post(f"/api/teams/{empty}/play", json={}, headers=mike).status_code == 409, "no heroes"
+    team = testing.make_team(client, mike, "Vanguard")["id"]
     assert client.post(f"/api/teams/{team}/play", json={}).status_code == 403, "no CSRF token"
     played = client.post(f"/api/teams/{team}/play", json={}, headers=mike)
     assert played.status_code == 200 and played.json()["teams"] == [team] and set(played.json()) == {"party", "teams", "map_id", "x", "y"}
