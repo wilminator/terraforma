@@ -62,6 +62,10 @@ def test_a_map_can_be_nothing_but_a_tileset_and_a_grid():
     ({"tileset": []}, "tileset"),
     ({"tileset": [{"encounter_rate": 10001}, {}, {}]}, "encounter_rate"),
     ({"tileset": [{"art": "../x.png"}, {}, {}]}, "art"),
+    ({"tileset": [{"art": {"sheet": "../x"}}, {}, {}]}, "art"),
+    ({"tileset": [{"art": {"colors": "red"}}, {}, {}]}, "sheet"),
+    ({"tileset": [{"art": {"sheet": "knight", "palette": "red"}}, {}, {}]}, "palette"),
+    ({"tileset": [{"art": {"sheet": "knight", "colors": "/etc/x"}}, {}, {}]}, "colors"),
     ({"tileset": [{"surprise": 1}, {}, {}]}, "surprise"),
     ({"wrap_x": "yes"}, "wrap_x"),
     ({"safe_steps": -1}, "safe_steps"),
@@ -109,6 +113,15 @@ def test_a_map_without_a_grid_is_open_ground_in_a_plain_zone():
 
 
 # --- loading ----------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_a_tiles_art_can_be_a_sheet_with_a_color_map(db):
+    art = {"sheet": "tiles/knight", "colors": "tiles/red_team", "animations": None}
+    seed = {**SEED, "maps": [{**SEED["maps"][0], "tileset": [{"name": "grass", "art": {"sheet": "tiles/knight", "colors": "tiles/red_team"}}, {}, {}]}]}
+    await load_content(db, seed)
+    await db.commit()
+    assert (await db.scalar(select(Map).where(Map.name == "meadow"))).tile(0, 0)["art"] == art
+
 
 @pytest.mark.anyio
 async def test_loading_puts_the_map_in_the_engines_world(db):

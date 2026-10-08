@@ -77,6 +77,7 @@ export default function register(shell) {
 | `shell.text.get(key, values)` and `shell.text.set({key: text})` | The page's words; `{name}` in a text is filled in. An element with `data-text="key"` shows the key's text. |
 | `shell.api` | `get`, `post`, `call` and `ApiError`: the server's calls, with the CSRF token added to the ones that change something. |
 | `shell.account` | `null`, or `{username, handle}` once logged in. |
+| `shell.art.load(reference)` | A picture from the game's assets: a file name or a sheet reference (see Art). Resolves to `{source, frame, grid, frames, palette, animations}`. |
 | `shell.on(event, handler)` | Events `ready` (every module registered, nothing drawn yet), `login` and `logout`, and on the play page `game` (the panels are drawn; the detail is `{roster}`). Returns a function that stops listening. |
 | `shell.panels.add(id, build)` | Adds a panel to the play page's menu after the engine's (Teams, Party, Nearby). `build(shell, roster)` runs once the player is logged in and returns an element, or `{element, show}` where `show()` runs each time the panel is opened. The menu button says `shell.text.get("panel.<id>")`. `roster` is the player's heroes, teams, jobs and the game's team rules (`heroes`, `teams`, `jobs`, `rules`, `heroId`, `teamId`, `onChange(listener)`, and the calls that change them). |
 | `shell.actions` | The actions the Nearby panel can ask for: `talk`, `invite`, `open`, `search`, `fight`, `help`. A game pushes the names of the ones it adds (the words are `action.<name>`). |
@@ -190,11 +191,21 @@ Joining and merging are service functions, not server calls of their own: they t
 
 A team enters the game when its player selects it to play: `POST /api/teams/{id}/play` (login and CSRF token; safe to repeat; refused with 409 for a team with no heroes) makes its party, a party of just that team, where its first hero stands. After that a team is never in no party; teams meet by joining and merging parties on the map. In a town the real party and its formation are kept, and each group of teams there acts as an *ethereal* party: `towns.service.acting_party(session, team_id)` says which party a team acts in right now (the whole real party, or in a town only the team's group, `ethereal=True`, never stored and gone when the real party is put back together).
 
+## Art
+
+A picture in a seed file (a tile's `art`) is a file name under the game's assets folder, drawn as one image, or a sheet reference `{"sheet": "knight", "colors": "red_team", "animations": "knight"}` (a public format: the license exception covers it). Names are written without the extension, and `colors` and `animations` are optional:
+
+- `knight.png` is the indexed-color sheet, `knight.alpha.png` its transparency (an 8-bit gray image of the same size) and `knight.sheet.json` describes it: `frame` (`[w, h]`), `grid` (`[columns, rows]`), `frames`, `palette` (hex colors) and `alpha` (`false` for a sheet with no alpha file). The browser combines the two images on a canvas when it loads the sheet.
+- `red_team.colors.json` is a color map, `{"#3050a0": "#a03030"}`. Each pixel is snapped to the nearest palette color, then swapped if the map lists it; colors the map leaves out stay. One sheet serves many recolors, and each sheet-and-map pair is combined once and cached.
+- `knight.anim.json` (animations) is accepted in the reference now and played in a later slice.
+
+In the browser a game calls `shell.art.load(reference)`, which resolves to `{source, frame, grid, frames, palette, animations}`; `source` goes straight to `drawImage`.
+
 ## Maps
 
 A map (`maps.json`; `terraforma.maps`) is a grid of tiles with a second grid of zones over it. Both are public formats (the license exception covers them). Walking, encounters, objects, doors and edge events are described below; the nearby list is under Reach.
 
-- **Tiles.** `tileset` lists the kinds of tile: `name`, `passable` (default true), `poison` (default false; what it does is the game's rule), `encounter_rate` (out of 10000: the chance a step ending on it meets monsters) and `art` (a file name under the game's assets folder). `tiles` is the grid, rows top to bottom, each tile a place in `tileset` (up to 512 by 512; every row the same length).
+- **Tiles.** `tileset` lists the kinds of tile: `name`, `passable` (default true), `poison` (default false; what it does is the game's rule), `encounter_rate` (out of 10000: the chance a step ending on it meets monsters) and `art` (a picture: a file name under the game's assets folder, or a sheet reference, see Art below). `tiles` is the grid, rows top to bottom, each tile a place in `tileset` (up to 512 by 512; every row the same length).
 - **Zones.** `zones` lists the kinds of area: `name`, `encounters` (groups of `monsters`, keys in `monsters.json`, each with a `weight` against the others), `drops` (drop table keys, the area's own, see Item drops), `pvp` (whether parties may fight each other there) and `can_flee` (whether a fighter may flee from a fight there; on by default). `zone_tiles` is their grid, the same size as `tiles`; left out, the whole map is the first zone (which defaults to a plain one).
 - **Edges.** `wrap_x` and `wrap_y` make walking off the left or right, top or bottom edge come out on the other side (a wrapped edge is no edge, and fires no edge event). `safe_steps` is how many steps a party takes on the map, from entering it and again after each fight, before it can meet monsters (`Party.steps` counts them; any fight, walking or not, starts it over).
 - **Keys.** A map's `key` is its name everywhere else (`Position.map`, a hero's place); `name` is what players read. Maps are checked with the rest of the seed (monsters and drop tables named by a zone must exist). The default hub is a map without a grid (open ground, one plain zone); a `maps.json` row with the key `hub` draws it.

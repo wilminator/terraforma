@@ -50,6 +50,10 @@ def test_the_engines_code_is_served_as_modules_and_styles(app_client):
     expect(app_client.get("/client/js/nothing.js"), 404)
 
 
+def test_the_art_loader_is_served(app_client):
+    expect(app_client.get("/client/js/art.js"), 200)
+
+
 def test_the_play_page_says_to_turn_the_device_and_the_stylesheet_shows_it_in_portrait(app_client):
     assert 'id="rotate"' in app_client.get("/play/").text
     assert "(orientation: portrait)" in app_client.get("/client/css/engine.css").text
@@ -74,7 +78,10 @@ def test_the_example_game_is_valid_and_its_tileset_is_drawn_by_its_assets(app_cl
     import json
 
     for tile in json.loads((EXAMPLE.seed_dir / "maps.json").read_text())[0]["tileset"]:
-        expect(app_client.get(f"/assets/{tile['art']}"), 200)
+        art = tile["art"]
+        names = [art] if isinstance(art, str) else [f"{art['sheet']}.png", f"{art['sheet']}.alpha.png", f"{art['sheet']}.sheet.json", f"{art['colors']}.colors.json"]
+        for name in names:
+            expect(app_client.get(f"/assets/{name}"), 200)
 
 
 @pytest.mark.parametrize("game", [None], ids=["no game"])
