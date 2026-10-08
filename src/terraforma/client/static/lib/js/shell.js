@@ -15,11 +15,15 @@
 // shell.account   null, or { username, handle } once logged in
 // shell.on(event, handler)   "ready" (every module registered, nothing drawn yet), "login", "logout", and on the play page "game"
 //                            (the panels are drawn; the detail is { roster }); returns a function that stops listening
-// shell.panels    the game client's panels: the engine's (heroes, teams, party, nearby), and shell.panels.add(id, build) for a game's own
+// shell.panels    the game client's panels: the engine's (teams, party, nearby, talk), and shell.panels.add(id, build) for a game's own
 // shell.actions   the actions the nearby list can ask for (talk, invite, open, search, fight, help); a game pushes the names it adds
+// shell.activities  what the talk panel shows when an NPC's dialog reaches an activity: the engine's shop, and shell.activities.add(command, build)
+// shell.conversation  the conversation the hero is in (lines said, the prompt); the talk panel draws it
 
+import { Activities } from "./activities.js";
 import * as api from "./api.js";
 import { Art } from "./art.js";
+import { Conversation } from "./conversation.js";
 import { Panels } from "./panels.js";
 import { Text } from "./strings.js";
 
@@ -31,6 +35,8 @@ export class Shell {
   art = new Art((name) => this.assetUrl(name));
   api = api;
   panels = new Panels();
+  activities = new Activities();
+  conversation = new Conversation();
   actions = ["talk", "invite", "open", "search", "fight", "help"];
   problems = [];
   #handlers = new Map();
@@ -38,6 +44,7 @@ export class Shell {
   constructor(page) {
     this.page = page;
     this.panels.addEngine();
+    this.activities.addEngine();
   }
 
   on(event, handler) {

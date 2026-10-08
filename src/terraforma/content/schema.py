@@ -17,7 +17,7 @@ from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, ValidationError, ValidationInfo, model_validator
 
-from ..npcs.script import ScriptError, parse, tags
+from ..npcs.script import MAX_TEXT, ScriptError, parse, tags
 
 STATS = ("HP", "MP", "Speed", "Accuracy", "Strength", "Dodge", "Block", "Power", "Resistance", "Focus")
 #: The stats that are pools (``Rules.resource_names``): effects that push a stat's current value skip them.
@@ -369,6 +369,27 @@ class MapObjectSeed(Strict):
         return self
 
 
+class NpcSeed(Strict):
+    """An NPC standing on a map: ``map`` is the key of one of the game's maps (or the default ``hub``), ``x`` and ``y`` the tile, ``dialog`` what they
+    say (the dialog language, see ``npcs.script``: a shop, an inn and the rest are tags in it) and ``counter`` the tiles of their counter."""
+
+    key: Key
+    name: str = Field(min_length=1, max_length=64)
+    map: Key
+    x: int = Field(ge=0)
+    y: int = Field(ge=0)
+    dialog: str = Field(min_length=1, max_length=MAX_TEXT)
+    counter: list[Annotated[list[int], Field(min_length=2, max_length=2)]] = Field(default=[], max_length=64)
+
+    @model_validator(mode="after")
+    def _the_dialog_is_good(self):
+        try:
+            parse(self.dialog)
+        except ScriptError as error:
+            raise ValueError(f"dialog: {error}") from error
+        return self
+
+
 class MapSeed(Strict):
     """A map: ``tiles`` is its grid (rows, top to bottom) of places in ``tileset``; ``zone_tiles`` is a second grid of
     places in ``zones`` (left out: the whole map is the first zone). ``wrap_x`` and ``wrap_y`` make walking off the
@@ -528,6 +549,7 @@ KINDS: dict[str, type[Strict]] = {
     "monsters": Monster,
     "statuses": Status,
     "maps": MapSeed,
+    "npcs": NpcSeed,
 }
 
 
@@ -601,8 +623,17 @@ def check_seed(seed: dict[str, list[dict]], stats: tuple[str, ...] = STATS, reso
                     problems.append(f"maps.json {row.key}: the {what} warps to ({x}, {y}), which is off {target!r}")
                 elif not drawn[target].tileset[drawn[target].tiles[y][x]].passable:
                     problems.append(f"maps.json {row.key}: the {what} warps to ({x}, {y}) on {target!r}, which can't be stood on")
+    for npc in checked["npcs"]:
+        if npc.map not in drawn:
+            if npc.map != "hub":  # (the default hub is a map too, but the seed does not say how big it is)
+                problems.append(f"npcs.json {npc.key}: stands on {npc.map!r}, which maps.json doesn't have")
+        elif not (npc.x < drawn[npc.map].width and npc.y < drawn[npc.map].height):
+            problems.append(f"npcs.json {npc.key}: stands at ({npc.x}, {npc.y}), which is off {npc.map!r}")
+        for parts in tags(npc.dialog):
+            if parts[0] == "warp" and parts[1] not in drawn and parts[1] != "hub":
+                problems.append(f"npcs.json {npc.key}: the dialog warps to {parts[1]!r}, which maps.json doesn't have")
     kinds = {row.key: row.kind for row in checked["statuses"]}
-    effects = [(kind, row, effect) for kind, field in (("abilities", "effect"), ("items", "use_effect"))
+    effects =[(kind, row, effect) for kind, field in (("abilities", "effect"), ("items", "use_effect"))
                for row in checked[kind] if (effect := getattr(row, field)) is not None]
     for kind, row, effect in effects:
         if effect.status is None:

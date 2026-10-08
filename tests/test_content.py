@@ -100,7 +100,44 @@ def test_keys_are_unique_and_references_must_exist():
     assert "items names 'missing'" in text and "'sword', " not in text
 
 
+NPC = {"key": "keeper", "name": "Keeper", "map": "hub", "x": 1, "y": 1,
+       "dialog": "Hello.`vend,potion,20,Bye`Well?`ack`Done.`jump,end``label,Bye`Bye."}
+
+
+def test_an_npc_is_checked_like_the_rest():
+    assert check_seed(seed(npcs=[NPC]))["npcs"][0].counter == []
+    for change, message in (({"dialog": "`question,a`"}, "dialog"), ({"surprise": 1}, "surprise"), ({"x": -1}, "x"), ({"name": ""}, "name")):
+        with pytest.raises(ContentError) as error:
+            check_seed(seed(npcs=[{**NPC, **change}]))
+        assert "npcs.json row 1 (keeper)" in str(error.value) and message in str(error.value)
+
+
+def test_an_npc_must_stand_on_a_map_the_game_has_and_inside_it():
+    town = {"key": "town", "name": "Town", "tileset": [{}], "tiles": [[0, 0], [0, 0]]}
+    with pytest.raises(ContentError) as error:
+        check_seed(seed(npcs=[{**NPC, "map": "nowhere"}]))
+    assert "npcs.json keeper: stands on 'nowhere', which maps.json doesn't have" in str(error.value)
+    with pytest.raises(ContentError) as error:
+        check_seed(seed(maps=[town], npcs=[{**NPC, "map": "town", "x": 5}]))
+    assert "stands at (5, 1), which is off 'town'" in str(error.value)
+    with pytest.raises(ContentError) as error:
+        check_seed(seed(npcs=[{**NPC, "dialog": "Away.`warp,nowhere,0,0,end`"}]))
+    assert "the dialog warps to 'nowhere'" in str(error.value)
+    assert check_seed(seed(maps=[town], npcs=[{**NPC, "map": "town", "x": 1}]))["npcs"][0].map == "town"
+
+
 # --- loading, on each database ----------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_loading_stands_the_seeds_npcs_on_their_maps_and_loading_again_moves_them(db):
+    from terraforma.npcs.models import Npc
+
+    assert (await load_content(db, seed(npcs=[NPC])))["npcs"] == 1
+    npc = (await db.scalars(select(Npc))).one()
+    assert (npc.key, npc.name, npc.x, npc.y, npc.counter) == ("keeper", "Keeper", 1, 1, [])
+    await load_content(db, seed(npcs=[{**NPC, "x": 2, "counter": [[2, 1]]}]))
+    npc = (await db.scalars(select(Npc))).one()
+    assert (npc.x, npc.counter) == (2, [[2, 1]]), "the NPC with that key was moved, not added"
 
 async def rows(db, table):
     return (await db.scalars(select(table).order_by(table.key))).all()

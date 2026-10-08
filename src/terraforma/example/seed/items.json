@@ -1,0 +1,24 @@
+[
+ {
+  "key": "herb",
+  "name": "Herb",
+  "price": 12,
+  "one_use": true,
+  "description": "A bitter leaf that mends a little.",
+  "use_effect": {
+   "effect": "heal",
+   "base": 10
+  }
+ },
+ {
+  "key": "potion",
+  "name": "Potion",
+  "price": 40,
+  "one_use": true,
+  "description": "A bottle that mends a lot.",
+  "use_effect": {
+   "effect": "heal",
+   "base": 30
+  }
+ }
+]

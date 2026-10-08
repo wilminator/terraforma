@@ -1,0 +1,26 @@
+[
+ {
+  "key": "tom",
+  "name": "Old Tom",
+  "map": "hub",
+  "x": 0,
+  "y": 1,
+  "dialog": "Old Tom grins. Take this for the road, friend.`add_gold,30,end`\nHe presses 30 gold into your hand."
+ },
+ {
+  "key": "keeper",
+  "name": "Hana the Keeper",
+  "map": "hub",
+  "x": 1,
+  "y": 1,
+  "dialog": "Fresh stock, traveller.`vend,herb,12,potion,40`\nCome again soon."
+ },
+ {
+  "key": "innkeeper",
+  "name": "Bede the Innkeeper",
+  "map": "hub",
+  "x": 1,
+  "y": 0,
+  "dialog": "Welcome to the Meadow Inn.`inn,10,no`A bed is 10 gold. Rest?`ack`Sleep well.`jump,end``label,no`Another time."
+ }
+]
