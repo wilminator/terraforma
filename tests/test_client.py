@@ -50,6 +50,10 @@ def test_the_engines_code_is_served_as_modules_and_styles(app_client):
     expect(app_client.get("/client/js/nothing.js"), 404)
 
 
+def test_the_art_loader_is_served(app_client):
+    expect(app_client.get("/client/js/art.js"), 200)
+
+
 def test_the_play_page_says_to_turn_the_device_and_the_stylesheet_shows_it_in_portrait(app_client):
     assert 'id="rotate"' in app_client.get("/play/").text
     assert "(orientation: portrait)" in app_client.get("/client/css/engine.css").text

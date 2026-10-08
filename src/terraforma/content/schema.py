@@ -303,17 +303,31 @@ def _check_script(text: str, what: str = "script") -> None:
         raise ValueError(f"{what}: {error}") from error
 
 
+class ArtRef(Strict):
+    """A picture drawn from a sheet: ``sheet`` names the tilesheet (``name.png``, ``name.alpha.png`` and ``name.sheet.json`` under the
+    game's assets folder, written without the extension), ``colors`` an optional color map (``name.colors.json``) that recolors it and
+    ``animations`` an optional animation file (``name.anim.json``; the client plays these in a later slice)."""
+
+    sheet: Asset
+    colors: Asset | None = None
+    animations: Asset | None = None
+
+
+#: Art is a plain file name (one image, drawn as it is) or a sheet reference.
+Art = Asset | ArtRef
+
+
 class Tile(Strict):
     """One kind of tile in a map's tileset; the map's grid says which kind each tile is, by its place in the tileset.
     ``passable`` says whether a party can step on it, ``poison`` whether stepping on it poisons (what that does is the
     game's rule), ``encounter_rate`` is the chance out of ENCOUNTER_SCALE that a step ending here meets monsters, and
-    ``art`` is the picture's file name under the game's assets folder."""
+    ``art`` is the picture: a file name under the game's assets folder, or a sheet reference (``ArtRef``)."""
 
     name: str = Field(default="", max_length=64)
     passable: bool = True
     poison: bool = False
     encounter_rate: int = Field(default=0, ge=0, le=ENCOUNTER_SCALE)
-    art: Asset | None = None
+    art: Art | None = None
 
 
 class Encounter(Strict):

@@ -9,6 +9,7 @@
 // shell.page      "site", "account" or "play"
 // shell.game      what GET /api/client said: { engine, game, modules, styles, assets }
 // shell.assetUrl(name)   the URL of one of the game's assets
+// shell.art.load(reference)   a picture from the game's assets: a file name or a sheet reference (see art.js)
 // shell.text      the page's words (get, set); an element with data-text="key" shows that text
 // shell.api       { get, post, call, ApiError }
 // shell.account   null, or { username, handle } once logged in
@@ -18,6 +19,7 @@
 // shell.actions   the actions the nearby list can ask for (talk, invite, open, search, fight, help); a game pushes the names it adds
 
 import * as api from "./api.js";
+import { Art } from "./art.js";
 import { Panels } from "./panels.js";
 import { Text } from "./strings.js";
 
@@ -26,6 +28,7 @@ export class Shell {
   game = null;
   account = null;
   text = new Text();
+  art = new Art((name) => this.assetUrl(name));
   api = api;
   panels = new Panels();
   actions = ["talk", "invite", "open", "search", "fight", "help"];

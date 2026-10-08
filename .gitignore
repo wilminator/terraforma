@@ -10,4 +10,4 @@ settings.toml
 keys/
 secrets/
 outbox/
-*.zip
+*.ziptest-results/
