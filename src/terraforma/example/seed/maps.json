@@ -30,6 +30,13 @@
    {
     "name": "floor",
     "art": "floor.svg"
+   },
+   {
+    "name": "crystal",
+    "art": {
+     "sheet": "crystal",
+     "colors": "crystal_red"
+    }
    }
   ],
   "tiles": [

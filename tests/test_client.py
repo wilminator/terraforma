@@ -78,7 +78,10 @@ def test_the_example_game_is_valid_and_its_tileset_is_drawn_by_its_assets(app_cl
     import json
 
     for tile in json.loads((EXAMPLE.seed_dir / "maps.json").read_text())[0]["tileset"]:
-        expect(app_client.get(f"/assets/{tile['art']}"), 200)
+        art = tile["art"]
+        names = [art] if isinstance(art, str) else [f"{art['sheet']}.png", f"{art['sheet']}.alpha.png", f"{art['sheet']}.sheet.json", f"{art['colors']}.colors.json"]
+        for name in names:
+            expect(app_client.get(f"/assets/{name}"), 200)
 
 
 @pytest.mark.parametrize("game", [None], ids=["no game"])

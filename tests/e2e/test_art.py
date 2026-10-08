@@ -66,3 +66,25 @@ def test_a_plain_file_name_still_loads_as_one_image(page):
         }"""
     )
     assert result["width"] > 0 and result["frame"] is None and result["palette"] is None
+
+
+def test_the_example_games_crystal_sheet_loads_and_its_color_map_turns_it_red(page):
+    page.goto("/")
+    expect(page.locator("html")).to_have_attribute("data-example-ready", "true")
+    result = page.evaluate(
+        """async () => {
+            const { Art, frameRect } = await import("/client/js/art.js");
+            const art = new Art((name) => `/assets/${name}`);
+            const blue = await art.load({ sheet: "crystal" });
+            const red = await art.load({ sheet: "crystal", colors: "crystal_red" });
+            const pixel = (loaded, x, y) => Array.from(loaded.source.getContext("2d").getImageData(x, y, 1, 1).data);
+            return {
+                blue: pixel(blue, 8, 12), red: pixel(red, 8, 12), corner: pixel(red, 0, 0),
+                size: [red.source.width, red.source.height], frames: red.frames, second: frameRect(red, 1),
+            };
+        }"""
+    )
+    assert result["blue"] == [48, 80, 160, 255] and result["red"] == [160, 48, 48, 255]
+    assert result["corner"][3] == 0, "outside the diamond the alpha sheet makes it transparent"
+    assert result["size"] == [32, 16] and result["frames"] == 2
+    assert result["second"] == {"x": 16, "y": 0, "w": 16, "h": 16}
