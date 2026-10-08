@@ -127,6 +127,13 @@ body.play { height: 100dvh; min-height: 0; overflow: hidden; }
 .drawer .close { position: absolute; top: 0.4rem; right: 0.4rem; padding: 0.1em 0.6em; }
 .panel h2 { margin-top: 0; }
 .panel h3 { margin: 0 0 0.5rem; font-size: 1rem; }
+.transcript { margin: 0 0 0.75rem; display: grid; gap: 0.4rem; }
+.transcript p { margin: 0; }
+.choices { display: grid; gap: 0.4rem; margin-bottom: 0.5rem; }
+.choices button { text-align: left; }
+button.quiet { background: transparent; }
+.qty { width: 4.5rem; font: inherit; padding: 0.3em; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text); }
+.shop .row { grid-template-columns: 1fr auto; align-items: center; }
 .panel .card { max-width: none; margin-top: var(--gutter); }
 .rows { list-style: none; margin: 0 0 var(--gutter); padding: 0; display: grid; gap: 0.5rem; }
 .row { padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); display: grid; gap: 0.25rem; }

@@ -20,12 +20,33 @@ export function nearbyPanel(shell, roster) {
     return entry.name;
   }
 
+  /** What can be done with an entry now: talk to an NPC (the other actions come with the screens that act on them). */
+  function act(answer, entry) {
+    if (answer.action !== "talk" || entry.kind !== "npc") return null;
+    const heroId = roster.heroId;
+    return h(
+      "button",
+      {
+        type: "button",
+        "aria-label": t("nearby.talk_label", { name: entry.name }),
+        onclick: () =>
+          attempt(shell, problem, async () => {
+            await shell.conversation.talk(heroId, entry.id);
+            shell.panels.open("dialog");
+          }),
+      },
+      t("nearby.talk"),
+    );
+  }
+
   function show(answer) {
     clearTimeout(stale);
     replace(
       list,
       answer.nearby.length
-        ? answer.nearby.map((entry) => h("li", { class: "row", "data-kind": entry.kind }, h("span", {}, describe(entry)), h("span", { class: "muted small" }, t("nearby.distance", { steps: entry.distance }))))
+        ? answer.nearby.map((entry) =>
+            h("li", { class: "row", "data-kind": entry.kind }, h("span", {}, describe(entry)), h("span", { class: "muted small" }, t("nearby.distance", { steps: entry.distance })), act(answer, entry)),
+          )
         : h("li", { class: "muted" }, t("nearby.nothing")),
     );
     note.textContent = "";

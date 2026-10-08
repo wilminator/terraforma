@@ -30,7 +30,8 @@ def test_a_player_registers_confirms_by_the_link_and_logs_in(page, mailbox):
     page.get_by_label("Password", exact=True).fill(PASSWORD)
     page.get_by_label("Password again").fill(PASSWORD)
     page.get_by_role("button", name="Create account").click()
-    expect(page.get_by_role("heading", name="Check your email")).to_be_visible()
+    # (hashing the password takes a while when the whole suite runs at once: wait longer than the usual five seconds)
+    expect(page.get_by_role("heading", name="Check your email")).to_be_visible(timeout=30_000)
 
     # The link opens a page that waits for the button: opening a link, which mail scanners do, changes nothing.
     page.goto(f"/confirm-email?token={token_in(mailbox.last_to('zed@example.com'))}")

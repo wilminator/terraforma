@@ -13,6 +13,7 @@ from ..economy import Economy
 from ..heroes.field import in_running_fight
 from ..heroes.models import Hero, Team, TeamMember
 from ..maps.models import EDGE, MapObject
+from ..models import Map
 from ..parties import service as parties
 from ..reach.hooks import TALK, Reach
 from .hooks import Npcs
@@ -52,6 +53,15 @@ async def place_npc(session: AsyncSession, key: str, name: str, map_id: int, x: 
         npc.name, npc.map_id, npc.x, npc.y, npc.dialog, npc.counter = name, map_id, x, y, dialog, tiles
     await session.flush()
     return npc
+
+
+async def apply_npcs(session: AsyncSession, world_id: int, rows: list) -> int:
+    """Stands the seed's NPCs ($rows: ``NpcSeed``) on the world's maps, each by ``place_npc`` (so the NPC with a key is moved and
+    rewritten if it exists). An NPC the rows no longer list is left standing. Returns how many."""
+    for row in rows:
+        found = await session.scalar(select(Map).where(Map.world_id == world_id, Map.name == row.map))
+        await place_npc(session, row.key, row.name, found.id, row.x, row.y, row.dialog, [(x, y) for x, y in row.counter])
+    return len(rows)
 
 
 async def npcs_here(session: AsyncSession, reach: Reach, hero: Hero) -> list[Npc]:

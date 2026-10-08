@@ -230,12 +230,10 @@ def test_a_team_plays_as_a_party_and_the_nearby_list_reads_the_heroes_place(page
 
     tab(page, "Nearby")
     expect(page.locator("#nearby-hero")).to_contain_text("Aria")
-    expect(page.get_by_text("Nothing in reach.")).to_be_visible()  # the example map has no one to talk to
-    page.locator("#nearby-action").select_option("fight")
-    expect(page.get_by_text("Nothing in reach.")).to_be_visible()
+    expect(page.locator("#panel-nearby [data-kind='npc']")).to_have_count(3)  # the example's three people next to where heroes start
 
 
 def test_the_menu_lists_the_engines_panels(page, live_server):
     open_game(page, live_server)
     names = page.get_by_role("navigation", name="Game menu").get_by_role("button")
-    expect(names).to_have_text(["Teams", "Party", "Nearby"])
+    expect(names).to_have_text(["Teams", "Party", "Nearby", "Talk"])
