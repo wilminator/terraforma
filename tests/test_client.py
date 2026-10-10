@@ -77,11 +77,18 @@ def test_a_game_cannot_serve_files_outside_its_folders(app_client):
 def test_the_example_game_is_valid_and_its_tileset_is_drawn_by_its_assets(app_client):
     import json
 
-    for tile in json.loads((EXAMPLE.seed_dir / "maps.json").read_text())[0]["tileset"]:
-        art = tile["art"]
-        names = [art] if isinstance(art, str) else [f"{art['sheet']}.png", f"{art['sheet']}.alpha.png", f"{art['sheet']}.sheet.json", f"{art['colors']}.colors.json"]
-        for name in names:
-            expect(app_client.get(f"/assets/{name}"), 200)
+    for each in json.loads((EXAMPLE.seed_dir / "maps.json").read_text()):
+        for tile in each["tileset"]:
+            art = tile["art"]
+            names = [art]
+            if not isinstance(art, str):
+                info = expect(app_client.get(f"/assets/{art['sheet']}.sheet.json"), 200).json()
+                assert 0 <= art.get("frame", 0) < info["frames"], f"{tile['name']} names a frame the sheet does not have"
+                names = [f"{art['sheet']}.png", f"{art['sheet']}.sheet.json"]
+                names += [f"{art['sheet']}.alpha.png"] if info.get("alpha", True) else []
+                names += [f"{art['colors']}.colors.json"] if art.get("colors") else []
+            for name in names:
+                expect(app_client.get(f"/assets/{name}"), 200)
 
 
 @pytest.mark.parametrize("game", [None], ids=["no game"])

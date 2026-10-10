@@ -305,10 +305,12 @@ def _check_script(text: str, what: str = "script") -> None:
 
 class ArtRef(Strict):
     """A picture drawn from a sheet: ``sheet`` names the tilesheet (``name.png``, ``name.alpha.png`` and ``name.sheet.json`` under the
-    game's assets folder, written without the extension), ``colors`` an optional color map (``name.colors.json``) that recolors it and
+    game's assets folder, written without the extension), ``frame`` which picture of it (0 is the first, then left to right and down; a tile
+    kind picks its own), ``colors`` an optional color map (``name.colors.json``) that recolors it and
     ``animations`` an optional animation file (``name.anim.json``; the client plays these in a later slice)."""
 
     sheet: Asset
+    frame: int = Field(default=0, ge=0, le=10000)
     colors: Asset | None = None
     animations: Asset | None = None
 

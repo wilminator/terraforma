@@ -116,7 +116,7 @@ def test_a_map_without_a_grid_is_open_ground_in_a_plain_zone():
 
 @pytest.mark.anyio
 async def test_a_tiles_art_can_be_a_sheet_with_a_color_map(db):
-    art = {"sheet": "tiles/knight", "colors": "tiles/red_team", "animations": None}
+    art = {"sheet": "tiles/knight", "frame": 0, "colors": "tiles/red_team", "animations": None}
     seed = {**SEED, "maps": [{**SEED["maps"][0], "tileset": [{"name": "grass", "art": {"sheet": "tiles/knight", "colors": "tiles/red_team"}}, {}, {}]}]}
     await load_content(db, seed)
     await db.commit()

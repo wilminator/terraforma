@@ -33,7 +33,7 @@ def later(monkeypatch):
 #: Which category every test file belongs to. A new test file must be listed here (a test checks that).
 CATEGORIES = {
     "accounts": ["accounts", "handles", "keys", "twofa", "mail", "logscrub", "settings"],
-    "platform": ["app", "client", "categories", "content", "database", "housekeeping", "migrations", "db_commit_order", "maps", "walking", "map_events", "parallel", "seed", "world"],
+    "platform": ["app", "client", "categories", "content", "database", "housekeeping", "migrations", "db_commit_order", "qbtiles","maps", "walking", "map_events", "parallel", "seed", "world"],
     "heroes": ["heroes", "inventory", "field_use", "parties", "towns", "economy", "trading", "drops", "pending_drops", "challenge_tokens", "pvp", "npc_script", "npcs", "reach", "quests", "npc_state", "market", "inn", "guild", "standing", "token_tags"],
     "fights": ["round_time", "fight_rules", "fleeing", "fight_store", "live_fights", "joining", "experience", "rewards", "ai", "ai_statuses", "statuses"],
     "social": ["relations", "alliances", "ballots", "ratings", "profiles"],

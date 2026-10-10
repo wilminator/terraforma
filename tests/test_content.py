@@ -112,6 +112,18 @@ def test_an_npc_is_checked_like_the_rest():
         assert "npcs.json row 1 (keeper)" in str(error.value) and message in str(error.value)
 
 
+def test_a_tile_kind_picks_the_frame_of_its_sheet_it_draws():
+    def town(art):
+        return {"key": "town", "name": "Town", "tileset": [{"art": art}], "tiles": [[0, 0], [0, 0]]}
+
+    assert check_seed(seed(maps=[town({"sheet": "tiles", "frame": 5})]))["maps"][0].tileset[0].art.frame == 5
+    assert check_seed(seed(maps=[town({"sheet": "tiles"})]))["maps"][0].tileset[0].art.frame == 0, "the first, unless it says"
+    assert check_seed(seed(maps=[town("grass.svg")]))["maps"][0].tileset[0].art == "grass.svg", "a plain file is the one picture"
+    for bad in (-1, "two", 1.5):
+        with pytest.raises(ContentError, match="frame"):
+            check_seed(seed(maps=[town({"sheet": "tiles", "frame": bad})]))
+
+
 def test_an_npc_must_stand_on_a_map_the_game_has_and_inside_it():
     town = {"key": "town", "name": "Town", "tileset": [{}], "tiles": [[0, 0], [0, 0]]}
     with pytest.raises(ContentError) as error:
