@@ -30,12 +30,14 @@ export function partyPanel(shell, roster) {
       const answer = await api.post(`/api/teams/${team.id}/${path}`);
       if (path === "play") {
         note.textContent = t("party.playing", { team: team.name, party: answer.party, map: answer.map_id, x: answer.x, y: answer.y });
+        await roster.load(); // (the team now says which party it is in: the stage shows that party's map)
       } else if (path === "town/ready") {
         town = answer;
         note.textContent = answer.fight ? t("party.fight_started") : t(answer.in_town ? "party.waiting" : "party.left");
       } else {
         town = answer;
         note.textContent = t(done);
+        if (path === "town/leave-party") await roster.load();
       }
     });
     if (problem.textContent) draw(); // (refreshing would clear what the server just refused)

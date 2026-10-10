@@ -41,8 +41,8 @@
   ],
   "tiles": [
    [
-    1,
-    1,
+    0,
+    0,
     1,
     1,
     1,
@@ -59,7 +59,7 @@
     1
    ],
    [
-    1,
+    0,
     0,
     0,
     0,
@@ -220,6 +220,105 @@
     1,
     1
    ]
+  ],
+  "objects": [
+   {
+    "key": "signpost",
+    "name": "Signpost",
+    "kind": "sign",
+    "action": "read",
+    "x": 2,
+    "y": 5,
+    "script": "Welcome to the Meadow. The path to the south leads to the cellar stairs."
+   },
+   {
+    "key": "cellar_stairs",
+    "name": "Cellar stairs",
+    "kind": "door",
+    "action": "open",
+    "x": 8,
+    "y": 7,
+    "script": "`question,Go down,down,Stay,end`The stairs lead down.\n`label,down``warp,cellar,1,1,end`"
+   }
+  ]
+ },
+ {
+  "key": "cellar",
+  "name": "The Cellar",
+  "safe_steps": 0,
+  "tileset": [
+   {
+    "name": "floor",
+    "art": "floor.svg"
+   },
+   {
+    "name": "stone",
+    "passable": false,
+    "art": "stone.svg"
+   }
+  ],
+  "tiles": [
+   [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   [
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   [
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   [
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ]
+  ],
+  "objects": [
+   {
+    "key": "cellar_door",
+    "name": "Stairs up",
+    "kind": "door",
+    "action": "open",
+    "x": 1,
+    "y": 1,
+    "script": "`question,Go up,up,Stay,end`The stairs lead up.\n`label,up``warp,hub,8,7,end`"
+   }
   ]
  }
 ]

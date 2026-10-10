@@ -254,6 +254,14 @@ def test_a_team_below_the_games_minimum_cannot_play_until_its_places_are_filled(
     assert client.post(f"/api/teams/{team}/play", headers=headers).status_code == 200
 
 
+def test_a_team_that_has_entered_the_game_says_which_party_it_is_in(mike):
+    client, headers = mike
+    team = save_team(client, headers).json()["id"]
+    assert client.get("/api/teams").json()[0]["party"] is None
+    party = client.post(f"/api/teams/{team}/play", headers=headers).json()["party"]
+    assert client.get("/api/teams").json()[0]["party"] == party
+
+
 def test_a_replacement_is_checked_before_the_hero_goes(mike, monkeypatch):
     client, headers = mike
     allow(monkeypatch, "may_remove")

@@ -10,6 +10,9 @@ from pathlib import Path
 from ..fights.rules import Rules
 from ..game import Game
 from ..heroes.hooks import Roster
+from ..models import Map
+from ..towns.hooks import Towns
+from ..world.start import HUB_NAME
 
 HERE = Path(__file__).parent
 
@@ -29,10 +32,20 @@ class ExampleRoster(Roster):
         return None
 
 
+class ExampleTowns(Towns):
+    """The town is the gate tile where heroes start: a party that steps onto it is suspended there until its teams are ready to leave.
+    The rest of the meadow is open ground to walk."""
+
+    async def is_town(self, session, map_id, x, y):
+        game_map = await session.get(Map, map_id)
+        return game_map is not None and game_map.name == HUB_NAME and (x, y) == (0, 0)
+
+
 GAME = Game(
     name="TerraForma Example",
     rules=ExampleRules(),
     roster=ExampleRoster(),
+    towns=ExampleTowns(),
     seed_dir=HERE / "seed",
     assets_dir=HERE / "assets",
     client_dir=HERE / "client",
