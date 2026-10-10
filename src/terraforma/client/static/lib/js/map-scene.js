@@ -90,7 +90,13 @@ export class MapScene {
   async #load(name, revision) {
     if (this.map?.map === name && this.map.revision === revision) return;
     this.map = await api.get(`/api/maps/${name}`);
-    this.art = await Promise.all(this.map.tileset.map((kind) => (kind.art ? this.shell.art.load(kind.art).catch(() => null) : null)));
+    // (a sheet reference names the frame its tile kind draws; a plain file is the one picture)
+    this.art = await Promise.all(
+      this.map.tileset.map(async (kind) => {
+        const loaded = kind.art ? await this.shell.art.load(kind.art).catch(() => null) : null;
+        return loaded && { loaded, frame: typeof kind.art === "object" ? (kind.art.frame ?? 0) : 0 };
+      }),
+    );
   }
 
   #conversationMoved() {
@@ -106,6 +112,7 @@ export class MapScene {
     set("partyX", this.map ? this.tile.x : null);
     set("partyY", this.map ? this.tile.y : null);
     set("walking", this.map ? this.walking : null);
+    set("art", this.map ? this.art.filter(Boolean).length : null); // how many of the map's tile kinds have their picture
     this.stage.setAttribute("aria-label", this.map ? this.t("map.label", { map: this.map.title || this.map.map, x: this.tile.x, y: this.tile.y }) : this.t("play.stage"));
   }
 
@@ -168,12 +175,13 @@ export class MapScene {
   #drawTile(kind, x, y) {
     const art = this.art[kind];
     const c = this.context;
-    if (art?.source) {
-      if (art.frame) {
-        const rect = frameRect(art, 0);
-        c.drawImage(art.source, rect.x, rect.y, rect.w, rect.h, x, y, TILE, TILE);
+    if (art?.loaded.source) {
+      const { loaded, frame } = art;
+      if (loaded.frame) {
+        const rect = frameRect(loaded, frame);
+        c.drawImage(loaded.source, rect.x, rect.y, rect.w, rect.h, x, y, TILE, TILE);
       } else {
-        c.drawImage(art.source, x, y, TILE, TILE);
+        c.drawImage(loaded.source, x, y, TILE, TILE);
       }
       return;
     }

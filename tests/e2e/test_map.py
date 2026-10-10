@@ -46,6 +46,14 @@ def test_before_a_team_plays_the_stage_has_no_map(page, live_server):
     expect(page.locator("#stage")).to_have_attribute("aria-label", "The game")
 
 
+def test_the_stage_draws_the_tiles_of_the_games_tileset(page, live_server):
+    play(page, live_server)
+    at(page, 0, 0)
+    # (the hub names 13 kinds of tile, each a frame of the sheet tiles.png; the stage says how many pictures it loaded)
+    expect(page.locator("#stage")).to_have_attribute("data-art", "13")
+    assert page.request.get("/assets/tiles.png").ok and page.request.get("/assets/tiles.sheet.json").json()["frames"] == 13
+
+
 def test_a_team_that_plays_appears_on_the_hubs_map_where_heroes_start(page, live_server):
     play(page, live_server)
     at(page, 0, 0)
@@ -57,7 +65,7 @@ def test_a_tap_walks_the_party_there_and_the_server_says_no_to_a_wall(page, live
     play(page, live_server)
     tap(page, 3, 1)
     at(page, 3, 1)
-    tap(page, 0, 3)  # forest
+    tap(page, 0, 3)  # mountain
     expect(page.locator("#stage-note")).to_have_text("(0, 3) can't be walked on")
     at(page, 3, 1)
 

@@ -5,220 +5,284 @@
   "safe_steps": 0,
   "tileset": [
    {
-    "name": "grass",
-    "art": "grass.svg"
+    "name": "cave",
+    "art": {
+     "sheet": "tiles",
+     "frame": 0
+    }
    },
    {
-    "name": "forest",
+    "name": "tower",
     "passable": false,
-    "art": "forest.svg"
+    "art": {
+     "sheet": "tiles",
+     "frame": 1
+    }
+   },
+   {
+    "name": "castle",
+    "passable": false,
+    "art": {
+     "sheet": "tiles",
+     "frame": 2
+    }
+   },
+   {
+    "name": "town",
+    "passable": false,
+    "art": {
+     "sheet": "tiles",
+     "frame": 3
+    }
+   },
+   {
+    "name": "grass",
+    "art": {
+     "sheet": "tiles",
+     "frame": 4
+    }
+   },
+   {
+    "name": "hills",
+    "art": {
+     "sheet": "tiles",
+     "frame": 5
+    }
+   },
+   {
+    "name": "desert",
+    "art": {
+     "sheet": "tiles",
+     "frame": 6
+    }
+   },
+   {
+    "name": "swamp",
+    "art": {
+     "sheet": "tiles",
+     "frame": 7
+    }
+   },
+   {
+    "name": "dark swamp",
+    "art": {
+     "sheet": "tiles",
+     "frame": 8
+    }
+   },
+   {
+    "name": "mountain",
+    "passable": false,
+    "art": {
+     "sheet": "tiles",
+     "frame": 9
+    }
    },
    {
     "name": "water",
     "passable": false,
-    "art": "water.svg"
-   },
-   {
-    "name": "sand",
-    "art": "sand.svg"
-   },
-   {
-    "name": "stone",
-    "passable": false,
-    "art": "stone.svg"
-   },
-   {
-    "name": "floor",
-    "art": "floor.svg"
-   },
-   {
-    "name": "crystal",
     "art": {
-     "sheet": "crystal",
-     "colors": "crystal_red"
+     "sheet": "tiles",
+     "frame": 10
+    }
+   },
+   {
+    "name": "cacti",
+    "passable": false,
+    "art": {
+     "sheet": "tiles",
+     "frame": 11
+    }
+   },
+   {
+    "name": "tree",
+    "passable": false,
+    "art": {
+     "sheet": "tiles",
+     "frame": 12
     }
    }
   ],
   "tiles": [
    [
-    0,
-    0,
-    1,
-    1,
-    1,
-    1,
-    1,
-    1,
-    1,
-    1,
-    1,
-    1,
-    1,
-    1,
-    1,
-    1
+    4,
+    4,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9
    ],
    [
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    1
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    9
    ],
    [
-    1,
-    0,
-    0,
-    2,
-    2,
-    2,
-    2,
-    0,
-    0,
-    0,
-    0,
+    9,
+    4,
+    4,
+    10,
+    10,
+    10,
+    10,
     4,
     4,
     4,
     4,
-    1
+    9,
+    9,
+    9,
+    9,
+    9
    ],
    [
-    1,
-    0,
-    0,
-    2,
-    2,
-    2,
-    2,
-    0,
-    0,
-    0,
-    0,
+    9,
     4,
+    4,
+    10,
+    10,
+    10,
+    10,
+    4,
+    4,
+    4,
+    4,
+    9,
     5,
     5,
-    4,
-    1
+    9,
+    9
    ],
    [
-    1,
-    0,
-    0,
-    2,
-    2,
-    2,
-    2,
-    0,
-    0,
-    0,
-    0,
+    9,
     4,
-    3,
+    4,
+    10,
+    10,
+    10,
+    10,
+    4,
+    4,
+    4,
+    4,
+    9,
+    6,
     5,
+    9,
+    9
+   ],
+   [
+    9,
     4,
-    1
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    6,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    9
    ],
    [
-    1,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    3,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    1
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6
    ],
    [
+    9,
+    4,
+    4,
+    4,
     3,
-    3,
-    3,
-    3,
-    3,
-    3,
-    3,
-    3,
-    3,
-    3,
-    3,
-    3,
-    3,
-    3,
-    3,
-    3
+    4,
+    4,
+    4,
+    6,
+    4,
+    4,
+    4,
+    2,
+    4,
+    4,
+    9
    ],
    [
-    1,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    3,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    1
+    9,
+    4,
+    4,
+    4,
+    4,
+    12,
+    4,
+    4,
+    6,
+    4,
+    12,
+    4,
+    4,
+    4,
+    12,
+    9
    ],
    [
-    1,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    3,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    1
-   ],
-   [
-    1,
-    1,
-    1,
-    1,
-    1,
-    1,
-    1,
-    1,
-    3,
-    1,
-    1,
-    1,
-    1,
-    1,
-    1,
-    1
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    6,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9
    ]
   ],
   "objects": [
@@ -248,13 +312,19 @@
   "safe_steps": 0,
   "tileset": [
    {
-    "name": "floor",
-    "art": "floor.svg"
+    "name": "dirt",
+    "art": {
+     "sheet": "tiles",
+     "frame": 5
+    }
    },
    {
-    "name": "stone",
+    "name": "rock",
     "passable": false,
-    "art": "stone.svg"
+    "art": {
+     "sheet": "tiles",
+     "frame": 9
+    }
    }
   ],
   "tiles": [
