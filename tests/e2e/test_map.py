@@ -65,7 +65,7 @@ def test_a_tap_walks_the_party_there_and_the_server_says_no_to_a_wall(page, live
     play(page, live_server)
     tap(page, 3, 1)
     at(page, 3, 1)
-    tap(page, 0, 3)  # forest
+    tap(page, 0, 3)  # mountain
     expect(page.locator("#stage-note")).to_have_text("(0, 3) can't be walked on")
     at(page, 3, 1)
 

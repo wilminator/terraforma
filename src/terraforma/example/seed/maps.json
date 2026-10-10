@@ -12,7 +12,7 @@
     }
    },
    {
-    "name": "pyramid",
+    "name": "tower",
     "passable": false,
     "art": {
      "sheet": "tiles",
@@ -20,7 +20,7 @@
     }
    },
    {
-    "name": "keep",
+    "name": "castle",
     "passable": false,
     "art": {
      "sheet": "tiles",
@@ -28,7 +28,7 @@
     }
    },
    {
-    "name": "house",
+    "name": "town",
     "passable": false,
     "art": {
      "sheet": "tiles",
@@ -43,30 +43,28 @@
     }
    },
    {
-    "name": "hill",
+    "name": "hills",
     "art": {
      "sheet": "tiles",
      "frame": 5
     }
    },
    {
-    "name": "sand",
+    "name": "desert",
     "art": {
      "sheet": "tiles",
      "frame": 6
     }
    },
    {
-    "name": "forest",
-    "passable": false,
+    "name": "swamp",
     "art": {
      "sheet": "tiles",
      "frame": 7
     }
    },
    {
-    "name": "dark forest",
-    "passable": false,
+    "name": "dark swamp",
     "art": {
      "sheet": "tiles",
      "frame": 8
@@ -89,7 +87,7 @@
     }
    },
    {
-    "name": "cactus",
+    "name": "cacti",
     "passable": false,
     "art": {
      "sheet": "tiles",
@@ -109,20 +107,20 @@
    [
     4,
     4,
-    7,
-    7,
-    7,
-    7,
-    7,
-    7,
-    7,
-    7,
-    7,
-    7,
-    7,
-    7,
-    7,
-    7
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9
    ],
    [
     4,
@@ -140,10 +138,10 @@
     4,
     4,
     4,
-    7
+    9
    ],
    [
-    7,
+    9,
     4,
     4,
     10,
@@ -158,10 +156,10 @@
     9,
     9,
     9,
-    7
+    9
    ],
    [
-    7,
+    9,
     4,
     4,
     10,
@@ -176,10 +174,10 @@
     5,
     5,
     9,
-    7
+    9
    ],
    [
-    7,
+    9,
     4,
     4,
     10,
@@ -194,10 +192,10 @@
     6,
     5,
     9,
-    7
+    9
    ],
    [
-    7,
+    9,
     4,
     4,
     4,
@@ -212,7 +210,7 @@
     4,
     4,
     4,
-    7
+    9
    ],
    [
     6,
@@ -233,7 +231,7 @@
     6
    ],
    [
-    7,
+    9,
     4,
     4,
     4,
@@ -248,10 +246,10 @@
     2,
     4,
     4,
-    7
+    9
    ],
    [
-    7,
+    9,
     4,
     4,
     4,
@@ -266,25 +264,25 @@
     4,
     4,
     12,
-    7
+    9
    ],
    [
-    7,
-    7,
-    7,
-    7,
-    7,
-    7,
-    7,
-    7,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
     6,
-    7,
-    7,
-    7,
-    7,
-    7,
-    7,
-    7
+    9,
+    9,
+    9,
+    9,
+    9,
+    9,
+    9
    ]
   ],
   "objects": [
@@ -325,7 +323,7 @@
     "passable": false,
     "art": {
      "sheet": "tiles",
-     "frame": 8
+     "frame": 9
     }
    }
   ],
