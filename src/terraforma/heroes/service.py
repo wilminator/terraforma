@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..content.models import Job
 from ..models import Account, Map
 from ..npcs.models import NpcTalk
-from ..parties.models import PartyRequest
+from ..parties.models import PartyRequest, PartyTeam
 from ..profiles.models import TeamProfile
 from ..quests.service import forget_team as forget_quests
 from ..standing import service as standing
@@ -255,7 +255,8 @@ async def list_teams(session: AsyncSession, account: Account) -> list[dict]:
     members: dict[int, list[dict]] = {team.id: [] for team in teams}
     for team_id, slot, hero_id, hero_name in rows.all():
         members[team_id].append({"slot": slot, "hero_id": hero_id, "name": hero_name})
-    return [{"id": team.id, "name": team.name, "members": members[team.id]} for team in teams]
+    in_party = dict((await session.execute(select(PartyTeam.team_id, PartyTeam.party_id).where(PartyTeam.team_id.in_([team.id for team in teams])))).all())
+    return [{"id": team.id, "name": team.name, "members": members[team.id], "party": in_party.get(team.id)} for team in teams]
 
 
 # --- teams with their heroes: what the browser's calls do ---------------------------------

@@ -52,6 +52,14 @@ export class Conversation {
     this.#changed();
   }
 
+  /** Shows a frame another call brought (an object's script, an edge's event) as the conversation of the hero it is for. */
+  show(heroId, frame) {
+    this.heroId = heroId;
+    this.lines = [];
+    this.#take(frame);
+    this.#changed();
+  }
+
   /** Goes on: Next, or the answer picked ($choice, an option index); no $choice also cancels a question. */
   async next(choice = null) {
     this.#take(await api.post(`/api/heroes/${this.heroId}/dialog/next`, choice === null ? {} : { choice }));
