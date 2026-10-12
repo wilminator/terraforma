@@ -11,6 +11,7 @@ import { chatPanel } from "./chat.js";
 import { dialogPanel } from "./dialog.js";
 import { h, replace } from "./dom.js";
 import { nearbyPanel } from "./nearby.js";
+import { packPanel } from "./pack.js";
 import { partyPanel } from "./party.js";
 import { teamsPanel } from "./teams.js";
 
@@ -30,6 +31,7 @@ export class Panels {
     this.add("party", partyPanel);
     this.add("nearby", nearbyPanel);
     this.add("dialog", dialogPanel);
+    this.add("pack", packPanel);
     this.add("chat", chatPanel);
   }
 

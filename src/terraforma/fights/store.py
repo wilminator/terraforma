@@ -21,6 +21,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .. import wallclock
 from ..db.base import canonical_json
 from ..economy import Economy, TeamGold, credit_fight_gold
 from ..heroes import inventory
@@ -177,7 +178,7 @@ async def play_round(session: AsyncSession, record: FightRecord, commands: list[
     listed = [each.to_list() for each in events]
     row = FightActionRecord(
         fight_id=record.id, sequence=sequence, commands=commands, events=listed, previous_hash=previous,
-        hash=round_hash(previous, sequence, commands, listed), final_state=dehydrate(fight) if snapshot else None,
+        hash=round_hash(previous, sequence, commands, listed), final_state=dehydrate(fight) if snapshot else None, played_at=wallclock.now(),
     )
     try:
         async with session.begin_nested():
