@@ -1,0 +1,219 @@
+[
+ {
+  "key": "power_strike",
+  "name": "Power Strike",
+  "kind": "skill",
+  "mp_cost": 2,
+  "description": "A heavy blow at one foe.",
+  "effect": {
+   "effect": "hurt",
+   "targets": "individual",
+   "base": 8,
+   "added": 6
+  }
+ },
+ {
+  "key": "cleave",
+  "name": "Cleave",
+  "kind": "skill",
+  "mp_cost": 4,
+  "description": "A sweeping cut at a whole group of foes.",
+  "effect": {
+   "effect": "hurt",
+   "targets": "group",
+   "base": 6,
+   "added": 4
+  }
+ },
+ {
+  "key": "poison_dart",
+  "name": "Poison Dart",
+  "kind": "skill",
+  "mp_cost": 2,
+  "description": "Poisons one foe.",
+  "effect": {
+   "effect": "cause_bad_status",
+   "targets": "individual",
+   "base": 0,
+   "added": 0,
+   "status": "poison"
+  }
+ },
+ {
+  "key": "daze",
+  "name": "Daze",
+  "kind": "skill",
+  "mp_cost": 3,
+  "description": "A blow to the head that may cost a foe its turns.",
+  "effect": {
+   "effect": "cause_bad_status",
+   "targets": "individual",
+   "base": 0,
+   "added": 0,
+   "status": "dazed"
+  }
+ },
+ {
+  "key": "spark",
+  "name": "Spark",
+  "kind": "spell",
+  "mp_cost": 3,
+  "description": "A jolt of lightning at one foe.",
+  "effect": {
+   "effect": "hurt",
+   "targets": "individual",
+   "base": 8,
+   "added": 8,
+   "attribute": "shock"
+  }
+ },
+ {
+  "key": "fire",
+  "name": "Fire",
+  "kind": "spell",
+  "mp_cost": 7,
+  "description": "A burst of flame over a group of foes.",
+  "effect": {
+   "effect": "hurt",
+   "targets": "group",
+   "base": 8,
+   "added": 6,
+   "attribute": "fire"
+  }
+ },
+ {
+  "key": "chill",
+  "name": "Chill",
+  "kind": "spell",
+  "mp_cost": 4,
+  "description": "Slows one foe.",
+  "effect": {
+   "effect": "cause_bad_status",
+   "targets": "individual",
+   "base": 0,
+   "added": 0,
+   "status": "slowed"
+  }
+ },
+ {
+  "key": "mend",
+  "name": "Mend",
+  "kind": "spell",
+  "mp_cost": 3,
+  "description": "Heals one friend.",
+  "effect": {
+   "effect": "heal",
+   "targets": "individual",
+   "base": 12,
+   "added": 8
+  }
+ },
+ {
+  "key": "mend_all",
+  "name": "Mend All",
+  "kind": "spell",
+  "mp_cost": 7,
+  "description": "Heals a group of friends.",
+  "effect": {
+   "effect": "heal",
+   "targets": "group",
+   "base": 10,
+   "added": 6
+  }
+ },
+ {
+  "key": "cure",
+  "name": "Cure",
+  "kind": "spell",
+  "mp_cost": 3,
+  "description": "Lifts every bad status from one friend.",
+  "effect": {
+   "effect": "remove_bad_status",
+   "targets": "individual",
+   "base": 0,
+   "added": 0
+  }
+ },
+ {
+  "key": "bless",
+  "name": "Bless",
+  "kind": "spell",
+  "mp_cost": 4,
+  "description": "Shields one friend from harm.",
+  "effect": {
+   "effect": "cause_good_status",
+   "targets": "individual",
+   "base": 0,
+   "added": 0,
+   "status": "shield"
+  }
+ },
+ {
+  "key": "renew",
+  "name": "Renew",
+  "kind": "spell",
+  "mp_cost": 4,
+  "description": "One friend recovers life round by round.",
+  "effect": {
+   "effect": "cause_good_status",
+   "targets": "individual",
+   "base": 0,
+   "added": 0,
+   "status": "regen"
+  }
+ },
+ {
+  "key": "raise",
+  "name": "Raise",
+  "kind": "spell",
+  "mp_cost": 10,
+  "description": "Brings a fallen friend back to their feet.",
+  "effect": {
+   "effect": "revive",
+   "targets": "individual",
+   "base": 100,
+   "added": 200
+  }
+ },
+ {
+  "key": "bite",
+  "name": "Bite",
+  "kind": "skill",
+  "mp_cost": 0,
+  "description": "Sharp teeth.",
+  "effect": {
+   "effect": "hurt",
+   "targets": "individual",
+   "base": 3,
+   "added": 4
+  }
+ },
+ {
+  "key": "screech",
+  "name": "Screech",
+  "kind": "skill",
+  "mp_cost": 0,
+  "description": "A shriek that slows a group.",
+  "effect": {
+   "effect": "cause_bad_status",
+   "targets": "group",
+   "base": 0,
+   "added": 0,
+   "status": "slowed"
+  }
+ },
+ {
+  "key": "ember",
+  "name": "Ember",
+  "kind": "spell",
+  "mp_cost": 3,
+  "description": "A spark of hellfire.",
+  "effect": {
+   "effect": "hurt",
+   "targets": "individual",
+   "base": 6,
+   "added": 6,
+   "attribute": "fire"
+  }
+ }
+]
