@@ -19,6 +19,7 @@ from terraforma.fights.rules import Rules
 from terraforma.fighttags import scoring, service
 from terraforma.fighttags.models import AllianceKept, AllianceTop, FightTeam, TeamKept, TeamTag
 from terraforma.heroes import service as heroes
+from terraforma.monsterplay.models import MonsterSeat
 from terraforma.housekeeping import old_unkept_fights
 
 from .test_live_fights import RULES, a_team, attack
@@ -325,12 +326,13 @@ async def test_a_finished_fight_nothing_holds_is_deleted_after_the_grace_with_wh
     db.add(FightParticipant(fight_id=old.id, party=0, group_index=0, character=0, name="Aria", hero_id=hero.id))
     db.add(FightActionRecord(fight_id=old.id, sequence=1, commands=[], events=[], previous_hash="", hash=""))
     await scored(db, old, team)
+    db.add(MonsterSeat(fight_id=old.id, account_id=hero.account_id, seated_at=wallclock.now()))
     recent = await a_fight(db, hero, age_days=29)
     running = await a_fight(db, hero, age_days=90, finished=False)
     assert await service.sweep(db, RULES, wallclock.timestamp()) == 1
     assert await db.get(FightRecord, old.id) is None and await db.get(FightRecord, recent.id) is not None and await db.get(FightRecord, running.id) is not None
     assert (await db.scalars(select(FightParticipant).where(FightParticipant.fight_id == old.id))).all() == []
-    assert await db.get(FightTeam, (old.id, team.id)) is None
+    assert await db.get(FightTeam, (old.id, team.id)) is None and await db.get(MonsterSeat, old.id) is None
 
 
 @pytest.mark.anyio
