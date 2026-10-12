@@ -3,7 +3,7 @@ Each is its own route. A party comes into a town and is put back together by the
 
 from fastapi import APIRouter, HTTPException, Request, status
 
-from ..api.deps import ActingAccount, CurrentAccount, Db, GameRules, GameTowns, get_relations, get_rules, get_towns
+from ..api.deps import ActingAccount, CurrentAccount, Db, GameRelations, GameRules, GameTowns, get_relations, get_rules, get_towns
 from ..heroes import service as heroes
 from ..heroes.routes import Id
 from ..heroes.routes import refuse as refuse_hero
@@ -31,13 +31,13 @@ async def town(team_id: Id, account: CurrentAccount, db: Db) -> dict:
 
 
 @router.post("/ready")
-async def ready(team_id: Id, account: ActingAccount, db: Db, towns: GameTowns, rules: GameRules) -> dict:
+async def ready(team_id: Id, account: ActingAccount, db: Db, towns: GameTowns, rules: GameRules, relations: GameRelations) -> dict:
     """Leave Town: the team (with the teams it goes with) is ready to leave and waits for the rest of its party. The others are
     told; when every team is waiting, the party is put back together and its fight starts (``fight`` is its id, or null), unless
     the hub offers it a running fight to join instead (``offer`` is true; see the join-offer calls)."""
     try:
         team = await heroes.own_team(db, account, team_id)
-        result, fight = await service.leave(db, towns, rules, team.id)
+        result, fight = await service.leave(db, towns, rules, team.id, relations)
     except (heroes.HeroError, service.TownError) as error:
         raise refuse(error) from error
     return {"result": result, "fight": fight.id if fight else None, "offer": await service.join_offer(db, team.id), **await service.view(db, team.id)}
@@ -85,7 +85,7 @@ async def _answer(request: Request, account, team_id: int, accept: bool) -> dict
             if accept:
                 joined, fight = await service.accept_join(session, towns, rules, relations, account.id, team.id)
             else:
-                joined, fight = False, await service.decline_join(session, towns, rules, account.id, team.id)
+                joined, fight = False, await service.decline_join(session, towns, rules, account.id, team.id, relations)
             answer = {"joined": joined, "fight": fight.id if fight else None, **await service.view(session, team.id)}
     except (heroes.HeroError, service.TownError, PartyError) as error:
         raise refuse(error) from error

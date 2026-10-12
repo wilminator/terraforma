@@ -370,6 +370,53 @@ class Rules:
             return "neutral"
         return "ally" if allies else "enemy"
 
+    # --- monster-party play ---------------------------------------------------------------------------------------
+    #: How long a volunteer for the monsters' side may go without checking in (``monsterplay.service.check_in``) before the queue
+    #: stops counting them as waiting.
+    monster_checkin_seconds: int = 60
+
+    def may_queue_monsters(self, volunteer) -> str | None:
+        """Whether $volunteer (a ``monsterplay.facts.Volunteer``, whose ``account_id`` may be None for someone not logged in) may
+        wait to command monsters: None if they may, otherwise why not. By default a logged-in account with a team and no fight
+        unfinished (as a hero or as a monster player), and not locked out (an admin is exempt from a lockout). A game that
+        accepts people who are not logged in overrides this and tells them apart by what its own code put in the volunteer."""
+        if volunteer.account_id is None:
+            return "Log in to play monsters."
+        if not volunteer.team_ids:
+            return "Make a team to play monsters."
+        if volunteer.in_fight:
+            return "Finish your fight first."
+        if volunteer.locked_until is not None and not volunteer.is_admin:
+            return "You are locked out of playing monsters for now."
+        return None
+
+    def may_play_monsters(self, volunteer, seating) -> str | None:
+        """Whether $volunteer may be seated as the monsters' controller of the new fight $seating describes (a
+        ``monsterplay.facts.Seating``): None if they may, otherwise why not. A volunteer who is refused stays queued for the next
+        fight. By default not one with a hero in this fight, not one with a team that counts a team of the heroes as an ally (all the
+        account's teams are judged), and not one who is in another fight."""
+        if seating.has_hero:
+            return "You have a hero in this fight."
+        if seating.allied:
+            return "You are allied with the heroes in this fight."
+        if volunteer.in_fight:
+            return "You are in another fight."
+        return None
+
+    def monster_absent(self, missed: int) -> bool:
+        """Whether a player who commands a fight's monsters (``monsterplay``) has lost control of them to the AI, having missed $missed
+        rounds so far. A round is missed when they gave none of their fighters a command; that round their monsters repeat their
+        last commands (the AI chooses when there are none, or they no longer make sense). Called right after each missed round.
+        DragonStar's way by default: the first missed round hands the monsters to the AI until the player commands again or says they
+        are back (``POST /api/fights/{id}/monsters/back``). The count itself is kept, for the rewards."""
+        return missed >= 1
+
+    def monster_flee_allowed(self, fight, address: tuple) -> bool:
+        """Whether the fighter at $address, a monster commanded by a player, may try to flee (on top of ``flee_allowed``, which still
+        has to say yes). Never, by default: monsters a player commands fight to the end. If a game turns it on, the fleeing design
+        applies as for heroes."""
+        return False
+
     #: The longest route (steps) a party may be given in one go, however far the client asked it to go.
     route_limit: int = 100
 

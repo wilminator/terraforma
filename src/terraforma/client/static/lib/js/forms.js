@@ -1,7 +1,7 @@
 // Small pieces the account pages share: a labelled field, a form card that shows what the server said, and the words for a refusal.
 
 import { ApiError } from "./api.js";
-import { h } from "./dom.js";
+import { h, replace } from "./dom.js";
 
 /** A labelled input: { row, input }. */
 export function field(id, label, attributes = {}) {
@@ -68,4 +68,33 @@ export function formCard(shell, { id, title, rows = [], submit, run }) {
 /** A card that only says something (and may link on). */
 export function messageCard(shell, titleKey, textKey, values, ...more) {
   return h("section", { class: "card", role: "status" }, h("h2", {}, shell.text.get(titleKey)), h("p", {}, shell.text.get(textKey, values)), ...more);
+}
+
+/**
+ * A button that asks again before it does something that can't be undone: the first press turns it into "$sure" (and a cancel),
+ * the second runs $run (async). A refusal goes to the $problem element; the button is back to its first form afterwards.
+ */
+export function confirmButton(shell, problem, { id, label, sure, run }) {
+  const t = (key) => shell.text.get(key);
+  const slot = h("span", { class: "inline" });
+  const first = () => {
+    replace(slot, h("button", { type: "button", id, class: "danger", onclick: second }, label));
+  };
+  const second = () => {
+    replace(
+      slot,
+      h("button", { type: "button", class: "danger", onclick: async () => {
+        problem.textContent = "";
+        try {
+          await run();
+        } catch (error) {
+          problem.textContent = problemText(shell, error);
+        }
+        first();
+      } }, sure),
+      h("button", { type: "button", onclick: first }, t("form.cancel")),
+    );
+  };
+  first();
+  return slot;
 }
