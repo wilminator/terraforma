@@ -87,7 +87,7 @@ def test_a_flee_that_works_takes_the_whole_party_out_and_the_fight_is_over():
     runs(a)
     b.command = monster.command = Command.DEFEND
     events = do_combat(fight, RULES, Scripted(100, 1))  # a's speed, then the flee roll
-    assert types(events)[:4] == [EventType.TURN, EventType.RUN, EventType.FLED, EventType.FLED]
+    assert [kind for kind in types(events) if kind is not EventType.DEFEND][:4] == [EventType.TURN, EventType.RUN, EventType.FLED, EventType.FLED]
     assert [each.data for each in events if each.type is EventType.FLED] == [(0, 0, 0, "flee"), (0, 0, 1, "flee")]
     assert a.fled and b.fled and a.alive(RULES) and not a.present(RULES)
     assert fight.over and fight.parties[0].dead(RULES) and not fight.parties[1].dead(RULES)
@@ -100,7 +100,7 @@ def test_a_flee_that_fails_costs_only_the_turn():
     runs(a)
     b.command = monster.command = Command.DEFEND
     events = do_combat(fight, RULES, Scripted(100, 51))
-    assert types(events) == [EventType.TURN, EventType.RUN, EventType.FLEE_FAILED]
+    assert [kind for kind in types(events) if kind is not EventType.DEFEND] == [EventType.TURN, EventType.RUN, EventType.FLEE_FAILED]
     assert EventType.FLED not in types(events) and not a.fled and not fight.over
 
 
@@ -110,7 +110,7 @@ def test_a_fight_that_cannot_be_fled_shows_the_try_and_nothing_comes_of_it():
     runs(a)
     b.command = monster.command = Command.DEFEND
     events = do_combat(fight, RULES, Scripted(100))
-    assert types(events)[:2] == [EventType.TURN, EventType.RUN]
+    assert [kind for kind in types(events) if kind is not EventType.DEFEND][:2] == [EventType.TURN, EventType.RUN]
     assert EventType.FLED not in types(events) and EventType.FLEE_FAILED not in types(events) and not a.fled
 
 

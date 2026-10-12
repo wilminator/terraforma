@@ -1,12 +1,14 @@
 """Live fights: started by the server, commanded by the players' own accounts, played when everyone has committed or the
 round's time has run out, with the monsters on the AI, and the result saved at the end. On every database."""
 
+from dataclasses import replace
+
 import pytest
 from sqlalchemy import func, select
 
 from terraforma import wallclock
 from terraforma.accounts.service import create_account
-from terraforma.fights import live, store
+from terraforma.fights import live, specs, store
 from terraforma.fights.combatant import Command
 from terraforma.fights.models import FightActionRecord, FightCommandRecord, FightParticipant, FightRecord
 from terraforma.fights.rules import Rules
@@ -218,6 +220,52 @@ async def test_a_view_shows_what_a_page_needs(db):
     stranger = await live.view(db, record, RULES)
     assert not any(each["yours"] for each in stranger["fighters"])
     assert await live.watchers(db, record) == {mike.id}
+
+
+async def test_a_view_gives_the_callers_fighters_a_menu_of_what_they_can_command(db):
+    hero, mike, _team, record = await started(db, "ogre")
+    seen = await live.view(db, record, RULES, mike.id)
+    aria, ogre = seen["fighters"]
+    # (Aria's sword is in her right hand: the left hand is empty, so only the sword is a weapon to choose.)
+    assert aria["menu"] == {
+        "attacks": [{"command": "attack_right", "hand": "right", "weapon": "Sword", "scope": 0, "aim": "enemy"}],
+        "abilities": [{"index": 0, "key": "slash", "name": "Slash", "kind": "skill", "cost": 0, "resource": "MP", "affordable": True, "scope": 0, "aim": "enemy"}],
+        "items": [{"index": 1, "key": "potion", "name": "Potion", "quantity": 3, "scope": 0, "aim": "ally"}],
+        "can_flee": True,
+    }
+    assert "menu" not in ogre, "the menu is for the caller's own fighters: the other side's choices are not shown"
+    stranger = await live.view(db, record, RULES)
+    assert all("menu" not in each for each in stranger["fighters"])
+
+
+async def test_a_menu_says_what_the_fighter_cannot_do(db):
+    hero, mike, _team, record = await started(db, "ogre")
+    fight, _played = await store.load_state(db, record, RULES)
+    aria = fight.get(HERO)
+    aria.current["MP"] = 0
+    aria.abilities[0] = replace(aria.abilities[0], mp_cost=3)
+    aria.inventory.append([aria.inventory[0][0], 1])  # (the sword again, in a second stack)
+    aria.equipment["lhand"] = aria.equipment["rhand"]  # (one weapon in both hands: two-handed, only the left hand swings)
+
+    class NoFleeing(Rules):
+        def flee_allowed(self, fight, address):
+            return False
+
+    menu = live.menu_of(fight, NoFleeing(), HERO)
+    assert [each["command"] for each in menu["attacks"]] == ["attack_left"]
+    assert menu["abilities"][0]["cost"] == 3 and menu["abilities"][0]["affordable"] is False
+    assert menu["can_flee"] is False
+
+
+def test_where_a_command_aims_follows_what_it_does():
+    aim = lambda **effect: specs.EffectSpec.from_dict(effect).aim  # noqa: E731
+    assert aim(effect="hurt", base=3) == "enemy" and aim(effect="cause_bad_status", status="poison") == "enemy"
+    assert aim(effect="heal", base=3) == "ally" and aim(effect="cause_good_status", status="haste") == "ally"
+    assert aim(effect="revive", base=3) == "downed"
+    assert aim(effect="eject", base=50) == "enemy" and aim(effect="eject", base=50, friendly=True) == "ally"
+    assert aim(effect="hurt", base=3, targets="all_enemies") == "none", "a scope that names its own targets is not aimed"
+    assert aim(effect="heal", base=3, targets="random_party") == "none"
+    assert aim(effect="hurt", base=3, targets="group") == "enemy", "a group is chosen by aiming at one of its members"
 
 
 # --- finding fights --------------------------------------------------------------------------------------------------------------
