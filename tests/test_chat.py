@@ -113,6 +113,13 @@ def test_a_player_with_no_party_or_alliance_is_in_the_town_the_nearby_and_the_gl
     assert kinds == ["nearby", "town", "global"]
 
 
+def test_the_channel_list_says_whether_the_player_is_an_admin(players):
+    client, _ = players
+    assert call(client, "GET", "Mike", "/api/chat/channels")["admin"] is False
+    make_admin(client, "Mike")
+    assert call(client, "GET", "Mike", "/api/chat/channels")["admin"] is True
+
+
 def test_party_and_alliance_channels_appear_with_the_party_and_the_alliance(players):
     client, ids = players
     assert [each["kind"] for each in call(client, "GET", "Yan", "/api/chat/channels")["channels"]] == ["nearby", "town", "global"]

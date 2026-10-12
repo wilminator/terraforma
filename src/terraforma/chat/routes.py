@@ -56,8 +56,9 @@ def line(each: service.Line) -> dict:
 
 @router.get("/channels")
 async def channels(request: Request, account: CurrentAccount, db: Db) -> dict:
-    """The channels the player is in now: each a kind, a key (the channel's address in the other calls) and a name to show."""
-    return {"channels": [{"kind": each.kind, "key": each.key, "label": each.label} for each in await service.channels(db, game_of(request), account)]}
+    """The channels the player is in now: each a kind, a key (the channel's address in the other calls) and a name to show; and
+    whether the player is an admin (so a page asks for the flags only when it will be answered)."""
+    return {"admin": account.is_admin, "channels": [{"kind": each.kind, "key": each.key, "label": each.label} for each in await service.channels(db, game_of(request), account)]}
 
 
 @router.get("/messages")

@@ -210,3 +210,6 @@ select, .inline input {
 .secret { font-size: 1.1rem; overflow-wrap: anywhere; user-select: all; }
 .codes { columns: 2; padding-left: 1.25rem; }
 .links { margin: 0; }
+.chat-lines { max-height: 18rem; overflow-y: auto; }
+.chat-line[data-mine="yes"] { border-color: var(--accent); }
+.inline input { flex: 1 1 8rem; }
