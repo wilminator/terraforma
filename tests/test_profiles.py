@@ -155,6 +155,24 @@ def test_members_open_a_visible_member_team_and_reach_the_player_only_in_the_dir
     call(client, "GET", "Zed", f"/api/alliances/{ids['alliance']}/teams/{ids['Rivals']}/profile", status=404)  # Rivals is not in it
 
 
+def test_the_roster_links_a_member_only_to_a_visible_team_and_names_the_player_only_in_the_directory(pact):
+    client, ids = pact
+    url = f"/api/alliances/{ids['alliance']}/roster"
+    call(client, "GET", "Yan", url, status=404)  # not in the alliance: it does not exist to Yan
+    assert call(client, "GET", "Zed", url) == [
+        {"team_id": ids["Vanguard"], "name": "Vanguard", "role": "leader", "page": None},
+        {"team_id": ids["Strangers"], "name": "Strangers", "role": "member", "page": None},
+    ]
+    call(client, "PUT", "Mike", "/api/profile/team-visible", {"team_id": ids["Vanguard"], "visible": True})
+    shown = call(client, "GET", "Zed", url)[0]
+    assert shown["page"] is not None and "handle" not in shown and "player" not in shown
+    player = call(client, "PUT", "Mike", "/api/profile/directory", {"enabled": True})["token"]
+    shown = call(client, "GET", "Zed", url)[0]
+    assert (shown["handle"], shown["player"]) == ("MiketheBold", player)
+    call(client, "PUT", "Mike", "/api/profile/team-visible", {"team_id": ids["Vanguard"], "visible": False})
+    assert call(client, "GET", "Zed", url)[0] == {"team_id": ids["Vanguard"], "name": "Vanguard", "role": "leader", "page": None}  # hidden again: the name alone
+
+
 def test_only_a_role_that_may_speak_writes_the_alliance_page(pact):
     client, ids = pact
     call(client, "GET", "Yan", f"/api/alliances/{ids['alliance']}/profile", status=404)
