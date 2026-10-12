@@ -1,0 +1,18 @@
+[
+ {
+  "key": "slime",
+  "name": "Slime",
+  "personality": "plain",
+  "xp_reward": 5,
+  "gold_reward": 3,
+  "stats": {
+   "HP": 14,
+   "MP": 0,
+   "Speed": 4,
+   "Accuracy": 6,
+   "Strength": 3,
+   "Dodge": 1,
+   "Block": 0
+  }
+ }
+]
