@@ -72,6 +72,11 @@ class Rules:
     #: where $bonus is the share of extra max HP the monsters a player faces get (0.05 is 5%, and they are worth
     #: more experience for it). DragonStar offered 1, 1.5 and 2 for 0, 5 and 10 percent.
     time_multipliers: tuple[tuple[float, float], ...] = ((1.0, 0.0), (1.5, 0.05), (2.0, 0.10))
+    #: Play time (``terraforma.playtime``): each call a player's input drives credits the next this many seconds (or less, if the
+    #: next such call comes first), and a fight's playback, from the round played until the page says it has shown it,
+    #: counts at most this many seconds, so a closed tab does not earn.
+    play_credit_seconds: int = 10
+    playback_cap_seconds: int = 300
     #: A drop's chance is out of this (10000: one in ten thousand is the rarest, 10000 is a sure thing).
     drop_chance_scale: int = 10000
     #: Whether the area's drop tables (the map's) roll once for the fight (the default) or for every monster that dies.

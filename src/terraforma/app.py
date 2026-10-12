@@ -43,6 +43,7 @@ from .market.routes import router as market_router
 from .npcs.routes import router as npcs_router
 from .reach.routes import router as reach_router
 from .parties.routes import router as parties_router
+from .playtime.routes import router as playtime_router
 from .profiles.routes import router as profiles_router
 from .relations.rating_routes import router as ratings_router
 from .relations.routes import router as relations_router
@@ -130,6 +131,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(ballots_router)
     app.include_router(timing_router)
     app.include_router(profiles_router)
+    app.include_router(playtime_router)
     app.include_router(challenge_router)
     app.include_router(npcs_router)
     app.include_router(reach_router)
