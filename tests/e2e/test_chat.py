@@ -25,6 +25,7 @@ def start(page, live_server):
     live_server.in_db(handles)
     make_team(page, "Alpha")
     tab(page, "Chat")
+    page.locator("#chat-channel").select_option(label="Everyone")
 
 
 def test_a_player_says_something_and_it_appears_in_the_channel(page, live_server):
