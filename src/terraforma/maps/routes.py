@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException, Path, status
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 
-from ..api.deps import ActingAccount, CurrentAccount, Db, GameEconomy, GameInn, GameNpcs, GameReach, GameRules, GameTowns
+from ..api.deps import ActingAccount, CurrentAccount, Db, GameEconomy, GameInn, GameNpcs, GameReach, GameRelations, GameRules, GameTowns
 from ..heroes import service as heroes
 from ..heroes.routes import Id as HeroId
 from ..heroes.routes import refuse as refuse_hero
@@ -101,7 +101,7 @@ async def make_route(party_id: PartyId, body: RouteRequest, db: Db, account: Act
 
 
 @router.post("/parties/{party_id}/route/step")
-async def check_in(party_id: PartyId, body: TileRef, db: Db, account: ActingAccount, rules: GameRules, hooks: GameNpcs, inn: GameInn, economy: GameEconomy, town: GameTowns) -> dict:
+async def check_in(party_id: PartyId, body: TileRef, db: Db, account: ActingAccount, rules: GameRules, hooks: GameNpcs, inn: GameInn, economy: GameEconomy, town: GameTowns, relations: GameRelations) -> dict:
     """The page has reached a tile of the route. Answers whether the server confirms it (and any fight it ran into), or
     where the party really is when it doesn't (``confirmed`` false), so the page can go back there. A step off an edge of the
     map that has an event leaves the party where it stands and answers with ``edge`` (its direction) and ``dialog``, the
@@ -111,7 +111,7 @@ async def check_in(party_id: PartyId, body: TileRef, db: Db, account: ActingAcco
         async def run(hero, edge: MapObject) -> dict:
             return await npcs.start(db, hooks, hero, edge, partial(inns.rest, db, inn, rules, economy), economy)
 
-        return await walking.step(db, rules, account.id, party_id, body.x, body.y, run, town)
+        return await walking.step(db, rules, account.id, party_id, body.x, body.y, run, town, relations)
     except walking.WalkError as error:
         raise refuse(error) from error
 

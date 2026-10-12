@@ -1,7 +1,7 @@
 """chat: messages, mutes and flags
 
-Revision ID: 0041
-Revises: 0040
+Revision ID: 0045
+Revises: 0044
 Created: 2026-10-12
 """
 from collections.abc import Sequence
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from alembic import op
 
 
-revision: str = '0041'
-down_revision: str | None = '0040'
+revision: str = '0045'
+down_revision: str | None = '0044'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

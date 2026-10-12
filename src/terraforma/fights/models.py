@@ -44,6 +44,9 @@ class FightRecord(Located, Timestamps, Base):
     # The longest round time any player in the fight asked for (``Rules.time_multipliers``): rounds wait this many times
     # ``Rules.round_seconds``. Fixed when the fight starts.
     time_multiplier: Mapped[float] = mapped_column(Float, default=1.0, server_default="1.0")
+    # Whether a volunteer may be seated as the controller of the monsters when the fight is created (``monsterplay``): on for random
+    # encounters and the hub's Leave Town, off for scripted fights unless a game asks, never for PvP or coliseum fights.
+    monster_play: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
 
 class PlayerSettings(Base):
@@ -90,6 +93,8 @@ class FightActionRecord(Base):
     hash: Mapped[str] = mapped_column(String(64))
     # The fight after the round, kept only when asked (to check replays against).
     final_state: Mapped[dict | None] = mapped_column(ExactJSON)
+    # When the round was played (the wall clock): where its playback starts, for play time (``playtime``). Not part of the hash.
+    played_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class FightCommandRecord(Base):

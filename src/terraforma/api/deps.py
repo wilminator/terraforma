@@ -19,6 +19,7 @@ from ..reach.hooks import Reach
 from ..towns.hooks import Towns
 from ..fights.rules import Rules
 from ..models import Account
+from ..playtime import service as playtime
 from .security import SESSION_ACCOUNT, SESSION_VERSION, csrf_matches
 
 
@@ -99,13 +100,26 @@ async def current_account(request: Request, db: Db) -> Account:
 
 
 async def acting_account(request: Request, account: Annotated[Account, Depends(current_account)]) -> Account:
-    """For calls that change something: logged in, and the CSRF token matches."""
+    """For calls that change something: logged in, and the CSRF token matches. The call is the player's input, so it credits play time."""
     if not csrf_matches(request):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "missing or wrong CSRF token")
+    # Its own short transaction, committed before the call starts, so it never holds a lock the call's own sessions need.
+    async with request.app.state.sessionmaker() as session, session.begin():
+        await playtime.credit_input(session, get_rules(request), account.id)
     return account
 
 
+async def viewer_id(request: Request, db: Db) -> int | None:
+    """For public pages that no login is needed to see: the id of the logged-in account looking, or None for anyone else (a bad login is no error here)."""
+    account_id = request.session.get(SESSION_ACCOUNT)
+    account = await db.get(Account, account_id) if account_id is not None else None
+    if account is None or request.session.get(SESSION_VERSION) != account.session_version:
+        return None
+    return account.id
+
+
 CurrentAccount = Annotated[Account, Depends(current_account)]
+Viewer = Annotated[int | None, Depends(viewer_id)]
 ActingAccount = Annotated[Account, Depends(acting_account)]
 
 

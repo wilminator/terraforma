@@ -91,6 +91,10 @@ def do_combat(fight: Fight, rules: Rules, rng: random.Random) -> list[Event]:
     log = Log(fight, rules)
     for address in fight.addresses():
         fire(fight, rules, rng, address, status.ROUND_START, log)
+    # A fighter that defends takes no turn, so this is where it is told: a page can say so, and a game can react (``after_event``).
+    for address in fight.addresses():
+        if fight.get(address).present(rules) and fight.get(address).command == Command.DEFEND:
+            log.add(EventType.DEFEND, *address)
     queue = participants(fight, rules, rng)
     while queue and fight.live_parties(rules) > 1:
         address = queue.pop(0)
@@ -178,7 +182,7 @@ def act(fight: Fight, rules: Rules, rng: random.Random, address: Address, fighte
             return
         log.add(EventType.SKILL if command == Command.SKILL else EventType.SPELL, ability.key)
     elif command == Command.DEFEND:
-        log.add(EventType.DEFEND)
+        log.add(EventType.DEFEND, *address)
         return
     elif command == Command.RUN:
         flee(fight, rules, rng, address, log)
