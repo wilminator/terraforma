@@ -44,6 +44,7 @@ from .parties.routes import router as parties_router
 from .profiles.routes import router as profiles_router
 from .relations.rating_routes import router as ratings_router
 from .relations.routes import router as relations_router
+from .chat.routes import router as chat_router
 from .pvp.routes import router as pvp_router
 from .towns.routes import router as towns_router
 from .trading.routes import router as trading_router
@@ -121,6 +122,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(trading_router)
     app.include_router(pending_drops_router)
     app.include_router(relations_router)
+    app.include_router(chat_router)
     app.include_router(towns_router)
     app.include_router(pvp_router)
     app.include_router(alliances_router)

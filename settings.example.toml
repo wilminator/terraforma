@@ -31,6 +31,10 @@ key_dir = "keys"
 # ballot_retention_days = 0
 # rating_prompt_retention_days = 0
 
+# Chat messages (and settled flags) older than this many days are removed; a flagged message nobody has settled is kept.
+# 0 keeps them for good.
+# chat_retention_days = 7
+
 # A game that sells Challenge Tokens sets this (at least 32 characters). Its own backend then credits purchases with
 # POST /api/server/challenge/purchase, sending "Authorization: Bearer <this secret>". Empty or absent: the call is off.
 # challenge_purchase_secret = ""
