@@ -70,6 +70,36 @@ def test_the_shop_sells_and_buys_with_the_servers_prices_and_the_dialog_goes_on_
     expect(page.locator("#dialog-over")).to_be_visible()
 
 
+def shop_view(wares):
+    return {"command": "shop", "level": 1, "gold": 500, "wares": wares, "sellable": []}
+
+
+def test_a_ware_that_does_not_stack_is_bought_one_at_a_time(page, live_server):
+    start(page, live_server)
+    page.route("**/dialog/shop", lambda route: route.fulfill(json=shop_view([
+        {"item": "herb", "name": "Herb", "price": 12, "stacks": True},
+        {"item": "sword", "name": "Sword", "price": 90, "stacks": False},
+    ])))
+    talk_to(page, "Hana the Keeper")
+    expect(page.get_by_label("How many Herb to buy")).to_be_visible()
+    expect(page.get_by_label("How many Sword to buy")).to_have_count(0)  # the server refuses equipment bought by the dozen
+    posted = []
+    page.route("**/dialog/shop/buy", lambda route: (posted.append(route.request.post_data_json), route.fulfill(json={"bought": 1, "not_fitting": 0, "cost": 90, "gold": 410}))[1])
+    page.get_by_role("button", name="Buy Sword").click()
+    expect(page.locator("#shop-note")).to_have_text("Bought 1 for 90 gold.")
+    assert posted == [{"item": "sword", "qty": 1}]
+
+
+def test_the_shop_says_how_many_did_not_fit_in_the_pack(page, live_server):
+    start(page, live_server)
+    page.route("**/dialog/shop", lambda route: route.fulfill(json=shop_view([{"item": "herb", "name": "Herb", "price": 12, "stacks": True}])))
+    page.route("**/dialog/shop/buy", lambda route: route.fulfill(json={"bought": 3, "not_fitting": 2, "cost": 36, "gold": 464}))
+    talk_to(page, "Hana the Keeper")
+    page.get_by_label("How many Herb to buy").fill("5")
+    page.get_by_role("button", name="Buy Herb").click()
+    expect(page.locator("#shop-note")).to_have_text("Bought 3 for 36 gold. 2 did not fit in the pack and were not charged for.")
+
+
 def talk_to_tom_for_gold(page):
     talk_to(page, "Old Tom")
     page.locator("#dialog-close").click()
