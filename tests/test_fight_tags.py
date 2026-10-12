@@ -371,7 +371,7 @@ async def test_every_table_that_points_at_a_fight_is_dealt_with_when_one_is_dele
     import terraforma.models  # noqa: F401  (every model registered)
 
     pointing = {table.name for table in Base.metadata.tables.values() if any(key.column.table.name == "fights" for key in table.foreign_keys)}
-    held_by_tags = {"team_tags", "team_kept", "alliance_tops", "alliance_kept"}
+    held_by_tags = {"team_tags", "team_kept", "alliance_tops", "alliance_kept", "public_fights"}
     handled = set(service.DELETED_WITH_THE_FIGHT) | set(service.LET_GO) | held_by_tags
     assert pointing <= handled, f"a table links to fights and the sweep does not know it: {sorted(pointing - handled)}"
 
