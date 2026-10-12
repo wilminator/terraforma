@@ -1,7 +1,7 @@
 """chat bans: players an admin has barred from speaking
 
-Revision ID: 0042
-Revises: 0041
+Revision ID: 0046
+Revises: 0045
 Created: 2026-10-12
 """
 from collections.abc import Sequence
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from alembic import op
 
 
-revision: str = '0042'
-down_revision: str | None = '0041'
+revision: str = '0046'
+down_revision: str | None = '0045'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
