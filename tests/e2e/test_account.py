@@ -138,7 +138,7 @@ def test_an_email_change_asks_for_no_password_and_completes_from_the_new_address
 
 def test_two_factor_login_is_set_up_confirmed_by_link_used_and_turned_off(page, live_server, mailbox):
     confirmed_and_logged_in(page, live_server)
-    page.get_by_role("button", name="Set up two-factor login").click()
+    page.get_by_role("button", name="Set up an authenticator app").click()
     secret = page.locator("#twofa-secret").inner_text().replace(" ", "")
     expect(page.locator("#twofa-uri")).to_have_attribute("href", re.compile(r"^otpauth://totp/"))
 
@@ -170,7 +170,7 @@ def test_two_factor_login_is_set_up_confirmed_by_link_used_and_turned_off(page, 
 
 def test_a_two_factor_link_opened_logged_out_asks_for_the_login_first(page, live_server, mailbox):
     confirmed_and_logged_in(page, live_server)
-    page.get_by_role("button", name="Set up two-factor login").click()
+    page.get_by_role("button", name="Set up an authenticator app").click()
     secret = page.locator("#twofa-secret").inner_text().replace(" ", "")
     page.locator("#twofa-enable-code").fill(twofa.code_at(secret, twofa.current_step()))
     page.get_by_role("button", name="Turn on").click()
@@ -192,3 +192,74 @@ def test_the_account_pages_fit_a_phone_in_either_orientation(new_page, live_serv
         log_in(page)
         expect(page.get_by_role("button", name="Save handle")).to_be_visible()
         assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+
+
+def test_a_security_key_is_added_confirmed_by_link_and_used_to_log_in(new_page, live_server, mailbox):
+    # A security key is bound to the site's name: browsers refuse an IP address, so this test reaches the server as "localhost"
+    # (and the server's public address says the same), with a virtual authenticator standing in for the key.
+    port = live_server.url.rsplit(":", 1)[1]
+    live_server.app.state.settings.public_url = f"http://localhost:{port}"
+    page = new_page(url=f"http://localhost:{port}")
+    cdp = page.context.new_cdp_session(page)
+    cdp.send("WebAuthn.enable")
+    cdp.send("WebAuthn.addVirtualAuthenticator", {"options": {
+        "protocol": "ctap2", "transport": "internal", "hasResidentKey": True, "hasUserVerification": True,
+        "isUserVerified": True, "automaticPresenceSimulation": True,
+    }})
+    confirmed_and_logged_in(page, live_server)
+
+    page.get_by_label("A name for it").fill("Laptop")
+    page.get_by_role("button", name="Add a security key").click()
+    expect(page.get_by_text("A link to confirm this is on its way")).to_be_visible()
+    page.goto(f"/confirm-2fa?token={token_in(mailbox.last_to('mike@example.com'))}")
+    page.get_by_role("button", name="Confirm").click()
+    expect(page.get_by_text("Two-factor login is on.")).to_be_visible()
+    expect(page.locator("#recovery-codes li")).to_have_count(10)
+
+    page.goto("/account/")
+    expect(page.locator("#twofa-keys")).to_contain_text("Laptop (not used yet)")
+    page.get_by_role("button", name="Log out").click()
+    page.get_by_label("Username").fill("Mike")
+    page.get_by_label("Password").fill(PASSWORD)
+    page.get_by_role("button", name="Log in").click()
+    page.get_by_role("button", name="Use my security key").click()
+    expect(page.locator("#who")).to_have_text("Logged in as Mike.")
+    expect(page.locator("#login-note")).to_contain_text("only one second factor")
+    expect(page.locator("#twofa-keys")).to_contain_text("Laptop (last used")
+
+
+def test_a_remembered_browser_skips_the_second_factor_until_it_is_forgotten(page, live_server, mailbox):
+    confirmed_and_logged_in(page, live_server)
+    page.get_by_role("button", name="Set up an authenticator app").click()
+    secret = page.locator("#twofa-secret").inner_text().replace(" ", "")
+    page.locator("#twofa-enable-code").fill(twofa.code_at(secret, twofa.current_step()))
+    page.get_by_role("button", name="Turn on").click()
+    expect(page.get_by_text("A link to confirm this is on its way")).to_be_visible()
+    page.goto(f"/confirm-2fa?token={token_in(mailbox.last_to('mike@example.com'))}")
+    page.get_by_role("button", name="Confirm").click()
+    expect(page.get_by_text("Two-factor login is on.")).to_be_visible()
+
+    page.goto("/account/")
+    page.get_by_role("button", name="Log out").click()
+    page.get_by_label("Username").fill("Mike")
+    page.get_by_label("Password").fill(PASSWORD)
+    page.get_by_role("button", name="Log in").click()
+    # (the step after the one that turned it on: a code works once, and a neighbouring step is forgiven)
+    page.locator("#login-code").fill(twofa.code_at(secret, twofa.current_step() + 1))
+    page.get_by_label("Remember this browser for 30 days").check()
+    page.get_by_role("button", name="Log in").click()
+    expect(page.locator("#who")).to_have_text("Logged in as Mike.")
+    expect(page.locator("#twofa-browsers")).to_contain_text("(this browser, until")
+
+    page.get_by_role("button", name="Log out").click()
+    log_in(page)  # no second factor is asked for
+    expect(page.locator("#who")).to_have_text("Logged in as Mike.")
+
+    page.get_by_role("button", name="Forget all browsers").click()
+    expect(page.locator("#who")).to_have_text("Logged in as Mike.")
+    expect(page.locator("#twofa-browsers")).to_contain_text("No browser is remembered.")
+    page.get_by_role("button", name="Log out").click()
+    page.get_by_label("Username").fill("Mike")
+    page.get_by_label("Password").fill(PASSWORD)
+    page.get_by_role("button", name="Log in").click()
+    expect(page.locator("#login-code")).to_be_visible()

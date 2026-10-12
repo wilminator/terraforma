@@ -10,6 +10,7 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .accounts.hooks import SignIn
 from .economy import Economy, TeamGold
 from .fights.rules import Rules
 from .alliances.hooks import Alliances
@@ -56,3 +57,6 @@ class Game:
     guild: Guild = field(default_factory=Guild)
     # What may change about the heroes of a saved team: removing, replacing and moving them (refused by default; a game may sell it).
     roster: Roster = field(default_factory=Roster)
+    # Two things about logging in: how long a browser that proved a second factor may skip it, and the note a player with a single
+    # second factor sees (see accounts.hooks).
+    sign_in: SignIn = field(default_factory=SignIn)

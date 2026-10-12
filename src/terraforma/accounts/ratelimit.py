@@ -31,6 +31,9 @@ RESET_BY_EMAIL = Limit("reset-email", 3, 60 * 60)
 # Every guess at a 2FA code, at login or in the 2FA calls, counts against the account.
 TWOFA_CODE_BY_ACCOUNT = Limit("2fa-code", 10, 15 * 60)
 TWOFA_CHANGE_BY_ACCOUNT = Limit("2fa-change", 5, 60 * 60)
+# Asking for the options to add a security key, and registering one.
+TWOFA_KEY_BY_ACCOUNT = Limit("2fa-key", 20, 60 * 60)
+ADMIN_RESET_BY_ACCOUNT = Limit("admin-2fa-reset", 20, 60 * 60)
 EMAIL_CHANGE_BY_ACCOUNT = Limit("email-change", 5, 60 * 60)
 # Signing in with an external provider: sending the browser there, getting it back, and choosing a name afterwards.
 EXTERNAL_START_BY_ADDRESS = Limit("external-start", 30, 15 * 60)

@@ -1,4 +1,5 @@
-"""Two-factor login: time-based codes (TOTP, RFC 6238) from an authenticator app, and recovery codes.
+"""Two-factor login: time-based codes (TOTP, RFC 6238) from an authenticator app, security keys (accounts.securitykeys), and
+recovery codes. Two-factor login is on when at least one method is: the app, or a key.
 
 Setup stores a fresh secret (encrypted, see keys.encrypted_column) that
 doesn't count until the player proves the app works and then follows an
@@ -8,7 +9,8 @@ newer request (twofa_change_nonce).
 
 A code works once: the step it was accepted for is remembered, and that
 step or an earlier one is refused afterwards. A recovery code is a long
-random code, kept only as a hash, that works once instead of an app code.
+random code, kept only as a hash, that works once instead of an app code or a
+key. The recovery codes are made with the first method and go with the last.
 """
 
 import base64
@@ -66,14 +68,25 @@ def uri(secret: str, username: str, issuer: str) -> str:
     return f"otpauth://totp/{label}?secret={secret}&issuer={quote(issuer)}&digits={DIGITS}&period={STEP_SECONDS}"
 
 
-def enabled(account: Account) -> bool:
+def app_on(account: Account) -> bool:
+    """Whether the authenticator app counts (its setup was confirmed)."""
     return account.totp_enabled_at is not None
+
+
+def enabled(account: Account) -> bool:
+    """Whether two-factor login is on: the app counts, or at least one security key does."""
+    return app_on(account) or account.webauthn_count > 0
+
+
+def methods(account: Account) -> list[str]:
+    """The methods that count: "app" and/or "key" (recovery codes are not a method of their own)."""
+    return (["app"] if app_on(account) else []) + (["key"] if account.webauthn_count > 0 else [])
 
 
 def start_setup(ring: KeyRing, account: Account) -> str:
     """A new secret, kept (encrypted) but not yet counting. Replaces an unfinished setup, never a live one."""
-    if enabled(account):
-        raise AccountError("two-factor login is already on: turn it off first")
+    if app_on(account):
+        raise AccountError("the authenticator app is already set up: remove it first")
     secret = new_secret()
     account.totp_secret = ring.encrypt(secret, PURPOSE)
     account.totp_last_step = None
@@ -103,16 +116,30 @@ def set_recovery_codes(account: Account) -> list[str]:
     return codes
 
 
-def check_code(ring: KeyRing, account: Account, code: str) -> bool:
-    """Whether $code is a live app code (when setting up or on) or an unused recovery code, and uses it up."""
-    if account.totp_secret is None:
-        return False
+def first_recovery_codes(account: Account) -> list[str] | None:
+    """The recovery codes for a method that has just been turned on: new ones when it is the first (returned this once), else
+    None, because the codes the account has still stand."""
+    return set_recovery_codes(account) if account.recovery_codes is None else None
+
+
+def clear_app(account: Account) -> None:
+    """Takes the authenticator app away (and, if it was the last method, the recovery codes with it)."""
+    account.totp_secret = account.totp_enabled_at = account.totp_last_step = None
+    if not enabled(account):
+        account.recovery_codes = None
+
+
+def check_code(ring: KeyRing, account: Account, code: str, *, setting_up: bool = False) -> bool:
+    """Whether $code is a live app code or an unused recovery code, and uses it up. An app code counts once the app is on, or
+    while it is being set up ($setting_up: only the call that turns it on says so); a recovery code counts while two-factor
+    login is on."""
     code = code.strip()
-    secret = ring.decrypt(account.totp_secret, PURPOSE)
-    step = matching_step(secret, _normal(code), account.totp_last_step)
-    if step is not None:
-        account.totp_last_step = step
-        return True
+    if account.totp_secret is not None and (app_on(account) or setting_up):
+        secret = ring.decrypt(account.totp_secret, PURPOSE)
+        step = matching_step(secret, _normal(code), account.totp_last_step)
+        if step is not None:
+            account.totp_last_step = step
+            return True
     if enabled(account):
         digest = _hash(code)
         remaining = list(account.recovery_codes or [])
@@ -122,6 +149,17 @@ def check_code(ring: KeyRing, account: Account, code: str) -> bool:
                 account.recovery_codes = [other for other in remaining if other != stored]
                 return True
     return False
+
+
+def check_setup_code(ring: KeyRing, account: Account, code: str) -> bool:
+    """Whether $code is what the app shows for the secret being set up (never a recovery code), and uses it up."""
+    if account.totp_secret is None or app_on(account):
+        return False
+    step = matching_step(ring.decrypt(account.totp_secret, PURPOSE), _normal(code.strip()), account.totp_last_step)
+    if step is None:
+        return False
+    account.totp_last_step = step
+    return True
 
 
 def open_change(account: Account) -> str:
