@@ -109,7 +109,17 @@ async def acting_account(request: Request, account: Annotated[Account, Depends(c
     return account
 
 
+async def viewer_id(request: Request, db: Db) -> int | None:
+    """For public pages that no login is needed to see: the id of the logged-in account looking, or None for anyone else (a bad login is no error here)."""
+    account_id = request.session.get(SESSION_ACCOUNT)
+    account = await db.get(Account, account_id) if account_id is not None else None
+    if account is None or request.session.get(SESSION_VERSION) != account.session_version:
+        return None
+    return account.id
+
+
 CurrentAccount = Annotated[Account, Depends(current_account)]
+Viewer = Annotated[int | None, Depends(viewer_id)]
 ActingAccount = Annotated[Account, Depends(acting_account)]
 
 

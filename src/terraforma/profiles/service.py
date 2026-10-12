@@ -14,6 +14,7 @@ from ..alliances import service as alliances
 from ..alliances.models import Alliance, AllianceMember
 from ..heroes.models import Team
 from ..models import Account
+from ..social.models import ProfileBan
 from .models import BIO_MAX, AllianceProfile, PlayerProfile, TeamProfile
 
 
@@ -96,6 +97,19 @@ async def set_directory(session: AsyncSession, account: Account, enabled: bool) 
     return profile
 
 
+async def set_directory_link(session: AsyncSession, account: Account, enabled: bool) -> PlayerProfile:
+    """Shows (or hides) the link to the player's page next to their handle in the directory's search results (hidden by default)."""
+    profile = await player(session, account) or await publish(session, account)
+    profile.directory_link = enabled
+    await session.flush()
+    return profile
+
+
+async def _barred(session: AsyncSession, owner_id: int, viewer_id: int | None) -> bool:
+    """Whether $viewer (a logged-in account looking at a page, if it is one) has been banned from $owner's profile."""
+    return viewer_id is not None and await session.get(ProfileBan, (owner_id, viewer_id)) is not None
+
+
 async def _own_team(session: AsyncSession, account: Account, team_id: int) -> Team:
     team = await session.scalar(select(Team).where(Team.id == team_id, Team.account_id == account.id))
     if team is None:
@@ -135,6 +149,7 @@ async def mine(session: AsyncSession, account: Account) -> dict:
         "bio": profile.bio if profile else "",
         "handle": account.handle,
         "directory": bool(profile and profile.directory),
+        "directory_link": bool(profile and profile.directory_link),
         "teams": [
             {"id": team.id, "name": team.name, "visible": rows[team.id].visible if team.id in rows else False,
              "token": rows[team.id].token if team.id in rows else None}
@@ -173,10 +188,11 @@ async def alliance_set_bio(session: AsyncSession, alliance: Alliance, bio: str) 
 
 # --- the public pages -------------------------------------------------------------------------------------------------------------
 
-async def player_page(session: AsyncSession, token: str) -> dict:
-    """What anyone with the link sees: the handle, the bio and the player's visible teams, each with the token of its page."""
+async def player_page(session: AsyncSession, token: str, viewer_id: int | None = None) -> dict:
+    """What anyone with the link sees: the handle, the bio and the player's visible teams, each with the token of its page. (Not
+    a logged-in $viewer the player banned: to them there is no such page.)"""
     profile = await session.scalar(select(PlayerProfile).where(PlayerProfile.token == token))
-    if profile is None:
+    if profile is None or await _barred(session, profile.account_id, viewer_id):
         raise NotFound("there's no such page")
     account = await session.get(Account, profile.account_id)
     shown = (await session.execute(
@@ -212,11 +228,11 @@ async def _visible_team(session: AsyncSession, team_id: int) -> Team | None:
     return await session.get(Team, team_id) if row else None
 
 
-async def team_page(session: AsyncSession, token: str) -> dict:
-    """The page at a team's token; it is there only while the team is visible."""
+async def team_page(session: AsyncSession, token: str, viewer_id: int | None = None) -> dict:
+    """The page at a team's token; it is there only while the team is visible (and not to a logged-in $viewer its player banned)."""
     row = await session.scalar(select(TeamProfile).where(TeamProfile.token == token))
     team = await _visible_team(session, row.team_id) if row else None
-    if team is None:
+    if team is None or await _barred(session, team.account_id, viewer_id):
         raise NotFound("there's no such page")
     return await _team_page(session, team, False)
 
@@ -255,6 +271,6 @@ async def member_team_page(session: AsyncSession, account: Account, alliance_id:
     if await alliances.member_row(session, alliance.id, team_id) is None:
         raise NotFound("there's no such team in this alliance")
     team = await _visible_team(session, team_id)
-    if team is None:
+    if team is None or await _barred(session, team.account_id, account.id):
         raise NotFound("there's no such team in this alliance")
     return await _team_page(session, team, True)
