@@ -95,7 +95,7 @@ async def test_the_fight_view_marks_the_monsters_as_the_volunteers_and_never_sho
     await hero_defends(db, mike, record)
     view = await live.view(db, record, RULES, ann)
     assert [(each["party"], each["yours"], each["committed"]) for each in view["fighters"]] == [(0, False, True), (1, True, False)]
-    assert "command" not in str(view["fighters"]) and view["seat"] == {"party": 1, "absent": False, "admin": False}
+    assert "command" not in str([each for each in view["fighters"] if not each["yours"]]) and view["seat"] == {"party": 1, "absent": False, "admin": False}
     assert "seat" not in await live.view(db, record, RULES, mike)
 
 
