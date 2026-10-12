@@ -32,7 +32,7 @@ from ..alliances.service import remove_team
 from ..relations.hooks import Ref
 from ..relations.service import forget
 from . import field, inventory
-from .hooks import Roster
+from .hooks import Roster, Start
 from .models import Hero, HeroAbility, HeroEquipment, HeroItem, Team, TeamMember
 
 #: The most heroes a team ever holds, whatever the game's ``Rules.team_max``: the engine's screens draw no more.
@@ -77,15 +77,48 @@ async def list_jobs(session: AsyncSession) -> list[dict]:
     return [{"key": job.key, "name": job.name, "stats": starting_stats(job)} for job in jobs]
 
 
-async def create_hero(session: AsyncSession, account: Account, name: str, job_key: str) -> Hero:
+#: A tile of a map: ``(map_id, x, y)``.
+Spot = tuple[int, int, int]
+
+
+async def start_spot(session: AsyncSession, account: Account, start: Start, key: str | None) -> Spot | None:
+    """Where a new team starts: the place of the game's ``Start.places`` the player picked by $key (the first, if they sent none),
+    or None (the engine's hub) when the game offers none. Refused when $key is not one of the offered places, or when there is
+    nothing to pick from."""
+    places = await start.places(session, account)
+    if not places:
+        if key is not None:
+            raise HeroError("there is no choice of where to start in this game")
+        return None
+    if key is None:
+        place = places[0]
+    else:
+        place = next((each for each in places if each.key == key), None)
+        if place is None:
+            raise HeroError("that is not a place to start")
+    hub = await ensure_start(session)
+    row = await session.scalar(select(Map).where(Map.world_id == hub.world_id, Map.name == place.map))
+    if row is None:
+        raise HeroError("that place to start is not in the world yet")
+    return row.id, place.x, place.y
+
+
+async def team_spot(session: AsyncSession, team_id: int) -> Spot | None:
+    """Where the team's first hero stands, or None for a team with no heroes."""
+    hero = await session.scalar(select(Hero).join(TeamMember, TeamMember.hero_id == Hero.id).where(TeamMember.team_id == team_id).order_by(TeamMember.slot).limit(1))
+    return None if hero is None else (hero.map_id, hero.x, hero.y)
+
+
+async def create_hero(session: AsyncSession, account: Account, name: str, job_key: str, spot: Spot | None = None) -> Hero:
+    """Makes a hero at $spot, or on the hub map when there is none."""
     name = check_name(name)
     job = await session.scalar(select(Job).where(Job.key == job_key, Job.active.is_(True)))
     if job is None:
         raise NotFound("there's no such job")
-    hub = await ensure_start(session)
+    map_id, x, y = spot if spot is not None else ((await ensure_start(session)).id, 0, 0)
     hero = Hero(
         account_id=account.id, name=name, name_key=name_key(name), job_id=job.id,
-        stats=starting_stats(job), map_id=hub.id, x=0, y=0,
+        stats=starting_stats(job), map_id=map_id, x=x, y=y,
     )
     session.add(hero)
     try:
@@ -286,23 +319,24 @@ async def _team_of_hero(session: AsyncSession, hero: Hero) -> TeamMember:
     return member
 
 
-async def save_team(session: AsyncSession, account: Account, name: str, heroes: list[tuple[str, str]], rules: Rules) -> Team:
+async def save_team(session: AsyncSession, account: Account, name: str, heroes: list[tuple[str, str]], rules: Rules, spot: Spot | None = None) -> Team:
     """Makes a team, with heroes ($heroes: a name and a job key each, none at all for a team that is filled in on its own page), in one
     go: refused unless there are at most the game's ``team_max`` of them, and unless the player has room for another team. A team
-    with fewer than ``team_min`` heroes is incomplete: it cannot play until it is filled."""
+    with fewer than ``team_min`` heroes is incomplete: it cannot play until it is filled. The heroes start at $spot (see ``start_spot``)."""
     most = team_most(rules)
     if len(heroes) > most:
         raise HeroError(f"a team has room for {most} heroes")
     team = await create_team(session, account, name, rules.max_teams)
     for slot, (hero_name, job_key) in enumerate(heroes):
-        hero = await create_hero(session, account, hero_name, job_key)
+        hero = await create_hero(session, account, hero_name, job_key, spot)
         session.add(TeamMember(team_id=team.id, hero_id=hero.id, slot=slot))
     await session.flush()
     return team
 
 
-async def add_new_hero(session: AsyncSession, account: Account, team_id: int, name: str, job_key: str, rules: Rules) -> Hero:
-    """Makes a hero in the team's first free place: allowed while the team has room (``team_max``)."""
+async def add_new_hero(session: AsyncSession, account: Account, team_id: int, name: str, job_key: str, rules: Rules, start: Start | None = None, start_key: str | None = None) -> Hero:
+    """Makes a hero in the team's first free place: allowed while the team has room (``team_max``). The hero stands where the team
+    does; the first hero of an empty team starts at the place the player picked from the game's ``Start`` ($start_key)."""
     team = await own_team(session, account, team_id)
     most = team_most(rules)
     taken = {member.slot for member in await _members(session, team.id)}
@@ -312,7 +346,12 @@ async def add_new_hero(session: AsyncSession, account: Account, team_id: int, na
         await parties.check_room(session, team.id, rules.party_size)
     except parties.PartyError as error:
         raise HeroError(str(error)) from error
-    hero = await create_hero(session, account, name, job_key)
+    spot = await team_spot(session, team.id)
+    if spot is None and start is not None:
+        spot = await start_spot(session, account, start, start_key)
+    elif start_key is not None:
+        raise HeroError("this team has heroes already: a new hero starts where they stand")
+    hero = await create_hero(session, account, name, job_key, spot)
     session.add(TeamMember(team_id=team.id, hero_id=hero.id, slot=min(set(range(TEAM_LIMIT)) - taken)))
     await session.flush()
     return hero
@@ -344,9 +383,9 @@ async def replace_hero(session: AsyncSession, account: Account, team_id: int, he
         raise NotFound("there's no such job")
     if why := await roster.may_remove(session, account, hero):
         raise HeroError(why)
-    team_id, slot = member.team_id, member.slot
+    team_id, slot, spot = member.team_id, member.slot, (hero.map_id, hero.x, hero.y)
     await delete_hero(session, account, hero.id)
-    new = await create_hero(session, account, name, job_key)
+    new = await create_hero(session, account, name, job_key, spot)
     session.add(TeamMember(team_id=team_id, hero_id=new.id, slot=slot))
     await session.flush()
     return new

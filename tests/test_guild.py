@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy import func, select
 
 from terraforma.accounts.service import create_account
+from terraforma.challenge import service as challenge
 from terraforma.alliances.models import Alliance, AllianceMember
 from terraforma.content.loader import load_content
 from terraforma.guild import service
@@ -261,6 +262,45 @@ def test_the_calls_add_a_team_through_the_conversation(app_client):
     assert done["result"]["team"] == ids["Rearguard"][0]
     assert done["dialog"]["events"][0]["text"] == "Done." and done["dialog"]["ended"]
     assert client.post(f"{guild}/add-team", json={"team_id": ids["Rearguard"][0]}, headers=headers).status_code == 409, "one use per payment"
+
+
+async def test_the_tokens_are_taken_only_when_the_team_is_added(db):
+    w = await a_world(db)
+    account = w.mike.id
+    assert await challenge.change(db, account, 3, challenge.PURCHASE, key="fund")
+    with pytest.raises(service.GuildError, match="can't be added"):
+        await service.add_team(db, w.hero["Vanguard"], w.team["Scouts"], SIZE, tokens=2)  # Zed's team
+    assert await challenge.balance(db, account) == 3, "a refused team costs nothing"
+    await service.add_team(db, w.hero["Vanguard"], w.team["Rearguard"], SIZE, tokens=2)
+    assert await challenge.balance(db, account) == 1
+
+
+async def test_without_enough_tokens_the_team_is_not_added_and_nothing_is_taken(db):
+    w = await a_world(db)
+    assert await challenge.change(db, w.mike.id, 1, challenge.PURCHASE, key="fund")
+    with pytest.raises(service.GuildError, match="2 Challenge Tokens"):
+        await service.add_team(db, w.hero["Vanguard"], w.team["Rearguard"], SIZE, tokens=2)
+    assert await challenge.balance(db, w.mike.id) == 1
+    assert await parties.team_ids(db, w.party["Vanguard"]) == [w.team["Vanguard"]], "the join was rolled back too"
+
+
+def test_the_call_charges_the_dialogs_tokens_when_the_team_is_added(app_client):
+    client = app_client
+    in_app_db(client, lambda db: load_content(db, SEED))
+    headers = sign_in(client, "Mike")
+    made = {name: testing.make_team(client, headers, name, heroes=(hero,)) for name, hero in (("Vanguard", "Aria"), ("Rearguard", "Bram"))}
+    expect(client.post(f"/api/teams/{made['Vanguard']['id']}/play", headers=headers), 200)
+    aria = made["Vanguard"]["members"][0]["hero_id"]
+
+    async def setup(db):
+        row = await db.get(Hero, aria)
+        assert await challenge.change(db, row.account_id, 2, challenge.PURCHASE, key="fund")
+        return (await npcs.place_npc(db, "guildmaster", "Guildmaster", row.map_id, row.x + 1, row.y, "Welcome.`add_team,2`Done.")).id, row.account_id
+
+    npc, account_id = in_app_db(client, setup)
+    expect(client.post(f"/api/heroes/{aria}/npcs/{npc}/talk", json={}, headers=headers), 200)
+    expect(client.post(f"/api/heroes/{aria}/dialog/guild/add-team", json={"team_id": made["Rearguard"]["id"]}, headers=headers), 200)
+    assert in_app_db(client, lambda db: challenge.balance(db, account_id)) == 0
 
 
 # --- the guest pass --------------------------------------------------------------------------------------------------------------

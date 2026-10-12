@@ -12,6 +12,8 @@ ordinary play returns None.
             return None if await spend_tokens(session, account, 5) else "that costs 5 Challenge Tokens"
 """
 
+from dataclasses import dataclass
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import Account
@@ -32,3 +34,34 @@ class Roster:
     async def may_disband(self, session: AsyncSession, account: Account, team: Team) -> str | None:
         """Whether the player may delete a team, which deletes its heroes with it. Allowed by default."""
         return None
+
+
+@dataclass(frozen=True)
+class StartPlace:
+    """A place a new team can start: $key is what the browser sends, $title what the player reads, $map the map's name (its slug,
+    in the engine's world) and $x, $y the tile on it."""
+
+    key: str
+    title: str
+    map: str
+    x: int = 0
+    y: int = 0
+
+
+class Start:
+    """Where the heroes of a new team start. A game subclasses ``Start`` and hands it to ``Game(start=...)``. This is a public
+    interface (the license exception covers it).
+
+    By default nowhere is offered and every new hero starts on the engine's hub map. A game that offers places (the capitals,
+    say) lets the player pick one when they make a team (``start`` in the team's body, or in the body of a first hero added to an
+    empty team); a player who sends none starts at the first place offered. Heroes added later to a team that has heroes stand where
+    the team does, and a hero that replaces another stands where that one did.
+
+        class Capitals(terraforma.heroes.hooks.Start):
+            async def places(self, session, account):
+                return [StartPlace("aldergate", "Aldergate", "aldergate", 5, 5), StartPlace("solhaven", "Solhaven", "solhaven", 5, 5)]
+    """
+
+    async def places(self, session: AsyncSession, account: Account) -> list[StartPlace]:
+        """The places this player may start a team at, in the order the browser lists them; none, by default."""
+        return []
