@@ -25,6 +25,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .. import __doc__ as ENGINE
 from ..animations import AnimationError, check_animation_folder
+from ..colormaps import ColorMapError, check_color_map_folder
 from ..game import Game
 
 STATIC = Path(__file__).parent / "static"
@@ -66,6 +67,10 @@ def check_game_client(game: Game) -> None:
         try:
             check_animation_folder(game.assets_dir)
         except AnimationError as error:
+            raise ClientError(f"assets_dir: {error}") from error
+        try:
+            check_color_map_folder(game.assets_dir)
+        except ColorMapError as error:
             raise ClientError(f"assets_dir: {error}") from error
 
 
