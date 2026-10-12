@@ -87,6 +87,7 @@ def test_the_example_game_is_valid_and_its_tileset_is_drawn_by_its_assets(app_cl
                 names = [f"{art['sheet']}.png", f"{art['sheet']}.sheet.json"]
                 names += [f"{art['sheet']}.alpha.png"] if info.get("alpha", True) else []
                 names += [f"{art['colors']}.colors.json"] if art.get("colors") else []
+                names += [f"{art['animations']}.anim.json"] if art.get("animations") else []
             for name in names:
                 expect(app_client.get(f"/assets/{name}"), 200)
 
