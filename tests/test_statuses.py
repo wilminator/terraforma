@@ -57,11 +57,13 @@ def play(fight, rolls=(), rules=RULES):
 
 #: What the experience rules add around a round (debts, and the payout when the fight ends): not what these tests are about.
 PAYOUT = {EventType.XP_DEBT, EventType.XP_EARNED, EventType.GOLD, EventType.LEVEL_UP, EventType.FIGHT_OVER}
+#: A fighter with no orders defends, and a defender is told at the start of the round: not what these tests are about either.
+IDLE = PAYOUT | {EventType.DEFEND}
 
 
 def played(fight, rolls=(), rules=RULES):
-    """A round's events without the experience bookkeeping."""
-    return [each for each in play(fight, rolls, rules) if each.type not in PAYOUT]
+    """A round's events without the experience bookkeeping and the defenders' announcements."""
+    return [each for each in play(fight, rolls, rules) if each.type not in IDLE]
 
 
 # --- intensity ------------------------------------------------------------------------------------------------
@@ -222,7 +224,7 @@ def test_skipping_a_turn_loses_the_action_and_a_chance_below_100_rolls_for_it():
     bear(b, sleep)
     b.command, b.target = Command.ATTACK_LEFT, A
     skipped = play(fight, [100, 50])
-    assert types(skipped)[:3] == [EventType.TURN, EventType.STATUS_TICK, EventType.TURN_SKIPPED]
+    assert [kind for kind in types(skipped) if kind is not EventType.DEFEND][:3] == [EventType.TURN, EventType.STATUS_TICK, EventType.TURN_SKIPPED]
     assert EventType.ATTACK not in types(skipped)
     acted = play(fight, [100, 51, 50])
     assert EventType.TURN_SKIPPED not in types(acted) and EventType.ATTACK in types(acted), "a roll of 51 keeps the turn"
