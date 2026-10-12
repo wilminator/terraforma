@@ -1,0 +1,11 @@
+{
+ "animations": {
+  "base": {"frames": [0, 1], "ms": 400},
+  "glint": {"frames": [{"frame": 0, "ms": 150}, {"frame": 1, "ms": 150}, {"frame": 0, "ms": 150, "rotate": 90}], "loop": false},
+  "drift": {"frames": [0, 1], "ms": 300, "sync": "random"}
+ },
+ "aliases": {
+  "mirror": {"of": "base", "flip_x": true},
+  "upside_down": {"of": "mirror", "flip_y": true}
+ }
+}

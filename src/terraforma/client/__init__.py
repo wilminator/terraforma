@@ -10,6 +10,8 @@ The game's pictures and sounds (``Game(assets_dir=...)``) are served at ``/asset
     /play/          the game client (landscape)         /game/...     the game's client_dir
     /account/       the account pages                   /assets/...   the game's assets_dir
     /team/{id}      a team's own page (its heroes)
+    /alliances/     the player's alliances and invitations   /alliance/{id}   one alliance, as one of the player's teams sees it
+    /profile/       the player's own page settings           /p/{token}  /p/team/{token}  /p/alliance/{token}   the public pages
     /confirm-email  /change-email  /reset-password  /confirm-2fa     the pages the emailed links open (account pages too)
     GET /api/client what a page needs to know: the game's name, modules, styles and assets
 """
@@ -22,6 +24,8 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .. import __doc__ as ENGINE
+from ..animations import AnimationError, check_animation_folder
+from ..colormaps import ColorMapError, check_color_map_folder
 from ..game import Game
 
 STATIC = Path(__file__).parent / "static"
@@ -59,6 +63,15 @@ def check_game_client(game: Game) -> None:
         folder = getattr(game, field)
         if folder is not None and not Path(folder).is_dir():
             raise ClientError(f"{field}: {folder} is not a folder")
+    if game.assets_dir is not None:
+        try:
+            check_animation_folder(game.assets_dir)
+        except AnimationError as error:
+            raise ClientError(f"assets_dir: {error}") from error
+        try:
+            check_color_map_folder(game.assets_dir)
+        except ColorMapError as error:
+            raise ClientError(f"assets_dir: {error}") from error
 
 
 router = APIRouter()
@@ -93,6 +106,32 @@ async def account() -> FileResponse:
 async def team(team_id: int) -> FileResponse:
     """A team's own page (the browser asks the server for the team: only its player gets it)."""
     return page("team.html")
+
+
+@router.get("/profile/", include_in_schema=False)
+async def profile() -> FileResponse:
+    """The player's own page settings (the browser asks the server, which answers only a logged-in player)."""
+    return page("profile.html")
+
+
+@router.get("/alliances/", include_in_schema=False)
+async def alliances() -> FileResponse:
+    """The player's alliances, the invitations waiting and founding one (the browser asks the server, which answers only a logged-in player)."""
+    return page("alliances.html")
+
+
+@router.get("/alliance/{alliance_id}", include_in_schema=False)
+async def alliance(alliance_id: int) -> FileResponse:
+    """One alliance (the browser asks the server for it: only a player with a team in it gets it)."""
+    return page("alliance.html")
+
+
+# The public pages: the one page file reads which it is from the address. They need no login and show only what the owner shared.
+@router.get("/p/team/{token}", include_in_schema=False)
+@router.get("/p/alliance/{token}", include_in_schema=False)
+@router.get("/p/{token}", include_in_schema=False)
+async def public(token: str) -> FileResponse:
+    return page("public.html")
 
 
 @router.get("/api/client")

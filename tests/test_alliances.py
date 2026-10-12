@@ -389,6 +389,20 @@ def test_an_outsider_cannot_tell_an_alliance_exists_and_acts_only_for_its_own_te
     post(client, "Mike", f"/api/teams/{ids['strangers']}/invitations/accept", {"alliance_id": alliance}, 404)  # not Mike's team
 
 
+def test_an_alliance_is_read_as_the_member_team_asked_for(world):
+    client, ids = world
+    alliance = post(client, "Mike", "/api/alliances", {"team_id": ids["vanguard"], "name": "Iron Pact"}, 201)["id"]
+    post(client, "Mike", f"/api/alliances/{alliance}/invite", {"team_id": ids["vanguard"], "target_team_id": ids["scouts"]})
+    post(client, "Mike", f"/api/teams/{ids['scouts']}/invitations/accept", {"alliance_id": alliance})
+    login(client, "Mike")
+    assert expect(client.get(f"/api/alliances/{alliance}"), 200).json()["you"]["team_id"] == ids["vanguard"]  # the first, as before
+    scouts = expect(client.get(f"/api/alliances/{alliance}?team_id={ids['scouts']}"), 200).json()
+    assert scouts["you"] == {"team_id": ids["scouts"], "role": "member"} and scouts["can"] == ["vote"]
+    expect(client.get(f"/api/alliances/{alliance}?team_id={ids['rivals']}"), 404)  # not Mike's team
+    login(client, "Zed")
+    expect(client.get(f"/api/alliances/{alliance}?team_id={ids['rivals']}"), 404)  # Zed's team, but not in it
+
+
 def test_the_alliances_own_relationships_are_set_by_a_role_that_speaks_and_read_by_members(world):
     client, ids = world
     alliance = post(client, "Mike", "/api/alliances", {"team_id": ids["vanguard"], "name": "Iron Pact"}, 201)["id"]
