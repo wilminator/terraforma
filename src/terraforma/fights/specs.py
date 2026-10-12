@@ -92,6 +92,18 @@ class EffectSpec:
     def only_living(self) -> bool:
         return self.effect in ONLY_LIVING
 
+    @property
+    def aim(self) -> str:
+        """Whom a player points this at: ``enemy``, ``ally``, ``downed`` (a revive wants a fallen ally) or ``none`` (a scope
+        that names its own targets takes no aim). A page uses it to offer the right fighters."""
+        if self.targets in NOT_AIMED:
+            return "none"
+        if self.effect == REVIVE:
+            return "downed"
+        if self.detrimental or (self.effect == EJECT and not self.friendly):
+            return "enemy"
+        return "ally"
+
 
 @dataclass(frozen=True)
 class ItemSpec:

@@ -30,6 +30,30 @@ export class FightModel {
     return this.fighters.get(key) ?? null;
   }
 
+  /** The keys of the fighters a command from $actor can be aimed at: "enemy" (the standing fighters of other parties), "ally" (the standing
+   * fighters of its own, itself included), "downed" (its fallen allies, for a revive) or "none" (the command names its own targets). */
+  targets(actor, aim) {
+    const party = this.fighter(actor)?.party;
+    const wanted = {
+      enemy: (each) => each.party !== party && each.alive,
+      ally: (each) => each.party === party && each.alive,
+      downed: (each) => each.party === party && !each.alive,
+    }[aim];
+    if (!wanted) return [];
+    return [...this.fighters].filter(([, each]) => !each.fled && wanted(each)).map(([key]) => key);
+  }
+
+  /** Takes from a fresh $view what only the server knows (what each of the player's heroes can do, who has chosen), and leaves the numbers
+   * the events have brought up to date. */
+  refresh(view) {
+    for (const each of view.fighters) {
+      const mine = this.fighter(addressKey(each.party, each.group, each.character));
+      if (!mine) continue;
+      mine.menu = each.menu;
+      mine.committed = each.committed;
+    }
+  }
+
   /** The vital resource as [current, maximum]. */
   vitalOf(fighter) {
     return fighter.resources[this.vital] ?? [0, 0];
