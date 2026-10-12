@@ -22,6 +22,7 @@ from ..fights.models import (
     FightActionRecord, FightCommandRecord, FightJoinRecord, FightParticipant, FightRecord, JoinOffer, PendingDrop, PendingDropChoice,
 )
 from ..fights.rules import Rules
+from ..monsterplay.models import MonsterSeat
 from ..relations.models import RatingPrompt
 from ..fightpages.models import PublicFight
 from . import scoring
@@ -182,6 +183,7 @@ DELETED_WITH_THE_FIGHT = {
     JoinOffer.__tablename__: JoinOffer,
     RatingPrompt.__tablename__: RatingPrompt,
     FightTeam.__tablename__: FightTeam,
+    MonsterSeat.__tablename__: MonsterSeat,
 }
 LET_GO = {ChallengeEntry.__tablename__: ChallengeEntry}
 
@@ -200,7 +202,7 @@ async def sweep(session: AsyncSession, rules: Rules, now: int) -> int:
         ids = old[start : start + BATCH]
         drops = select(PendingDrop.id).where(PendingDrop.fight_id.in_(ids))
         await session.execute(delete(PendingDropChoice).where(PendingDropChoice.pending_id.in_(drops)))
-        for table in (PendingDrop, FightParticipant, FightActionRecord, FightCommandRecord, FightJoinRecord, JoinOffer, RatingPrompt, FightTeam):
+        for table in (PendingDrop, FightParticipant, FightActionRecord, FightCommandRecord, FightJoinRecord, JoinOffer, RatingPrompt, FightTeam, MonsterSeat):
             await session.execute(delete(table).where(table.fight_id.in_(ids)))
         await session.execute(update(ChallengeEntry).where(ChallengeEntry.fight_id.in_(ids)).values(fight_id=None))
         await session.execute(delete(FightRecord).where(FightRecord.id.in_(ids)))
