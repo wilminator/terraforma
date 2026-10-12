@@ -355,3 +355,56 @@ def test_an_admin_lists_the_generated_quests_and_promotes_one_and_nobody_else_ma
 
 async def _make_admin(db, name):
     await challenge.set_admin(db, await db.scalar(select(Account.id).where(Account.username == name)))
+
+
+# --- the dialog tag ----------------------------------------------------------------------------------------------------
+
+def test_the_weekly_quest_tag_is_checked_when_the_dialog_is_parsed():
+    from terraforma.npcs.script import ScriptError, parse
+    parse("`weekly_quest,offer,end``weekly_quest,start,end``weekly_quest,finish_win,end``weekly_quest,finish_lose,end`done")
+    for bad, why in (("`weekly_quest,offer`", "takes 2 parameters"), ("`weekly_quest,take,end`", "the action"), ("`weekly_quest,offer,nowhere`", "nowhere")):
+        with pytest.raises(ScriptError, match=why):
+            parse(bad)
+
+
+async def test_a_dialog_offers_starts_and_finishes_the_weekly_quest(db):
+    from .test_npc_state import a_party, check, npc_says
+
+    p = await a_party(db)
+    db.info["weekly_quests"] = Maker()
+    aria, bram = p.heroes[0], p.heroes[1]
+
+    def says(tag):
+        return check(f"weekly_quest,{tag},no")
+
+    assert await npc_says(db, aria, says("start")) == "no", "nothing offered yet"
+    assert await npc_says(db, aria, says("finish_win")) == "no", "nothing active"
+    assert await npc_says(db, aria, says("offer")) == "yes"
+    quest = await weekly.current(db, p.teams[0])
+    assert quest.status == "offered" and await weekly.current(db, p.teams[1]) is None, "Aria's own team, not the party's"
+    assert await npc_says(db, aria, says("finish_win")) == "no", "offered, not active"
+    assert await npc_says(db, aria, says("start")) == "yes" and quest.status == "active"
+    assert await npc_says(db, aria, says("start")) == "no", "already started"
+    assert await npc_says(db, aria, says("finish_lose")) == "yes" and quest.status == "failed"
+    assert await npc_says(db, aria, says("offer")) == "no", "finished this week"
+    assert await npc_says(db, bram, says("offer")) == "yes", "another team of the party has its own"
+    assert await quests.completed(db, p.teams[0], weekly.CATEGORY) == 0
+
+
+async def test_a_dialog_finishing_a_win_records_it_even_after_the_week_turns(db, later):
+    from .test_npc_state import a_party, check, npc_says
+
+    p = await a_party(db)
+    db.info["weekly_quests"] = Maker()
+    aria = p.heroes[0]
+    assert await npc_says(db, aria, "`weekly_quest,offer,no``weekly_quest,start,no`yes`jump,end``label,no`no") == "yes"
+    later(weekly.WEEK_SECONDS)
+    assert await npc_says(db, aria, "`weekly_quest,finish_win,no`yes`jump,end``label,no`no") == "yes"
+    assert await quests.completed(db, p.teams[0], weekly.CATEGORY) == 1
+
+
+async def test_a_game_that_makes_no_quest_sends_the_dialog_to_the_label(db):
+    from .test_npc_state import a_party, check, npc_says
+
+    p = await a_party(db)  # (no hooks on the session: the engine's, which make none)
+    assert await npc_says(db, p.heroes[0], "`weekly_quest,offer,no`yes`jump,end``label,no`no") == "no"

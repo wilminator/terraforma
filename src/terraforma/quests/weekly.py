@@ -83,6 +83,11 @@ async def current(session: AsyncSession, team_id: int, week: int | None = None) 
     return await session.scalar(select(WeeklyQuest).where(WeeklyQuest.team_id == team_id, WeeklyQuest.week == week))
 
 
+async def active(session: AsyncSession, team_id: int) -> WeeklyQuest | None:
+    """The team's started, unfinished quest: the latest, which may be last week's (a quest started in time may finish late)."""
+    return await session.scalar(select(WeeklyQuest).where(WeeklyQuest.team_id == team_id, WeeklyQuest.status == ACTIVE).order_by(WeeklyQuest.week.desc()).limit(1))
+
+
 async def offer(session: AsyncSession, hooks: WeeklyQuests, team_id: int) -> WeeklyQuest | None:
     """The team's quest for this week: the one it already has, or one drawn now. A level-fitting template is drawn by weight (``hooks.scale``
     makes it the team's), otherwise the game's ``generate`` makes one up and it is recorded as generated. None when the game makes no quest
