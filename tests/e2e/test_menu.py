@@ -30,7 +30,7 @@ ABILITIES = [
 async def teach(db):
     """The example's content with a skill, three spells and some MP for the fighter, and a pack with potions for every hero."""
     seed = load_seed(Path(terraforma.example.__file__).parent / "seed")
-    seed["abilities"] = ABILITIES
+    seed["abilities"] = [*ABILITIES, *(each for each in seed["abilities"] if each["key"] not in {mine["key"] for mine in ABILITIES})]  # (the monsters use the example's)
     for job in seed["jobs"]:
         job["abilities"] = [{"ability": each["key"], "level": 1} for each in ABILITIES]
         job["stat_growth"] = {**job["stat_growth"], "MP": 8}

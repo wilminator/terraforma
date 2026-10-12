@@ -12,6 +12,7 @@ export function partyPanel(shell, roster) {
   const pick = h("select", { id: "party-team", "aria-label": t("party.team"), onchange: () => roster.selectTeam(Number(pick.value)) });
   let town = null; // what the server last said about the chosen team's town visit
   let shown = null; // the team that answer is about
+  let offer = false; // whether the hub has offered the party a running fight to join and waits for its leader's answer
 
   const teamName = (id) => roster.team(id)?.name ?? t("party.other_team");
 
@@ -19,7 +20,14 @@ export function partyPanel(shell, roster) {
     const team = roster.team(roster.teamId);
     shown = team?.id ?? null;
     town = null;
-    if (team) await attempt(shell, problem, async () => { town = await api.get(`/api/teams/${team.id}/town`); });
+    offer = false;
+    if (team) {
+      await attempt(shell, problem, async () => {
+        const [visit, asked] = await Promise.all([api.get(`/api/teams/${team.id}/town`), api.get(`/api/teams/${team.id}/town/join-offer`)]);
+        town = visit;
+        offer = asked.offer === true;
+      });
+    }
     draw();
   }
 
@@ -33,7 +41,13 @@ export function partyPanel(shell, roster) {
         await roster.load(); // (the team now says which party it is in: the stage shows that party's map)
       } else if (path === "town/ready") {
         town = answer;
-        note.textContent = answer.fight ? t("party.fight_started") : t(answer.in_town ? "party.waiting" : "party.left");
+        offer = answer.offer === true;
+        note.textContent = offer ? t("party.offered") : answer.fight ? t("party.fight_started") : t(answer.in_town ? "party.waiting" : "party.left");
+        if (answer.fight) shell.emit("fight", { fight: answer.fight });
+      } else if (path.startsWith("town/join-offer/")) {
+        town = answer;
+        offer = false;
+        note.textContent = t(answer.joined ? "party.joined" : answer.fight ? "party.fight_started" : "party.left");
         if (answer.fight) shell.emit("fight", { fight: answer.fight });
       } else {
         town = answer;
@@ -80,11 +94,28 @@ export function partyPanel(shell, roster) {
     } else if (town) {
       parts.push(h("p", { class: "muted" }, t("party.not_in_town")));
     }
+    if (offer) {
+      // (what the fight is stays unsaid; the leader answers, and anyone else is told so by the server)
+      parts.push(
+        h(
+          "div",
+          { class: "join-offer", id: "party-offer", role: "group", "aria-label": t("party.offer_label") },
+          h("p", {}, t("party.offer")),
+          h(
+            "div",
+            { class: "row-actions" },
+            h("button", { type: "button", class: "primary", id: "party-join", onclick: () => act("town/join-offer/accept") }, t("party.join")),
+            h("button", { type: "button", id: "party-decline", onclick: () => act("town/join-offer/decline") }, t("party.decline")),
+          ),
+        ),
+      );
+    }
     replace(status, ...parts);
   }
 
   roster.onChange(() => {
-    if (roster.teamId !== shown) refresh();
+    // (a hidden panel asks the server nothing; opening it does)
+    if (roster.teamId !== shown && !element.hidden) refresh();
     else draw();
   });
   draw();

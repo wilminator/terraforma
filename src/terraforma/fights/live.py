@@ -21,6 +21,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .. import wallclock
+from ..content.models import Job, Monster, Personality
 from ..economy import Economy
 from ..heroes.models import Hero, Team
 from ..models import Map, World
@@ -400,12 +401,36 @@ def menu_of(fight, rules: Rules, address: Address) -> dict:
     return {"attacks": attacks, "abilities": abilities, "items": items, "can_flee": rules.flee_allowed(fight, address)}
 
 
+async def looks(session: AsyncSession, fight) -> dict[Address, str | dict]:
+    """The picture (a personality's ``fight_art``) of each fighter that has one: a monster's through its ``personality``, a hero's through
+    the personality that has its job's key (a hero has no personality of its own yet). A fighter whose personality has no art, or that
+    has no such personality, is left out, and the page draws it as a plain card."""
+    monsters = {fight.get(address).monster for address in fight.addresses()} - {None}
+    heroes = {fight.get(address).charid for address in fight.addresses()} - {None}
+    by_monster = dict((await session.execute(select(Monster.key, Monster.personality).where(Monster.key.in_(monsters)))).all()) if monsters else {}
+    by_hero = dict((await session.execute(
+        select(Hero.id, Job.key).join(Job, Job.id == Hero.job_id).where(Hero.id.in_(heroes))
+    )).all()) if heroes else {}
+    wanted = {*by_monster.values(), *by_hero.values()}
+    art = dict((await session.execute(
+        select(Personality.key, Personality.fight_art).where(Personality.key.in_(wanted))
+    )).all()) if wanted else {}
+    found = {}
+    for address in fight.addresses():
+        who = fight.get(address)
+        personality = by_monster.get(who.monster) if who.monster is not None else by_hero.get(who.charid)
+        if art.get(personality):  # (a personality with no art keeps a JSON null, which is not an SQL one)
+            found[address] = art[personality]
+    return found
+
+
 async def view(session: AsyncSession, record: FightRecord, rules: Rules, account_id: int | None = None) -> dict:
     """The fight as a page shows it: whose turn to be commanded, who is standing and with how much, which fighters are
     the caller's and have committed, and when the round plays."""
     fight, played = await store.load_state(session, record, rules)
     mine, ready = await owners(session, record), await waiting(session, record, played + 1)
     seat = await session.get(MonsterSeat, record.id)
+    pictures = await looks(session, fight)
     view = {
         "id": record.id, "guid": record.guid, "round": played + 1, "over": fight.over or record.finished, "vital": rules.vital,
         "monster_play": record.monster_play, "monsters_played": seat is not None,
@@ -418,6 +443,7 @@ async def view(session: AsyncSession, record: FightRecord, rules: Rules, account
                 "statuses": [token.spec.key for token in fight.get(address).tokens],
                 "yours": account_id is not None and mine.get(address) == account_id,
                 "committed": address in ready,
+                **({"art": pictures[address]} if address in pictures else {}),
                 **({"menu": menu_of(fight, rules, address)} if mine.get(address) == account_id and account_id is not None else {}),
             }
             for address in fight.addresses()
