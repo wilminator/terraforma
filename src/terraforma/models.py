@@ -179,3 +179,4 @@ from .maps import models as _maps  # noqa: E402,F401
 from .quests import models as _quests  # noqa: E402,F401
 from .playtime import models as _playtime  # noqa: E402,F401
 from .social import models as _social  # noqa: E402,F401
+from .fighttags import models as _fighttags  # noqa: E402,F401

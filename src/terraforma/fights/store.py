@@ -35,6 +35,7 @@ from .events import Event, EventType
 from .fight import Fight
 from . import pending
 from ..challenge import service as challenge
+from ..fighttags import service as fighttags
 from .models import FightActionRecord, FightJoinRecord, FightParticipant, FightRecord
 from .replay import apply_events
 from .resolve import do_combat, fight_stream
@@ -293,6 +294,7 @@ async def apply_results(session: AsyncSession, record: FightRecord, rules: Rules
     await save_drops(session, record, fight)
     await save_relations(session, record, relations or Relations())
     await challenge.pay_fight(session, record, fight, rules)
+    await fighttags.record_fight(session, record, fight, rules, [Event.from_list(raw) for action in await actions(session, record) for raw in action.events])
     return updated
 
 
