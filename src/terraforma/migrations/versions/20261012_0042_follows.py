@@ -49,9 +49,5 @@ def upgrade() -> None:
 def downgrade() -> None:
     with op.batch_alter_table('player_profiles', schema=None) as batch_op:
         batch_op.drop_column('directory_link')
-    with op.batch_alter_table('profile_bans', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_profile_bans_banned_id'))
     op.drop_table('profile_bans')
-    with op.batch_alter_table('follows', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_follows_followed_id'))
     op.drop_table('follows')
