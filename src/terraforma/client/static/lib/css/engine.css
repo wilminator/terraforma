@@ -210,3 +210,6 @@ select, .inline input {
 .secret { font-size: 1.1rem; overflow-wrap: anywhere; user-select: all; }
 .codes { columns: 2; padding-left: 1.25rem; }
 .links { margin: 0; }
+.check { display: inline-flex; gap: 0.35rem; align-items: center; }
+.field textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 0.5em; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text); }
+.bio { white-space: pre-wrap; overflow-wrap: anywhere; }
