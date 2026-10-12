@@ -43,3 +43,4 @@ export async function call(method, path, body) {
 
 export const get = (path) => call("GET", path);
 export const post = (path, body = {}) => call("POST", path, body);
+export const put = (path, body = {}) => call("PUT", path, body);
