@@ -10,6 +10,7 @@ The game's pictures and sounds (``Game(assets_dir=...)``) are served at ``/asset
     /play/          the game client (landscape)         /game/...     the game's client_dir
     /account/       the account pages                   /assets/...   the game's assets_dir
     /team/{id}      a team's own page (its heroes)
+    /profile/       the player's own page settings           /p/{token}  /p/team/{token}  /p/alliance/{token}   the public pages
     /confirm-email  /change-email  /reset-password  /confirm-2fa     the pages the emailed links open (account pages too)
     GET /api/client what a page needs to know: the game's name, modules, styles and assets
 """
@@ -99,6 +100,20 @@ async def account() -> FileResponse:
 async def team(team_id: int) -> FileResponse:
     """A team's own page (the browser asks the server for the team: only its player gets it)."""
     return page("team.html")
+
+
+@router.get("/profile/", include_in_schema=False)
+async def profile() -> FileResponse:
+    """The player's own page settings (the browser asks the server, which answers only a logged-in player)."""
+    return page("profile.html")
+
+
+# The public pages: the one page file reads which it is from the address. They need no login and show only what the owner shared.
+@router.get("/p/team/{token}", include_in_schema=False)
+@router.get("/p/alliance/{token}", include_in_schema=False)
+@router.get("/p/{token}", include_in_schema=False)
+async def public(token: str) -> FileResponse:
+    return page("public.html")
 
 
 @router.get("/api/client")
