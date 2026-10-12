@@ -5,7 +5,7 @@ None of these stands anywhere on a map: a volunteer waits for any fight, and a s
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db.base import Base
@@ -43,3 +43,9 @@ class MonsterSeat(Base):
     party: Mapped[int] = mapped_column(Integer, default=1)
     account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
     seated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # How many rounds the player gave their monsters no command at all (``Rules.monster_absent`` judges each), and whether the AI plays the
+    # monsters now: until the player commands again or says they are back.
+    missed: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    absent: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # An admin sat in a running fight (``service.take_over``): earns nothing, whatever the rules pay.
+    admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())

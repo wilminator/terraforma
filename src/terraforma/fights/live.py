@@ -180,12 +180,30 @@ async def start_party_fight(session: AsyncSession, party_id: int, monster_keys: 
 # --- who commands whom ------------------------------------------------------------------------------------------
 
 async def owners(session: AsyncSession, record: FightRecord) -> dict[Address, int]:
-    """The account that plays each fighter that is a hero (monsters have no entry: the AI plays them)."""
+    """The account that plays each fighter: a hero's own account, and, for a fight whose monsters a player commands
+    (``monsterplay``), that player for every fighter of the monster party. The other monsters have no entry: the AI plays them."""
     rows = await session.execute(
         select(FightParticipant.party, FightParticipant.group_index, FightParticipant.character, Hero.account_id)
         .join(Hero, Hero.id == FightParticipant.hero_id).where(FightParticipant.fight_id == record.id)
     )
-    return {(party, group, character): account_id for party, group, character, account_id in rows.all()}
+    result = {(party, group, character): account_id for party, group, character, account_id in rows.all()}
+    seat = await session.get(MonsterSeat, record.id)
+    if seat is not None:
+        monsters_rows = await session.execute(
+            select(FightParticipant.party, FightParticipant.group_index, FightParticipant.character)
+            .where(FightParticipant.fight_id == record.id, FightParticipant.party == seat.party, FightParticipant.hero_id.is_(None))
+        )
+        result |= {(party, group, character): seat.account_id for party, group, character in monsters_rows.all()}
+    return result
+
+
+async def commanders(session: AsyncSession, record: FightRecord) -> dict[Address, int]:
+    """``owners``, less the monsters of an absent volunteer (``MonsterSeat.absent``): the AI plays those, and the round does not wait for them."""
+    mine = await owners(session, record)
+    seat = await session.get(MonsterSeat, record.id)
+    if seat is not None and seat.absent:
+        mine = {address: account_id for address, account_id in mine.items() if address[0] != seat.party}
+    return mine
 
 
 async def get_record(session: AsyncSession, fight_id: int) -> FightRecord:
@@ -218,11 +236,15 @@ async def submit_command(session: AsyncSession, record: FightRecord, account_id:
         raise Refused("that fighter has left the fight")
     if not fighter.alive(rules):
         raise Refused("that fighter is down")
-    if command == Command.RUN and not rules.flee_allowed(fight, address):
+    seat = await session.get(MonsterSeat, record.id)
+    commanding_monsters = seat is not None and address[0] == seat.party
+    if command == Command.RUN and (not rules.flee_allowed(fight, address) or (commanding_monsters and not rules.monster_flee_allowed(fight, address))):
         raise Refused("there is no running from this fight")
     fighter.command, fighter.using, fighter.target = command, using, target
     if not valid_action(fighter):
         raise Refused("that fighter can't do that")
+    if commanding_monsters and seat.absent:  # commanding again is being back
+        seat.absent = False
     number = played + 1
     row = (await waiting(session, record, number)).get(address)
     if row is None:
@@ -235,9 +257,10 @@ async def submit_command(session: AsyncSession, record: FightRecord, account_id:
 
 
 async def everyone_committed(session: AsyncSession, record: FightRecord, rules: Rules) -> bool:
-    """Whether every fighter that a player commands and that is still in the fight (alive, and not fled) has a command waiting for this round."""
+    """Whether every fighter that a player commands and that is still in the fight (alive, and not fled) has a command waiting for this
+    round. The monsters of an absent volunteer are the AI's and not waited for."""
     fight, played = await store.load_state(session, record, rules)
-    mine, ready = await owners(session, record), await waiting(session, record, played + 1)
+    mine, ready = await commanders(session, record), await waiting(session, record, played + 1)
     return all(address in ready for address in mine if address in fight.addresses() and fight.get(address).present(rules))
 
 
@@ -247,6 +270,20 @@ async def _ai_stream(session: AsyncSession, record: FightRecord, round_number: i
     game_map = await session.get(Map, record.map_id)
     world = await session.get(World, game_map.world_id)
     return WorldRng(world.seed).stream("map", game_map.name, "fight", record.id, "round", round_number, "ai")
+
+
+def _repeated(rules: Rules, fight, fighter, stored: dict | None) -> dict | None:
+    """The command a volunteer gave their fighter last round, as a stored command, if it still makes sense: it can be done, a
+    flee is still not forbidden, and what it was aimed at is still standing. None otherwise (the AI chooses instead)."""
+    if stored is None:
+        return None
+    address, command, using, target = tuple(stored["address"]), Command(stored["command"]), stored["using"], tuple(stored["target"])
+    if command == Command.RUN and not (rules.flee_allowed(fight, address) and rules.monster_flee_allowed(fight, address)):
+        return None
+    if command != Command.DEFEND and (target not in fight.addresses() or not fight.get(target).alive(rules) or not fight.get(target).present(rules)):
+        return None
+    fighter.command, fighter.using, fighter.target = command, using, target
+    return store.command_record(address, command, using, target) if valid_action(fighter) else None
 
 
 async def resolve_round(session: AsyncSession, record: FightRecord, rules: Rules, economy: Economy | None = None,
@@ -259,8 +296,13 @@ async def resolve_round(session: AsyncSession, record: FightRecord, rules: Rules
         raise Refused("that fight is over")
     fight, played = await store.load_state(session, record, rules)
     number = played + 1
-    mine, ready = await owners(session, record), await waiting(session, record, number)
+    mine, ready = await commanders(session, record), await waiting(session, record, number)
     rng = await _ai_stream(session, record, number)
+    seat = await session.get(MonsterSeat, record.id)
+    # A volunteer who gave no command at all this round has missed it: their monsters repeat the last commands they were given.
+    seated = [address for address in fight.addresses() if seat is not None and address[0] == seat.party and address in mine and fight.get(address).present(rules)]
+    missed = bool(seated) and not any(address in ready for address in seated)
+    last = await seating.last_commands(session, record, played) if missed else {}
     commands = []
     for address in fight.addresses():
         fighter = fight.get(address)
@@ -270,6 +312,11 @@ async def resolve_round(session: AsyncSession, record: FightRecord, rules: Rules
             if address in ready:
                 row = ready[address]
                 commands.append(store.command_record(address, row.command, row.using_index, tuple(row.target)))
+            elif missed and address in seated and (again := _repeated(rules, fight, fighter, last.get(address))) is not None:
+                commands.append(again)
+            elif missed and address in seated:
+                ai.commit(fighter, ai.choose_command(rules, fight, address, rng))
+                commands.append(store.command_record(address, fighter.command, fighter.using, fighter.target))
         else:
             ai.commit(fighter, ai.choose_command(rules, fight, address, rng))
             commands.append(store.command_record(address, fighter.command, fighter.using, fighter.target))
@@ -278,6 +325,9 @@ async def resolve_round(session: AsyncSession, record: FightRecord, rules: Rules
     except store.FightOver as error:
         record.finished, record.round_deadline = True, None
         raise Refused("that fight is over") from error
+    if missed:
+        seat.missed += 1
+        seat.absent = rules.monster_absent(seat.missed)
     await session.execute(delete(FightCommandRecord).where(FightCommandRecord.fight_id == record.id, FightCommandRecord.round_number == number))
     now_fight, _played = await store.load_state(session, record, rules)
     if now_fight.over:
@@ -326,9 +376,10 @@ async def view(session: AsyncSession, record: FightRecord, rules: Rules, account
     the caller's and have committed, and when the round plays."""
     fight, played = await store.load_state(session, record, rules)
     mine, ready = await owners(session, record), await waiting(session, record, played + 1)
-    return {
+    seat = await session.get(MonsterSeat, record.id)
+    view = {
         "id": record.id, "guid": record.guid, "round": played + 1, "over": fight.over or record.finished, "vital": rules.vital,
-        "monster_play": record.monster_play, "monsters_played": await session.get(MonsterSeat, record.id) is not None,
+        "monster_play": record.monster_play, "monsters_played": seat is not None,
         "deadline": aware(record.round_deadline).isoformat() if record.round_deadline else None,
         "fighters": [
             {
@@ -342,20 +393,23 @@ async def view(session: AsyncSession, record: FightRecord, rules: Rules, account
             for address in fight.addresses()
         ],
     }
+    if seat is not None and account_id == seat.account_id:  # the player who commands the monsters is told so
+        view["seat"] = {"party": seat.party, "absent": seat.absent, "admin": seat.admin}
+    return view
 
 
 async def mine(session: AsyncSession, account_id: int, limit: int = 20, running_only: bool = False) -> list[dict]:
     """The fights an account has a hero in, running ones first and then the most recent: what a page needs to find its
     way to a fight (its number for the calls and the socket, its public name to share, which round it waits for and when it
     plays, and which of the account's heroes are in it)."""
-    query = (
-        select(FightRecord).join(FightParticipant, FightParticipant.fight_id == FightRecord.id).join(Hero, Hero.id == FightParticipant.hero_id)
-        .where(Hero.account_id == account_id).distinct()
-    )
+    as_hero = select(FightParticipant.fight_id).join(Hero, Hero.id == FightParticipant.hero_id).where(Hero.account_id == account_id)
+    as_monsters = select(MonsterSeat.fight_id).where(MonsterSeat.account_id == account_id)
+    query = select(FightRecord).where(FightRecord.id.in_(as_hero.union(as_monsters)))
     if running_only:
         query = query.where(FightRecord.finished.is_(False))
     records = (await session.scalars(query.order_by(FightRecord.finished, FightRecord.id.desc()).limit(limit))).all()
     ids = [record.id for record in records]
+    commanding = set((await session.scalars(as_monsters.where(MonsterSeat.fight_id.in_(ids)))).all()) if ids else set()
     played = dict((await session.execute(
         select(FightActionRecord.fight_id, func.count()).where(FightActionRecord.fight_id.in_(ids)).group_by(FightActionRecord.fight_id)
     )).all()) if ids else {}
@@ -370,12 +424,13 @@ async def mine(session: AsyncSession, account_id: int, limit: int = 20, running_
         {
             "id": record.id, "guid": record.guid, "over": record.finished, "round": played.get(record.id, 0) + 1,
             "deadline": aware(record.round_deadline).isoformat() if record.round_deadline else None, "heroes": heroes[record.id],
+            "monsters": record.id in commanding,
         }
         for record in records
     ]
 
 
 async def watchers(session: AsyncSession, record: FightRecord) -> set[int]:
-    """The accounts with a hero in the fight."""
+    """The accounts with a hero in the fight, and the one that commands its monsters."""
     return set((await owners(session, record)).values())
 
