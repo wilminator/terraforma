@@ -42,6 +42,12 @@ class Settle(Strict):
     state: str = Field(pattern=f"^({ACTIONED}|{DISMISSED})$")
 
 
+class Ban(Strict):
+    handle: str = Field(min_length=1, max_length=64)
+    hours: int | None = Field(default=None, ge=1, le=24 * 365)
+    reason: str = Field(default="", max_length=NOTE_MAX)
+
+
 def game_of(request: Request) -> Game:
     return request.app.state.game or Game(name="TerraForma")
 
@@ -134,10 +140,35 @@ async def admin_flags(account: CurrentAccount, db: Db, state: Annotated[str, Que
 
 
 @router.post("/admin/settle")
-async def admin_settle(body: Settle, account: ActingAccount, db: Db) -> dict:
+async def admin_settle(body: Settle, request: Request, account: ActingAccount, db: Db) -> dict:
     admin_only(account)
     try:
-        row = await service.settle(db, account, body.flag_id, body.state)
+        row = await service.settle(db, game_of(request), account, body.flag_id, body.state)
     except service.ChatError as error:
         raise refuse(error) from error
     return {"id": row.id, "state": row.state}
+
+
+@router.get("/admin/bans")
+async def admin_bans(account: CurrentAccount, db: Db) -> dict:
+    """The players barred from speaking now, with until when (none: for good)."""
+    admin_only(account)
+    return {"bans": await service.bans(db)}
+
+
+@router.post("/admin/ban")
+async def admin_ban(body: Ban, account: ActingAccount, db: Db) -> dict:
+    """Bars a player from speaking, for ``hours`` or for good when left out. They can still read."""
+    admin_only(account)
+    try:
+        await service.ban(db, account, body.handle, body.hours, body.reason)
+    except service.ChatError as error:
+        raise refuse(error) from error
+    return {"bans": await service.bans(db)}
+
+
+@router.post("/admin/unban")
+async def admin_unban(body: Handle, account: ActingAccount, db: Db) -> dict:
+    admin_only(account)
+    await service.unban(db, body.handle)
+    return {"bans": await service.bans(db)}

@@ -5,15 +5,16 @@ player can read); the caller's transaction rolls back. Every channel is handled 
 who is in it and who hears what, and nothing here knows one kind from another."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .. import wallclock
 from ..accounts.service import handle_key
 from ..models import Account
 from .hooks import Channel, ChannelKind, Place, place_of
-from .models import ACTIONED, DISMISSED, NOTE_MAX, OPEN, ChatFlag, ChatMessage, ChatMute
+from .models import ACTIONED, DISMISSED, NOTE_MAX, OPEN, ChatBan, ChatFlag, ChatMessage, ChatMute
 
 
 class ChatError(ValueError):
@@ -53,6 +54,9 @@ async def channels(session: AsyncSession, game, account: Account) -> list[Channe
 async def speak(session: AsyncSession, game, account: Account, kind: str, key: str, body: str) -> ChatMessage:
     if not account.handle:
         raise ChatError("choose a handle before you chat")
+    barred = await active_ban(session, account.id)
+    if barred is not None:
+        raise ChatError("you are barred from chat" + (f" until {barred.until:%Y-%m-%d %H:%M} UTC" if barred.until else "") + (f": {barred.reason}" if barred.reason else ""))
     _, stored = await _open(session, game, account, kind, key)
     text = game.chat.clean(body)
     if not text:
@@ -173,7 +177,7 @@ async def flags(session: AsyncSession, state: str = OPEN, limit: int = 50) -> li
     return out
 
 
-async def settle(session: AsyncSession, admin: Account, flag_id: int, state: str) -> ChatFlag:
+async def settle(session: AsyncSession, game, admin: Account, flag_id: int, state: str) -> ChatFlag:
     """An admin settles a flag as ``actioned`` (the game acted on it) or ``dismissed``. What the action is stays the game's own."""
     if state not in (ACTIONED, DISMISSED):
         raise ChatError("settle a flag as actioned or dismissed")
@@ -182,4 +186,50 @@ async def settle(session: AsyncSession, admin: Account, flag_id: int, state: str
         raise NotFound("there is no such flag")
     row.state, row.resolved_by = state, admin.id
     await session.flush()
+    if state == ACTIONED:
+        message = await session.get(ChatMessage, row.message_id)
+        await game.chat.actioned(session, admin, message.sender_id, message, row.reason)
     return row
+
+
+async def active_ban(session: AsyncSession, account_id: int) -> ChatBan | None:
+    """The ban that keeps the player from speaking now, if any (one that has run out does not count)."""
+    ban = await session.scalar(select(ChatBan).where(ChatBan.account_id == account_id))
+    if ban is None or (ban.until is not None and _aware(ban.until) <= wallclock.now()):
+        return None
+    return ban
+
+
+def _aware(moment: datetime) -> datetime:
+    """SQLite gives back times without their zone; they are all UTC."""
+    return moment if moment.tzinfo else moment.replace(tzinfo=wallclock.now().tzinfo)
+
+
+async def ban(session: AsyncSession, admin: Account, handle: str, hours: int | None, reason: str = "") -> ChatBan:
+    """Bars the player from speaking for $hours (for good when None); a ban already on them is replaced. Admins can't be barred."""
+    target = await session.scalar(select(Account).where(Account.handle_key == handle_key(handle)))
+    if target is None:
+        raise NotFound("there is no player with that handle")
+    if target.is_admin:
+        raise ChatError("an admin can't be barred from chat")
+    until = wallclock.now() + timedelta(hours=hours) if hours else None
+    row = await session.scalar(select(ChatBan).where(ChatBan.account_id == target.id))
+    if row is None:
+        row = ChatBan(account_id=target.id, until=until, reason=reason.strip()[:NOTE_MAX], by_id=admin.id)
+        session.add(row)
+    else:
+        row.until, row.reason, row.by_id = until, reason.strip()[:NOTE_MAX], admin.id
+    await session.flush()
+    return row
+
+
+async def unban(session: AsyncSession, handle: str) -> None:
+    target = await session.scalar(select(Account.id).where(Account.handle_key == handle_key(handle)))
+    if target is not None:
+        await session.execute(delete(ChatBan).where(ChatBan.account_id == target))
+
+
+async def bans(session: AsyncSession) -> list[dict]:
+    """The bans still running, oldest first."""
+    rows = (await session.execute(select(ChatBan, Account.handle).join(Account, Account.id == ChatBan.account_id).order_by(ChatBan.id))).all()
+    return [{"handle": handle, "until": row.until, "reason": row.reason} for row, handle in rows if await active_ban(session, row.account_id) is not None]
