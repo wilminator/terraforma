@@ -195,10 +195,26 @@ export function chatPanel(shell) {
                   { class: "row-actions" },
                   h("button", { type: "button", "aria-label": t("chat.admin_actioned_label", { id: each.id }), onclick: () => settle(each.id, "actioned") }, t("chat.admin_actioned")),
                   h("button", { type: "button", "aria-label": t("chat.admin_dismiss_label", { id: each.id }), onclick: () => settle(each.id, "dismissed") }, t("chat.admin_dismiss")),
+                  h("button", { type: "button", "aria-label": t("chat.admin_ban_label", { name: each.message.sender }), onclick: () => ban(each.message.sender) }, t("chat.admin_ban")),
                 ),
               ),
             )
           : h("li", { class: "muted" }, t("chat.admin_none")),
+      ),
+      h("h3", {}, t("chat.admin_bans")),
+      h(
+        "ul",
+        { class: "rows", id: "chat-admin-bans" },
+        bans.length
+          ? bans.map((each) =>
+              h(
+                "li",
+                { class: "row", "data-ban": each.handle },
+                h("span", {}, each.until ? t("chat.admin_ban_until", { name: each.handle, until: each.until.slice(0, 16).replace("T", " ") }) : t("chat.admin_ban_forever", { name: each.handle })),
+                h("button", { type: "button", "aria-label": t("chat.admin_unban_label", { name: each.handle }), onclick: () => unban(each.handle) }, t("chat.admin_unban")),
+              ),
+            )
+          : h("li", { class: "muted" }, t("chat.admin_no_bans")),
       ),
     );
   }
@@ -206,6 +222,20 @@ export function chatPanel(shell) {
   async function settle(id, state) {
     await attempt(shell, problem, async () => {
       await api.post("/api/chat/admin/settle", { flag_id: id, state });
+      await drawAdmin(true);
+    });
+  }
+
+  async function ban(name) {
+    await attempt(shell, problem, async () => {
+      await api.post("/api/chat/admin/ban", { handle: name, hours: 24, reason: "" });
+      await drawAdmin(true);
+    });
+  }
+
+  async function unban(name) {
+    await attempt(shell, problem, async () => {
+      await api.post("/api/chat/admin/unban", { handle: name });
       await drawAdmin(true);
     });
   }
