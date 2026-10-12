@@ -17,6 +17,8 @@ from .accounts.ratelimit import ALL_LIMITS
 from .alliances.models import Ballot, BallotVote, BallotVoter
 from .chat.models import OPEN as FLAG_OPEN
 from .chat.models import ChatFlag, ChatMessage
+from .voice.discord import VoiceError, provider_for
+from .voice.models import VoiceRoom
 from .fights.models import PendingDrop
 from .fights.pending import OPEN, expire
 from .models import RateLimitHit
@@ -100,6 +102,26 @@ async def old_chat_messages(session: AsyncSession, now: int, settings: Settings)
     await session.execute(delete(ChatFlag).where(ChatFlag.state != FLAG_OPEN, ChatFlag.updated_at <= before))
     flagged = select(ChatFlag.message_id)
     return (await session.execute(delete(ChatMessage).where(ChatMessage.created_at <= before, ChatMessage.id.not_in(flagged)))).rowcount
+
+
+@job
+async def old_voice_rooms(session: AsyncSession, now: int, settings: Settings) -> int:
+    """Voice rooms made more than ``voice_room_hours`` ago: closed at the provider, then forgotten. A room the provider would not close
+    is kept for the next pass (so nothing is left behind there). With voice off, nothing is done."""
+    provider = provider_for(settings)
+    if provider is None:
+        return 0
+    before = wallclock.now() - timedelta(hours=settings.voice_room_hours)
+    removed = 0
+    for room in (await session.scalars(select(VoiceRoom).where(VoiceRoom.created_at <= before).order_by(VoiceRoom.id).limit(BATCH))).all():
+        try:
+            await provider.close_room(room.provider_id)
+        except VoiceError:
+            log.warning("a voice room could not be closed; it will be tried again")
+            continue
+        await session.delete(room)
+        removed += 1
+    return removed
 
 
 @job

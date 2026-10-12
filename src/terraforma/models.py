@@ -178,3 +178,4 @@ from .npcs import models as _npcs  # noqa: E402,F401
 from .maps import models as _maps  # noqa: E402,F401
 from .quests import models as _quests  # noqa: E402,F401
 from .chat import models as _chat  # noqa: E402,F401
+from .voice import models as _voice  # noqa: E402,F401

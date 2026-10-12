@@ -23,11 +23,26 @@ export function chatPanel(shell) {
   let last = 0;
   let timer = null;
   let reasons = [];
+  let voiceKinds = []; // the kinds of channel that have a voice room ([] when voice is off)
+  const voiceLink = h("p", { class: "note", role: "status", id: "chat-voice-link" });
+  const voiceButton = h("button", { type: "button", id: "chat-voice", hidden: true, onclick: () => joinVoice() }, t("chat.voice"));
 
   const addressOf = (entry) => `${entry.kind}\n${entry.key}`;
 
   function labelOf(entry) {
     return entry.kind === "whisper" ? t("chat.whisper_label", { name: entry.label }) : entry.kind === "party" || entry.kind === "global" || entry.kind === "nearby" || entry.kind === "town" ? t(`chat.kind.${entry.kind}`) : entry.label;
+  }
+
+  function showVoice() {
+    voiceButton.hidden = !(current && voiceKinds.includes(current.kind));
+    replace(voiceLink);
+  }
+
+  async function joinVoice() {
+    await attempt(shell, problem, async () => {
+      const answer = await api.post("/api/voice/join", { kind: current.kind, key: current.key });
+      replace(voiceLink, h("a", { href: answer.url, target: "_blank", rel: "noopener noreferrer" }, t("chat.voice_link")), " ", t("chat.voice_once", { minutes: Math.round(answer.seconds / 60) }));
+    });
   }
 
   function drawChannels() {
@@ -41,6 +56,7 @@ export function chatPanel(shell) {
       last = 0;
       replace(lines);
     }
+    showVoice();
   }
 
   function choose() {
@@ -48,6 +64,7 @@ export function chatPanel(shell) {
     current = { kind, key };
     last = 0;
     replace(lines);
+    showVoice();
     poll();
   }
 
@@ -258,6 +275,7 @@ export function chatPanel(shell) {
     flagged.textContent = "";
     await attempt(shell, problem, async () => {
       reasons = (await api.get("/api/chat/reasons")).reasons;
+      voiceKinds = (await api.get("/api/voice")).kinds;
       await drawMuted();
     });
     await refreshChannels();
@@ -274,6 +292,7 @@ export function chatPanel(shell) {
     h("h2", {}, t("panel.chat")),
     h("div", { class: "field" }, h("label", { for: "chat-channel" }, t("chat.channel")), channelList),
     lines,
+    h("div", { class: "row-actions" }, voiceButton, voiceLink),
     h("form", { class: "inline", onsubmit: send }, body, h("button", { type: "submit", class: "primary" }, t("chat.send"))),
     h("form", { class: "inline", onsubmit: startWhisper }, whisper, h("button", { type: "submit" }, t("chat.whisper"))),
     problem,
