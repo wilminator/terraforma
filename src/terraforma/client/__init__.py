@@ -23,6 +23,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .. import __doc__ as ENGINE
+from ..animations import AnimationError, check_animation_folder
 from ..game import Game
 
 STATIC = Path(__file__).parent / "static"
@@ -60,6 +61,11 @@ def check_game_client(game: Game) -> None:
         folder = getattr(game, field)
         if folder is not None and not Path(folder).is_dir():
             raise ClientError(f"{field}: {folder} is not a folder")
+    if game.assets_dir is not None:
+        try:
+            check_animation_folder(game.assets_dir)
+        except AnimationError as error:
+            raise ClientError(f"assets_dir: {error}") from error
 
 
 router = APIRouter()

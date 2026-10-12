@@ -32,7 +32,7 @@ from ..relations import ratings
 from ..relations.hooks import Relations
 from ..standing import service as standing
 from ..world.rng import WorldRng
-from . import ai, store, timing
+from . import ai, specs, store, timing
 from .build import known_drop_tables, known_statuses, monster_fighter, team_party
 from .combatant import Address, Command
 from .events import Event
@@ -321,6 +321,35 @@ async def resolve_overdue(sessionmaker: async_sessionmaker, rules: Rules, econom
 
 # --- what a page sees ------------------------------------------------------------------------------------------------
 
+#: The commands a page can ask for by hand, by the names the commands call uses.
+COMMAND_NAMES = {Command.ATTACK_LEFT: "attack_left", Command.ATTACK_RIGHT: "attack_right"}
+
+
+def menu_of(fight, rules: Rules, address: Address) -> dict:
+    """What the fighter at $address could be commanded to do, for a page's command menu: the weapons it can attack with
+    (an empty hand is not offered when the other holds one, and a two-handed weapon is swung by the left hand only), its
+    skills and spells with their cost, its items that do something when used (by their place in its pack, which is the
+    ``using`` of the command), and whether it may flee. ``aim`` says whom each is pointed at (``EffectSpec.aim``)."""
+    fighter = fight.get(address)
+    sides = [(Command.ATTACK_LEFT, "left"), (Command.ATTACK_RIGHT, "right")]
+    armed = [(command, hand) for command, hand in sides if fighter.equipped(f"{hand[0]}hand") is not None and not (command == Command.ATTACK_RIGHT and fighter.hands_share_weapon())]
+    attacks = []
+    for command, hand in armed or [sides[0]]:
+        effect = fighter.weapon_effect(rules, command)
+        held = fighter.equipped(f"{hand[0]}hand")
+        attacks.append({"command": COMMAND_NAMES[command], "hand": hand, "weapon": held.name if held else None, "scope": effect.targets, "aim": "enemy"})
+    abilities = []
+    for index, ability in enumerate(fighter.abilities):
+        resource, cost = rules.ability_cost(ability)
+        abilities.append({"index": index, "key": ability.key, "name": ability.name, "kind": ability.kind, "cost": cost, "resource": resource,
+                          "affordable": fighter.get_current(rules, resource) >= cost, "scope": ability.effect.targets, "aim": ability.effect.aim})
+    items = [
+        {"index": index, "key": item.key, "name": item.name, "quantity": quantity, "scope": item.use_effect.targets, "aim": item.use_effect.aim}
+        for index, (item, quantity) in enumerate(fighter.inventory) if item.use_effect.effect != specs.NONE
+    ]
+    return {"attacks": attacks, "abilities": abilities, "items": items, "can_flee": rules.flee_allowed(fight, address)}
+
+
 async def view(session: AsyncSession, record: FightRecord, rules: Rules, account_id: int | None = None) -> dict:
     """The fight as a page shows it: whose turn to be commanded, who is standing and with how much, which fighters are
     the caller's and have committed, and when the round plays."""
@@ -338,6 +367,7 @@ async def view(session: AsyncSession, record: FightRecord, rules: Rules, account
                 "statuses": [token.spec.key for token in fight.get(address).tokens],
                 "yours": account_id is not None and mine.get(address) == account_id,
                 "committed": address in ready,
+                **({"menu": menu_of(fight, rules, address)} if mine.get(address) == account_id and account_id is not None else {}),
             }
             for address in fight.addresses()
         ],
