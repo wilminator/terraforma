@@ -25,6 +25,7 @@ dependencies = [
     "alembic>=1.14",
     "aiosmtplib>=3.0",
     "cryptography>=43",
+    "httpx2>=2.13",
 ]
 
 [project.optional-dependencies]

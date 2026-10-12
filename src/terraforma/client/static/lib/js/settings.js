@@ -2,6 +2,7 @@
 
 import { get, post } from "./api.js";
 import { h, replace } from "./dom.js";
+import { signInMethodsCard } from "./external.js";
 import { field, formCard, problemText } from "./forms.js";
 
 const CODE = { autocomplete: "one-time-code", required: true, maxlength: 32, inputmode: "text" };
@@ -134,7 +135,7 @@ export function twoFactorCard(shell, status) {
 }
 
 /** The whole signed-in view. */
-export async function accountView(shell, onLogout) {
+export async function accountView(shell, onLogout, redraw) {
   const t = (key, values) => shell.text.get(key, values);
   const status = await get("/api/2fa");
   return h(
@@ -142,7 +143,7 @@ export async function accountView(shell, onLogout) {
     { class: "stack" },
     h("p", { id: "who" }, t("account.signed_in", { username: shell.account.username })),
     h("p", {}, h("a", { href: "/profile/", id: "to-profile" }, t("account.profile"))),
-    h("div", { class: "cards" }, handleCard(shell), emailCard(shell, status.enabled), twoFactorCard(shell, status)),
+    h("div", { class: "cards" }, handleCard(shell), emailCard(shell, status.enabled), await signInMethodsCard(shell, status.enabled, redraw), twoFactorCard(shell, status)),
     h("p", {}, h("button", { type: "button", id: "logout", onclick: onLogout }, t("account.logout"))),
   );
 }

@@ -3,8 +3,10 @@
 // /confirm-2fa). Which one shows comes from the address, so a link in a mail lands on the right card.
 
 import { h, replace } from "./dom.js";
+import { errorText, finishCard, providerButtons, signInMethodsCard, twoFactorStep } from "./external.js";
 import { loginForm } from "./login.js";
 import { registerForm, resetCompleteForm, resetRequestForm } from "./register.js";
+import { get } from "./api.js";
 import { messageCard } from "./forms.js";
 import { accountView } from "./settings.js";
 import { confirmEmail, confirmEmailChange, confirmTwoFactor } from "./tokens.js";
@@ -24,6 +26,11 @@ const WAYS_BACK = { play: "/play/", profile: "/profile/" };
 const next = new URLSearchParams(location.search).get("next");
 const backTo = Object.hasOwn(WAYS_BACK, next) ? next : null;
 
+// A trip to an external sign-in provider ends here with ?external=<outcome> (and ?reason=<word> for an error); read once, then taken out.
+const external = new URLSearchParams(location.search).get("external");
+const externalReason = new URLSearchParams(location.search).get("reason");
+if (external !== null) history.replaceState(null, "", location.pathname + (backTo ? `?next=${backTo}` : "") + location.hash);
+
 const link = (href, textKey, id) => h("a", { href, id }, t(textKey));
 const toLogin = () => h("p", {}, link(backTo ? `/account/?next=${backTo}` : "/account/", "account.log_in", "to-login"));
 
@@ -37,7 +44,7 @@ function show(titleKey, ...children) {
 }
 
 /** Logging in, with the ways to a new account and a new password beside it. */
-function showLogin(message = null) {
+async function showLogin(message = null) {
   show(
     "login.title",
     message,
@@ -46,20 +53,50 @@ function showLogin(message = null) {
       if (backTo) return location.assign(WAYS_BACK[backTo]);
       await showAccount();
     }),
+    await providerButtons(shell, backTo),
     h("p", { class: "links" }, link("#register", "login.register", "to-register"), " · ", link("#reset", "login.forgot", "to-reset")),
   );
 }
 
-async function showAccount() {
+async function showAccount(message = null) {
   await shell.restore(); // the handle comes with the session, not with the login
   title("account.title");
   replace(
     main,
+    message,
     await accountView(shell, async () => {
       await shell.logout();
       showLogin();
-    }),
+    }, () => showAccount()),
   );
+}
+
+/** Where a trip to an external sign-in provider ended up (the server sent the browser back with the outcome in the address). */
+async function showExternal() {
+  const done = async (login) => {
+    shell.signedIn(login);
+    const target = Object.hasOwn(WAYS_BACK, login.next) ? login.next : backTo;
+    if (target) return location.assign(WAYS_BACK[target]);
+    await showAccount();
+  };
+  switch (external) {
+    case "done":
+      if (await shell.restore()) return backTo ? location.replace(WAYS_BACK[backTo]) : showAccount();
+      return showLogin(h("p", { class: "problem", role: "alert" }, errorText(shell, "expired")));
+    case "twofa":
+      return show("external.twofa_title", twoFactorStep(shell, done), toLogin());
+    case "finish": {
+      const { pending } = await get("/api/external/pending");
+      if (!pending) return showLogin();
+      return show("external.finish_title", finishCard(shell, pending, done), toLogin());
+    }
+    case "linked":
+      return showAccount(h("p", { class: "note", role: "status", id: "external-note" }, t("external.linked")));
+    default: {
+      const problem = h("p", { class: "problem", role: "alert", id: "external-problem" }, errorText(shell, externalReason));
+      return (await shell.restore()) ? showAccount(problem) : showLogin(problem);
+    }
+  }
 }
 
 function showRegister() {
@@ -124,6 +161,7 @@ async function route() {
     case "/confirm-2fa":
       return twoFactorPage();
     default:
+      if (external !== null) return showExternal();
       if (await shell.restore()) return backTo ? location.replace(WAYS_BACK[backTo]) : showAccount();
       if (location.hash === "#register") return showRegister();
       if (location.hash === "#reset") return showReset();
