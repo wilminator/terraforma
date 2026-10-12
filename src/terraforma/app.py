@@ -37,6 +37,7 @@ from .challenge.routes import router as challenge_router
 from .guild.routes import router as guild_router
 from .standing.routes import router as standing_router
 from .maps.routes import router as maps_router
+from .monsterplay.routes import router as monsters_router
 from .market.routes import router as market_router
 from .npcs.routes import router as npcs_router
 from .reach.routes import router as reach_router
@@ -136,6 +137,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(standing_router)
     app.include_router(parties_router)
     app.include_router(maps_router)
+    app.include_router(monsters_router)
 
     @app.get("/api/about")
     async def about(request: Request) -> dict:

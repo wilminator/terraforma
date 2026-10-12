@@ -24,6 +24,8 @@ from .. import wallclock
 from ..economy import Economy
 from ..heroes.models import Hero, Team
 from ..models import Map, World
+from ..monsterplay import service as seating
+from ..monsterplay.models import MonsterSeat
 from ..parties import service as parties
 from ..parties.models import Party
 from ..relations import ratings
@@ -84,10 +86,12 @@ def _groups(fighters: list, size: int) -> dict[int, list]:
 
 
 async def start_team_fight(session: AsyncSession, team: Team, monster_keys: list[str], rules: Rules, area_drops: list[str] | None = None,
-                           can_flee: bool | None = None) -> FightRecord:
+                           can_flee: bool | None = None, monster_play: bool = False, relations: Relations | None = None) -> FightRecord:
     """A fight between a player's team (party 0) and monsters (party 1), where the team's first hero stands. The round
     clock starts now. $area_drops are the keys of the area's own drop tables, rolled when the team wins (the zone's where the fight is, unless given).
-    $can_flee says whether fighters may flee (the zone's ``can_flee`` where the fight is, unless given; a scripted fight passes False). Raises Refused for a team with no heroes, no monsters, too many of them, or a hero who is in a
+    $can_flee says whether fighters may flee (the zone's ``can_flee`` where the fight is, unless given; a scripted fight passes False).
+    $monster_play says whether a volunteer may command the monsters (``monsterplay``): the longest-waiting one the rules accept is
+    seated now, judged with $relations (the engine's defaults if none). Raises Refused for a team with no heroes, no monsters, too many of them, or a hero who is in a
     fight already."""
     heroes, teams = await team_party(session, team, rules)
     if not heroes:
@@ -121,12 +125,14 @@ async def start_team_fight(session: AsyncSession, team: Team, monster_keys: list
         own.steps = 0
     record.time_multiplier = multiplier
     record.round_deadline = wallclock.now() + timedelta(seconds=rules.round_length(multiplier))
+    record.monster_play = monster_play
     await session.flush()
+    await seating.seat(session, rules, relations or Relations(), record)
     return record
 
 
 async def start_party_fight(session: AsyncSession, party_id: int, monster_keys: list[str], rules: Rules, area_drops: list[str] | None = None,
-                            can_flee: bool | None = None) -> FightRecord:
+                            can_flee: bool | None = None, monster_play: bool = False, relations: Relations | None = None) -> FightRecord:
     """A fight between a whole party (every team of it, side 0) and monsters (side 1), at the party's spot. Like ``start_team_fight``,
     which it shares its refusals with."""
     party = await session.get(Party, party_id)
@@ -165,7 +171,9 @@ async def start_party_fight(session: AsyncSession, party_id: int, monster_keys: 
     party.steps = 0  # the walk to the next fight starts over (``Map.safe_steps``)
     record.time_multiplier = multiplier
     record.round_deadline = wallclock.now() + timedelta(seconds=rules.round_length(multiplier))
+    record.monster_play = monster_play
     await session.flush()
+    await seating.seat(session, rules, relations or Relations(), record)
     return record
 
 
@@ -349,6 +357,7 @@ async def view(session: AsyncSession, record: FightRecord, rules: Rules, account
     mine, ready = await owners(session, record), await waiting(session, record, played + 1)
     return {
         "id": record.id, "guid": record.guid, "round": played + 1, "over": fight.over or record.finished, "vital": rules.vital,
+        "monster_play": record.monster_play, "monsters_played": await session.get(MonsterSeat, record.id) is not None,
         "deadline": aware(record.round_deadline).isoformat() if record.round_deadline else None,
         "fighters": [
             {
