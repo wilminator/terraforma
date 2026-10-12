@@ -9,7 +9,7 @@ from pydantic import Field
 from ..accounts import ratelimit
 from ..accounts.routes import Strict, limited
 from ..alliances import service as alliances
-from ..api.deps import ActingAccount, CurrentAccount, Db, GameAlliances, client_address
+from ..api.deps import ActingAccount, CurrentAccount, Db, GameAlliances, Viewer, client_address
 from ..heroes.routes import Id
 from . import service
 from .models import BIO_MAX, TOKEN_MAX
@@ -81,6 +81,14 @@ async def set_directory(body: Directory, request: Request, account: ActingAccoun
     return await service.mine(db, account)
 
 
+@router.put("/profile/directory-link")
+async def set_directory_link(body: Directory, request: Request, account: ActingAccount, db: Db) -> dict:
+    """Shows (or hides) the link to the player's page next to their handle when others search the directory (hidden until the player says so)."""
+    await limited(request, ratelimit.PROFILE_BY_ACCOUNT, str(account.id))
+    await service.set_directory_link(db, account, body.enabled)
+    return await service.mine(db, account)
+
+
 @router.put("/profile/team-visible")
 async def set_visible(body: Visible, request: Request, account: ActingAccount, db: Db) -> dict:
     await limited(request, ratelimit.PROFILE_BY_ACCOUNT, str(account.id))
@@ -137,6 +145,16 @@ async def alliance_bio(alliance_id: Id, body: Bio, request: Request, account: Ac
         raise refuse(error) from error
 
 
+@router.get("/alliances/{alliance_id}/roster")
+async def roster(alliance_id: Id, account: CurrentAccount, db: Db) -> list[dict]:
+    """The alliance's teams for its members: a team's page token only while it is visible, and its player's handle and page token
+    only if the player is in the directory (a hidden team is its name alone)."""
+    try:
+        return await service.member_roster(db, account, alliance_id)
+    except FAILURES as error:
+        raise refuse(error) from error
+
+
 @router.get("/alliances/{alliance_id}/teams/{team_id}/profile")
 async def member_team_page(alliance_id: Id, team_id: Id, account: CurrentAccount, db: Db) -> dict:
     """A visible team's page for the members of its alliance (with the player's page, if the player is in the directory)."""
@@ -153,10 +171,10 @@ async def _look(request: Request) -> None:
 
 
 @router.get("/p/team/{token}")
-async def team_page(request: Request, db: Db, token: Token) -> dict:
+async def team_page(request: Request, db: Db, token: Token, viewer: Viewer) -> dict:
     await _look(request)
     try:
-        return await service.team_page(db, token)
+        return await service.team_page(db, token, viewer)
     except service.ProfileError as error:
         raise refuse(error) from error
 
@@ -171,9 +189,9 @@ async def alliance_page(request: Request, db: Db, token: Token) -> dict:
 
 
 @router.get("/p/{token}")
-async def player_page(request: Request, db: Db, token: Token) -> dict:
+async def player_page(request: Request, db: Db, token: Token, viewer: Viewer) -> dict:
     await _look(request)
     try:
-        return await service.player_page(db, token)
+        return await service.player_page(db, token, viewer)
     except service.ProfileError as error:
         raise refuse(error) from error

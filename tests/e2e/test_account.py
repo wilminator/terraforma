@@ -176,6 +176,7 @@ def test_a_two_factor_link_opened_logged_out_asks_for_the_login_first(page, live
     page.get_by_role("button", name="Turn on").click()
     expect(page.get_by_text("A link to confirm this is on its way")).to_be_visible()
     page.get_by_role("button", name="Log out").click()
+    expect(page.get_by_role("heading", name="Log in")).to_be_visible()  # the logout has finished: the link below is opened logged out
 
     page.goto(f"/confirm-2fa?token={token_in(mailbox.last_to('mike@example.com'))}")
     expect(page.get_by_text("Log in to the account this link was made for to finish.")).to_be_visible()
