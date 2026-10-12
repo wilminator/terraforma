@@ -18,6 +18,7 @@ from .alliances.models import Ballot, BallotVote, BallotVoter
 from .fights.models import PendingDrop
 from .fights.pending import OPEN, expire
 from .models import RateLimitHit
+from .oidc import service as oidc
 from .relations.models import ANSWERED, DISMISSED, RatingPrompt
 from .settings import Settings
 from .standing import service as standing
@@ -92,6 +93,12 @@ async def old_settled_rating_prompts(session: AsyncSession, now: int, settings: 
 async def ended_standing_statuses(session: AsyncSession, now: int, settings: Settings) -> int:
     """Standing statuses whose end time has passed. Every read already leaves them out, so this only tidies the rows."""
     return len(await standing.sweep(session))
+
+
+@job
+async def expired_oidc_codes_and_tokens(session: AsyncSession, now: int, settings: Settings) -> int:
+    """Sign-in provider codes and access tokens that have run out. Nothing accepts them any more; this only tidies the rows."""
+    return await oidc.remove_expired(session, now)
 
 
 async def run(sessionmaker: async_sessionmaker[AsyncSession], settings: Settings) -> dict[str, int]:

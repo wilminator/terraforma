@@ -21,11 +21,17 @@ if (token !== null) history.replaceState(null, "", location.pathname + location.
 // The game's page sends a logged-out player here with ?next=play (the profile page, ?next=profile; the alliance pages, ?next=alliances); once they are in, they go
 // back. Only those names are understood, never an address, so the link can't be used to send a player somewhere else.
 const WAYS_BACK = { play: "/play/", profile: "/profile/", alliances: "/alliances/" };
-const next = new URLSearchParams(location.search).get("next");
+const asked = new URLSearchParams(location.search);
+const next = asked.get("next");
+// The sign-in provider (oidc/routes.py) sends a player here with ?next=oidc&request=<the site's request, signed by the server>; once they are in, they
+// go to /oidc/resume with it, which carries on with the request. It is checked there; the page never follows it as an address.
+const oidcRequest = asked.get("request");
+if (next === "oidc" && oidcRequest) WAYS_BACK.oidc = `/oidc/resume?request=${encodeURIComponent(oidcRequest)}`;
 const backTo = Object.hasOwn(WAYS_BACK, next) ? next : null;
+const loginAddress = backTo === "oidc" ? `/account/?next=oidc&request=${encodeURIComponent(oidcRequest)}` : backTo ? `/account/?next=${backTo}` : "/account/";
 
 const link = (href, textKey, id) => h("a", { href, id }, t(textKey));
-const toLogin = () => h("p", {}, link(backTo ? `/account/?next=${backTo}` : "/account/", "account.log_in", "to-login"));
+const toLogin = () => h("p", {}, link(loginAddress, "account.log_in", "to-login"));
 
 function title(key) {
   document.title = `${t(key)} · ${shell.game.game ?? "TerraForma"}`;

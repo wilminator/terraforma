@@ -35,6 +35,14 @@ key_dir = "keys"
 # POST /api/server/challenge/purchase, sending "Authorization: Bearer <this secret>". Empty or absent: the call is off.
 # challenge_purchase_secret = ""
 
+# Sites that may sign players in with their game account (the engine as an OpenID Connect provider, for the store).
+# Leave this out and the provider is off. See README, "The engine as a sign-in provider".
+# [[oidc_clients]]
+# client_id = "store"
+# client_secret = "at least 32 random characters"
+# redirect_uris = ["https://store.example.com/callback"]
+# name = "The store"
+
 # Outgoing mail. Leave this section out for development: messages are then
 # written as .eml files to outbox_dir (default "outbox") instead of sent.
 # Cloudflare: port 465 with implicit TLS; the API key is both username and password.

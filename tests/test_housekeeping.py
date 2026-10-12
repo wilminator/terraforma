@@ -204,4 +204,5 @@ def test_every_housekeeping_job_is_registered_and_so_runs():
         "old_closed_ballots",
         "old_settled_rating_prompts",
         "ended_standing_statuses",
+        "expired_oidc_codes_and_tokens",
     ]
