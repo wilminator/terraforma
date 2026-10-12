@@ -77,6 +77,10 @@ class Rules:
     #: counts at most this many seconds, so a closed tab does not earn.
     play_credit_seconds: int = 10
     playback_cap_seconds: int = 300
+    #: How many players one may follow (``terraforma.social``): this many to begin with and one more for every this many
+    #: seconds played (``terraforma.playtime``), so the list grows with the player.
+    follow_base: int = 10
+    follow_seconds_each: int = 3600
     #: A drop's chance is out of this (10000: one in ten thousand is the rarest, 10000 is a sure thing).
     drop_chance_scale: int = 10000
     #: Whether the area's drop tables (the map's) roll once for the fight (the default) or for every monster that dies.
@@ -97,6 +101,10 @@ class Rules:
     def time_bonus(self, multiplier: float) -> float:
         """The share of extra max HP monsters get against a player who chose $multiplier (0 for one that is not offered)."""
         return dict(self.time_multipliers).get(multiplier, 0.0)
+
+    def follow_cap(self, seconds_played: int) -> int:
+        """How many players one who has played $seconds_played seconds may follow."""
+        return self.follow_base + max(0, seconds_played) // self.follow_seconds_each
 
     @property
     def vital(self) -> str:
