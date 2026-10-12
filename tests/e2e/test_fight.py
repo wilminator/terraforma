@@ -309,3 +309,15 @@ def test_a_fight_played_to_its_end_says_so_and_the_player_leaves_it_for_the_map(
     expect(page.locator("#stage-view")).to_be_visible()
     expect(stage).not_to_have_attribute("data-fight", str(fight))
     assert page.evaluate("window.__sameDocument") is True
+
+
+def test_a_round_shown_to_the_end_counts_as_play_time(page, live_server):
+    """The stage tells the server when it has finished showing a round (the playback-done call), which counts toward the player's play time."""
+    fight = into_the_marsh(page, live_server)
+    faster(page)
+    seen = []
+    page.on("response", lambda response: seen.append((response.status, response.request.post_data)) if response.url.endswith(f"/api/fights/{fight}/playback-done") else None)
+    play_round(page, fight)
+    page.wait_for_timeout(500)
+    assert seen == [(200, '{"round":1}')], "once, for the round shown"
+    assert page.request.get("/api/play-time").json()["seconds"] >= 10

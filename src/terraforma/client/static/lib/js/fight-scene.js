@@ -154,6 +154,8 @@ export class FightScene {
       if (run !== this.run) return;
       this.model.endRound(round.round, round.over, round.deadline);
       this.#paint();
+      // Playing the round out counts as play time (up to the game's cap since it played); a failure here is not the player's concern.
+      api.post(`/api/fights/${this.model.id}/playback-done`, { round: round.round }).catch(() => {});
     }
     if (run !== this.run) return;
     if (!this.model.over) await this.refreshMenu(run);

@@ -10,6 +10,7 @@
 import { dialogPanel } from "./dialog.js";
 import { h, replace } from "./dom.js";
 import { nearbyPanel } from "./nearby.js";
+import { packPanel } from "./pack.js";
 import { partyPanel } from "./party.js";
 import { teamsPanel } from "./teams.js";
 
@@ -29,6 +30,7 @@ export class Panels {
     this.add("party", partyPanel);
     this.add("nearby", nearbyPanel);
     this.add("dialog", dialogPanel);
+    this.add("pack", packPanel);
   }
 
   /** Opens the panel (leaving it open if it already is): the nearby list opens the talk panel when a conversation starts. */

@@ -35,8 +35,13 @@ EMAIL_CHANGE_BY_ACCOUNT = Limit("email-change", 5, 60 * 60)
 TRADE_BY_ACCOUNT = Limit("trade", 120, 60 * 60)
 DROP_BY_ACCOUNT = Limit("drop", 120, 60 * 60)
 RELATION_BY_ACCOUNT = Limit("relation", 120, 60 * 60)
+CHAT_BY_ACCOUNT = Limit("chat", 600, 60 * 60)
+CHAT_REPORT_BY_ACCOUNT = Limit("chat-report", 60, 60 * 60)
 ALLIANCE_BY_ACCOUNT = Limit("alliance", 120, 60 * 60)
 PROFILE_BY_ACCOUNT = Limit("profile", 60, 60 * 60)
+SOCIAL_BY_ACCOUNT = Limit("social", 120, 60 * 60)
+# Every search of the directory counts against the searcher.
+DIRECTORY_BY_ACCOUNT = Limit("directory", 60, 15 * 60)
 MONSTER_QUEUE_BY_ACCOUNT = Limit("monster-queue", 600, 60 * 60)
 # Public pages need no login: this keeps anyone from hunting for tokens.
 PUBLIC_PROFILE_BY_ADDRESS = Limit("profile-public", 120, 15 * 60)

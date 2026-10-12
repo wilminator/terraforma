@@ -93,6 +93,8 @@ class FightActionRecord(Base):
     hash: Mapped[str] = mapped_column(String(64))
     # The fight after the round, kept only when asked (to check replays against).
     final_state: Mapped[dict | None] = mapped_column(ExactJSON)
+    # When the round was played (the wall clock): where its playback starts, for play time (``playtime``). Not part of the hash.
+    played_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class FightCommandRecord(Base):
