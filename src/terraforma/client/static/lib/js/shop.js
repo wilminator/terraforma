@@ -19,12 +19,14 @@ export function shopActivity({ shell, heroId, finish, problem }) {
   const quantity = (label, max) => h("input", { type: "number", min: "1", max: String(max), value: "1", "aria-label": label, class: "qty" });
 
   function ware(item) {
-    const qty = quantity(t("shop.qty_label", { name: item.name }), 99);
+    // Equipment does not stack: the server sells it one at a time, so the box is not offered.
+    const qty = item.stacks === false ? null : quantity(t("shop.qty_label", { name: item.name }), 99);
+    const count = () => (qty ? Number(qty.value) : 1);
     return h(
       "li",
       { class: "row", "data-ware": item.name },
       h("span", {}, h("strong", {}, item.name), ` ${t("shop.price", { price: item.price })}`),
-      h("div", { class: "inline" }, qty, h("button", { type: "button", "aria-label": t("shop.buy_label", { name: item.name }), onclick: () => trade("buy", { item: item.item, qty: Number(qty.value) }) }, t("shop.buy"))),
+      h("div", { class: "inline" }, qty, h("button", { type: "button", "aria-label": t("shop.buy_label", { name: item.name }), onclick: () => trade("buy", { item: item.item, qty: count() }) }, t("shop.buy"))),
     );
   }
 
@@ -56,7 +58,10 @@ export function shopActivity({ shell, heroId, finish, problem }) {
     attempt(shell, problem, async () => {
       const answer = await api.post(`${shop}/${how}`, body);
       await load();
-      note.textContent = how === "buy" ? t("shop.bought", { count: answer.bought, cost: answer.cost }) : t("shop.sold", { count: answer.sold, gain: answer.paid });
+      note.textContent =
+        how === "buy"
+          ? [t("shop.bought", { count: answer.bought, cost: answer.cost }), answer.not_fitting ? t("shop.not_fitting", { count: answer.not_fitting }) : ""].filter(Boolean).join(" ")
+          : t("shop.sold", { count: answer.sold, gain: answer.paid });
     });
   }
 
