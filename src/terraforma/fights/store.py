@@ -34,6 +34,8 @@ from .events import Event, EventType
 from .fight import Fight
 from . import pending
 from ..challenge import service as challenge
+from ..monsterplay import service as seating
+from ..monsterplay.models import MonsterSeat
 from .models import FightActionRecord, FightJoinRecord, FightParticipant, FightRecord
 from .replay import apply_events
 from .resolve import do_combat, fight_stream
@@ -128,6 +130,13 @@ def _replayed(initial_state: dict, rules: Rules, logged: list[FightActionRecord]
     return fight
 
 
+async def _replayed_for(session: AsyncSession, record: FightRecord, rules: Rules, logged: list[FightActionRecord]) -> Fight:
+    """``_replayed``, told which parties a player commanded (the seats of ``monsterplay``), which the end of the fight pays for."""
+    fight = _replayed(record.initial_state, rules, logged)
+    fight.player_parties = set((await session.scalars(select(MonsterSeat.party).where(MonsterSeat.fight_id == record.id))).all())
+    return fight
+
+
 async def pending_joins(session: AsyncSession, record: FightRecord) -> list[Event]:
     """The ``PartyJoined`` events of the parties that joined and have not acted in a round yet, in the order they joined."""
     rows = await session.scalars(select(FightJoinRecord).where(FightJoinRecord.fight_id == record.id).order_by(FightJoinRecord.party))
@@ -138,7 +147,7 @@ async def load_state(session: AsyncSession, record: FightRecord, rules: Rules) -
     """The fight as it stands now (the initial state with every round replayed, then the parties that joined since), and how many
     rounds have been played."""
     logged = await actions(session, record)
-    fight = _replayed(record.initial_state, rules, logged)
+    fight = await _replayed_for(session, record, rules, logged)
     apply_events(fight, rules, await pending_joins(session, record))
     return fight, len(logged)
 
@@ -165,7 +174,7 @@ async def play_round(session: AsyncSession, record: FightRecord, commands: list[
     Raises SequenceConflict if another call played the same round first, and FightOver if the fight has ended.
     """
     logged = await actions(session, record)
-    fight = _replayed(record.initial_state, rules, logged)
+    fight = await _replayed_for(session, record, rules, logged)
     if fight.over:
         raise FightOver(f"fight {record.id} is over")
     sequence = len(logged) + 1
@@ -233,7 +242,7 @@ async def verify(session: AsyncSession, record: FightRecord, rules: Rules, *, de
         previous = action.hash
     if deep:
         for number, action in enumerate(logged, start=1):
-            fight = _replayed(record.initial_state, rules, logged[: number - 1])
+            fight = await _replayed_for(session, record, rules, logged[: number - 1])
             joined = [each for each in action.events if each[0] == EventType.PARTY_JOINED.value]  # (they come first in the round)
             apply_events(fight, rules, [Event.from_list(each) for each in joined])
             _set_commands(fight, action.commands)
@@ -292,6 +301,7 @@ async def apply_results(session: AsyncSession, record: FightRecord, rules: Rules
     await save_drops(session, record, fight)
     await save_relations(session, record, relations or Relations())
     await challenge.pay_fight(session, record, fight, rules)
+    await seating.settle(session, rules, record, fight)
     return updated
 
 
