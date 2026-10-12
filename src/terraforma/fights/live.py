@@ -319,7 +319,7 @@ async def view(session: AsyncSession, record: FightRecord, rules: Rules, account
     fight, played = await store.load_state(session, record, rules)
     mine, ready = await owners(session, record), await waiting(session, record, played + 1)
     return {
-        "id": record.id, "guid": record.guid, "round": played + 1, "over": fight.over or record.finished,
+        "id": record.id, "guid": record.guid, "round": played + 1, "over": fight.over or record.finished, "vital": rules.vital,
         "deadline": aware(record.round_deadline).isoformat() if record.round_deadline else None,
         "fighters": [
             {

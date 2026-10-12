@@ -16,6 +16,7 @@ import { teamsPanel } from "./teams.js";
 export class Panels {
   entries = [];
   #opener = null;
+  #closer = null;
 
   add(id, build) {
     if (this.entries.some((entry) => entry.id === id)) throw new Error(`There is already a panel called "${id}".`);
@@ -35,8 +36,14 @@ export class Panels {
     this.#opener?.(id);
   }
 
-  setOpener(opener) {
+  /** Closes whatever panel is open (a fight needs the whole stage). */
+  close() {
+    this.#closer?.();
+  }
+
+  setOpener(opener, closer = null) {
     this.#opener = opener;
+    this.#closer = closer;
   }
 }
 
@@ -69,9 +76,15 @@ export function mountPanels(shell, roster, first) {
     if (open) shown.get(open).show?.();
   }
 
-  shell.panels.setOpener((id) => {
-    if (shown.has(id) && open !== id) toggle(id);
-  });
+  shell.panels.setOpener(
+    (id) => {
+      if (shown.has(id) && open !== id) toggle(id);
+    },
+    () => {
+      open = null;
+      draw();
+    },
+  );
 
   replace(
     buttons,

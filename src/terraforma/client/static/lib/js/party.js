@@ -34,6 +34,7 @@ export function partyPanel(shell, roster) {
       } else if (path === "town/ready") {
         town = answer;
         note.textContent = answer.fight ? t("party.fight_started") : t(answer.in_town ? "party.waiting" : "party.left");
+        if (answer.fight) shell.emit("fight", { fight: answer.fight });
       } else {
         town = answer;
         note.textContent = t(done);

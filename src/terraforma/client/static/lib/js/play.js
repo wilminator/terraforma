@@ -1,7 +1,9 @@
-// The game client's page, the one page of the game: the stage (the map, later the fight) and the panels over it. Nothing in the
+// The game client's page, the one page of the game: the stage (the map, or a fight) and the panels over it. Nothing in the
 // game loads another page. A player who is not logged in is sent to the account page and comes back.
 
+import * as api from "./api.js";
 import { h, replace } from "./dom.js";
+import { FightScene } from "./fight-scene.js";
 import { problemText } from "./forms.js";
 import { MapScene } from "./map-scene.js";
 import { mountPanels } from "./panels.js";
@@ -19,7 +21,7 @@ function toLogin() {
 }
 
 async function showGame() {
-  // The stage is the one picture of the game: the map now, the fight later, both drawn on this canvas at the design resolution.
+  // The stage is the one picture of the game, at the design resolution: the map is drawn on this canvas, a fight in a layer over it.
   const view = h("canvas", { class: "stage-view", id: "stage-view", width: String(DESIGN_WIDTH), height: String(DESIGN_HEIGHT) });
   const canvas = h("div", { class: "stage-canvas", id: "stage-canvas" }, view);
   const stage = h("div", { class: "stage", id: "stage", role: "application", tabindex: "0", "aria-label": t("play.stage") }, canvas);
@@ -45,8 +47,37 @@ async function showGame() {
   const { buttons, drawer } = mountPanels(shell, roster, roster.teams.length ? null : "teams");
   replace(tabs, buttons);
   main.append(drawer);
-  new MapScene(shell, roster, { stage, canvas: view, note });
+  const map = new MapScene(shell, roster, { stage, canvas: view, note });
+  const fight = new FightScene(shell, { stage, host: canvas });
+  stage.dataset.scene = "map";
+
+  // The fight is another scene of the same stage: the map lets go of it while a fight is shown, and takes it back when the player leaves.
+  async function enterFight(id) {
+    if (!(await fight.enter(id, (text) => (note.textContent = text)))) return;
+    map.suspend();
+    shell.panels.close(); // (a panel over the stage's right side would cover half the fight)
+    view.style.display = "none";
+    stage.dataset.scene = "fight";
+    stage.focus();
+  }
+  async function leaveFight() {
+    fight.close();
+    view.style.display = "";
+    stage.dataset.scene = "map";
+    await roster.load(); // (a fight pays out: levels, gold and drops)
+    await map.resume();
+  }
+  shell.on("fight", ({ fight: id }) => enterFight(id));
+  stage.addEventListener("fight-leave", leaveFight);
   shell.emit("game", { roster });
+
+  // A page that opens in the middle of a fight (a reload) goes straight back to it.
+  try {
+    const [running] = await api.get("/api/fights?running=true&limit=1");
+    if (running) await enterFight(running.id);
+  } catch (error) {
+    problem.textContent = problemText(shell, error);
+  }
 }
 
 async function main() {

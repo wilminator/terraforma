@@ -2,7 +2,8 @@
 // centered on the party), and the party's walk over it. The server decides everything: a tap proposes a route (the server fills in the
 // gaps or says why not), the party walks it one tile at a time and the server confirms each tile; if it does not, the party is put
 // back where it really is. A walk stops at a fight, a town or the event at an edge of the map; a chest, door or sign runs its script
-// in the Talk panel. (The fight itself is the next scene, drawn on this same stage.)
+// in the Talk panel. A fight is another scene of the same stage (fight-scene.js): the shell is told ("fight") and this scene is
+// suspended until the fight is left.
 
 import * as api from "./api.js";
 import { frameRect } from "./art.js";
@@ -41,12 +42,26 @@ export class MapScene {
     this.tile = { x: 0, y: 0 }; // where the server says the party is
     this.at = { x: 0, y: 0 }; // where it is drawn (between tiles while it walks)
     this.walking = false;
+    this.suspended = false; // a fight has the stage
     this.t = (key, values) => shell.text.get(key, values);
     canvas.addEventListener("pointerdown", (event) => this.#tapped(event));
     stage.addEventListener("keydown", (event) => this.#key(event));
     roster.onChange(() => this.#follow());
     shell.conversation.onChange(() => this.#conversationMoved());
     this.#follow();
+  }
+
+  /** Lets go of the stage (a fight is shown on it): the map ignores taps and keys and stops walking. */
+  suspend() {
+    this.suspended = true;
+    this.walking = false;
+    this.#data();
+  }
+
+  /** Takes the stage back and asks where the party is (the fight may have moved it or ended its walk). */
+  async resume() {
+    this.suspended = false;
+    await this.refresh();
   }
 
   // --- which party the stage shows -----------------------------------------------------------------
@@ -207,7 +222,7 @@ export class MapScene {
   // --- input ---------------------------------------------------------------------------------------
 
   #tapped(event) {
-    if (!this.map) return;
+    if (!this.map || this.suspended) return;
     const rect = this.canvas.getBoundingClientRect();
     const corner = viewCorner(this.map, this.at.x + TILE / 2, this.at.y + TILE / 2);
     const spot = tileAt(corner, ((event.clientX - rect.left) * DESIGN_WIDTH) / rect.width, ((event.clientY - rect.top) * DESIGN_HEIGHT) / rect.height);
@@ -225,7 +240,7 @@ export class MapScene {
 
   #key(event) {
     const move = KEYS[event.key];
-    if (!move || !this.map || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (!move || !this.map || this.suspended || event.ctrlKey || event.metaKey || event.altKey) return;
     event.preventDefault();
     this.goTo({ x: this.tile.x + move[0], y: this.tile.y + move[1] });
   }
@@ -234,7 +249,7 @@ export class MapScene {
 
   /** Proposes a route to $tile and walks it; whatever the server refuses is said in the note. */
   async goTo(tile) {
-    if (this.walking || this.partyId === null) return;
+    if (this.walking || this.suspended || this.partyId === null) return;
     this.#say("");
     const id = this.partyId;
     this.walking = true;
@@ -257,6 +272,7 @@ export class MapScene {
         this.tile = { x: answer.x, y: answer.y };
         if (answer.fight) {
           this.#say(this.t("map.fight"));
+          this.shell.emit("fight", { fight: answer.fight });
           break;
         }
         if (answer.town) {
