@@ -66,6 +66,11 @@ def listing(events):
     return [(each.type.value, *each.data) for each in events]
 
 
+def acts(events):
+    """What the fighters did, without the defenders being told (the idle fighter in these tests defends)."""
+    return [each for each in listing(events) if each[0] != "Defend"]
+
+
 def duel(attacker=None, defender=None):
     attacker, defender = attacker or fighter("A"), defender or fighter("B")
     return build_fight({0: {0: [attacker]}, 1: {0: [defender]}}), attacker, defender
@@ -211,10 +216,22 @@ def test_a_blow_that_lands_is_a_turn_an_attack_a_target_and_damage():
     events = do_combat(fight, RULES, Scripted(100, 10))  # Speed roll, then a hit roll of 10
     # A 50% chance and a roll of 10: hit_damage(10, 10, 50, 10) is 4, halved by defending.
     assert listing(events) == [
-        ("Turn", 0, 0, 0), ("Attack", None, "left", 0), ("Target", 1, 0, 0, 0), ("Damage", 1, 0, 0, 2, False),
+        ("Defend", 1, 0, 0), ("Turn", 0, 0, 0), ("Attack", None, "left", 0), ("Target", 1, 0, 0, 0), ("Damage", 1, 0, 0, 2, False),
         ("XpDebt", 1, 0, 0, 0, 0, 0, 0.1, RULES.pxp(defender)),  # 2 of 20 life: it owes the attacker for it
     ]
     assert defender.current["HP"] == 18
+
+
+def test_a_fighter_that_defends_is_told_at_the_start_of_the_round_and_one_that_is_down_is_not():
+    fight, attacker, defender = duel(fighter("A"), fighter("B"))
+    attacker.command, attacker.target = Command.ATTACK_LEFT, (1, 0, 0)
+    defender.command = Command.DEFEND
+    events = do_combat(fight, RULES, Scripted(100, 90))
+    assert listing(events)[0] == ("Defend", 1, 0, 0) and listing(events)[1] == ("Turn", 0, 0, 0), "before anyone acts, with its address"
+    assert [each for each in listing(events) if each[0] == "Defend"] == [("Defend", 1, 0, 0)], "once, and the attacker is not told"
+    fallen_fight, _attacker, fallen = duel(fighter("A"), fighter("B"))
+    fallen.command, fallen.current["HP"] = Command.DEFEND, 0
+    assert ("Defend", 1, 0, 0) not in listing(do_combat(fallen_fight, RULES, Scripted(100)))
 
 
 def test_a_miss_is_reported_and_does_no_damage():
@@ -267,7 +284,7 @@ def test_a_weapon_in_the_hand_is_what_strikes_and_a_two_handed_one_leaves_the_ri
     hero.command, hero.target = Command.ATTACK_RIGHT, (1, 0, 0)
     fight, hero, foe = duel(hero, fighter("foe", HP=50))
     events = do_combat(fight, RULES, Scripted(100))
-    assert listing(events) == [("Turn", 0, 0, 0)], "the right hand of a two-handed weapon has nothing to swing"
+    assert acts(events) == [("Turn", 0, 0, 0)], "the right hand of a two-handed weapon has nothing to swing"
 
 
 def test_gear_adds_to_stats_only_for_the_hand_that_acts():
@@ -478,7 +495,7 @@ def test_changing_weapons_takes_the_old_one_off_first_and_says_what_changed():
     hero.command, hero.using, hero.target = Command.EQUIP, 1, (0, 0, 0)
     fight, hero, foe = duel(hero)
     events = do_combat(fight, RULES, Scripted(100))
-    assert listing(events) == [("Turn", 0, 0, 0), ("UnequipSlot", "lhand"), ("EquipSlot", 1, "lhand"), ("Equip", "axe")]
+    assert acts(events) == [("Turn", 0, 0, 0), ("UnequipSlot", "lhand"), ("EquipSlot", 1, "lhand"), ("Equip", "axe")]
     assert hero.equipment["lhand"] == 1
 
 
@@ -488,18 +505,18 @@ def test_putting_a_weapon_away_and_loading_ammunition():
     hero.command, hero.using, hero.target = Command.EQUIP_AMMO, 0, (0, 1, 0)
     fight, hero, foe = duel(hero)
     events = do_combat(fight, RULES, Scripted(100))
-    assert listing(events) == [("Turn", 0, 0, 0), ("EquipSlot", 0, "lhand"), ("EquipSlot", 1, "lammo"), ("Equip", "bow", "arrow")]
+    assert acts(events) == [("Turn", 0, 0, 0), ("EquipSlot", 0, "lhand"), ("EquipSlot", 1, "lammo"), ("Equip", "bow", "arrow")]
     hero.command, hero.using, hero.target = Command.EQUIP, -1, (0, 0, 0)
     events = do_combat(fight, RULES, Scripted(100))
     assert hero.equipment == {"lhand": None, "lammo": None}
-    assert [each[0] for each in listing(events)] == ["Turn", "Unequip", "UnequipSlot", "UnequipSlot"]
+    assert [each[0] for each in acts(events)] == ["Turn", "Unequip", "UnequipSlot", "UnequipSlot"]
 
 
 def test_a_command_that_makes_no_sense_just_passes_the_turn():
     hero = fighter("hero")
     hero.command, hero.using = Command.SPELL, 9
     fight, hero, foe = duel(hero)
-    assert listing(do_combat(fight, RULES, Scripted(100))) == [("Turn", 0, 0, 0)]
+    assert acts(do_combat(fight, RULES, Scripted(100))) == [("Turn", 0, 0, 0)]
 
 
 # --- replay and determinism -----------------------------------------------------------------------------------------------

@@ -1,14 +1,18 @@
+import { matrixOf, parseAnimations, sharedClock } from "./animation.js";
+
 // Pictures from the game's assets. An art reference is a file name (one image, drawn as it is) or a sheet reference
 // { sheet, colors, animations } (the same object maps.json holds):
 //
 //   sheet       NAME.png (indexed colors), NAME.alpha.png (the 8-bit transparency, as gray) and NAME.sheet.json
 //               { frame: [w, h], grid: [columns, rows], frames, palette: ["#rrggbb", ...], alpha: true }
 //   colors      optional NAME.colors.json, a color map { "#3050a0": "#a03030" }
-//   animations  optional NAME.anim.json (played by a later slice; read here only to be handed on)
+//   animations  optional NAME.anim.json, the sheet's named animations (animation.js)
 //
 // shell.art.load(reference) resolves to { source, frame, grid, frames, palette, animations }: $source is something
-// drawImage takes (a canvas for a sheet, an image for a file name), the rest is null for a plain file. The combined,
-// recolored sheet is cached per sheet and color map, so many tiles and heroes share one canvas.
+// drawImage takes (a canvas for a sheet, an image for a file name), the rest is null for a plain file; $animations is an
+// AnimationSet (animation.js) when the reference names an animation file, else null. The combined, recolored sheet is cached
+// per sheet and color map, so many tiles and heroes share one canvas; so is an animation file. drawFrame draws a frame of a sheet
+// with the transforms an animation's frame asks for.
 //
 // Recoloring: each pixel is first snapped to the nearest color of the sheet's palette (so a color the picture only
 // nearly has still matches), then looked up in the color map; colors the map doesn't list stay as they are. It runs
@@ -91,25 +95,39 @@ async function loadImage(url) {
   return image;
 }
 
+/** Draws frame $index of the loaded sheet $loaded at ($x, $y), $width by $height pixels (the frame's size if left out), changed by the transforms $ops (animation.js). */
+export function drawFrame(context, loaded, index, x, y, width = loaded.frame[0], height = loaded.frame[1], ops = []) {
+  const rect = frameRect(loaded, index);
+  context.save();
+  context.translate(x, y);
+  context.scale(width / rect.w, height / rect.h);
+  if (ops.length) context.transform(...matrixOf(ops, rect.w, rect.h));
+  context.drawImage(loaded.source, rect.x, rect.y, rect.w, rect.h, 0, 0, rect.w, rect.h);
+  context.restore();
+}
+
 export class Art {
   #assetUrl;
   #fetchJson;
   #loadImage;
   #cache = new Map();
+  #sheets = new Map();
+  #animationFiles = new Map();
 
-  /** $assetUrl(name) is the URL of an asset; $loaders ({ fetchJson, loadImage }) replace the browser's, for tests. */
+  /** $assetUrl(name) is the URL of an asset; $loaders ({ fetchJson, loadImage, clock }) replace the browser's, for tests. */
   constructor(assetUrl, loaders = {}) {
     this.#assetUrl = assetUrl;
     this.#fetchJson = loaders.fetchJson ?? fetchJson;
     this.#loadImage = loaders.loadImage ?? loadImage;
+    this.clock = loaders.clock ?? sharedClock;
   }
 
   /** Loads a reference (file name or { sheet, colors, animations }); the same reference gives the same answer. */
   load(reference) {
     const ref = typeof reference === "string" ? { file: reference } : reference;
-    const key = JSON.stringify([ref.file ?? null, ref.sheet ?? null, ref.colors ?? null]);
+    const key = JSON.stringify([ref.file ?? null, ref.sheet ?? null, ref.colors ?? null, ref.animations ?? null]);
     if (!this.#cache.has(key)) {
-      const loading = ref.file ? this.#file(ref.file) : this.#sheet(ref);
+      const loading = ref.file ? this.#file(ref.file) : this.#withAnimations(ref);
       loading.catch(() => this.#cache.delete(key));
       this.#cache.set(key, loading);
     }
@@ -121,7 +139,29 @@ export class Art {
     return { source, frame: null, grid: null, frames: null, palette: null, animations: null };
   }
 
-  async #sheet({ sheet, colors = null, animations = null }) {
+  /** The sheet (shared by every reference to it and its color map) with the animations the reference names. */
+  async #withAnimations({ sheet, colors = null, animations = null }) {
+    const key = JSON.stringify([sheet, colors]);
+    if (!this.#sheets.has(key)) {
+      const loading = this.#sheet({ sheet, colors });
+      loading.catch(() => this.#sheets.delete(key));
+      this.#sheets.set(key, loading);
+    }
+    const loaded = await this.#sheets.get(key);
+    return { ...loaded, animations: animations ? await this.#animations(animations, loaded.frames) : null };
+  }
+
+  async #animations(name, frames) {
+    const key = JSON.stringify([name, frames]);
+    if (!this.#animationFiles.has(key)) {
+      const loading = this.#fetchJson(this.#assetUrl(`${name}.anim.json`)).then((data) => parseAnimations(data, frames, this.clock));
+      loading.catch(() => this.#animationFiles.delete(key));
+      this.#animationFiles.set(key, loading);
+    }
+    return this.#animationFiles.get(key);
+  }
+
+  async #sheet({ sheet, colors }) {
     const info = await this.#fetchJson(this.#assetUrl(`${sheet}.sheet.json`));
     const hasAlpha = info.alpha !== false;
     const [colorImage, alphaImage, map] = await Promise.all([
@@ -136,7 +176,7 @@ export class Art {
     context.putImageData(pixels, 0, 0);
     return {
       source: canvas, frame: info.frame, grid: info.grid, frames: info.frames ?? info.grid[0] * info.grid[1],
-      palette: info.palette ?? [], animations,
+      palette: info.palette ?? [], animations: null,
     };
   }
 }
