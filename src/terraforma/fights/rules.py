@@ -424,6 +424,12 @@ class Rules:
             return None
         return "That party is too weak to fight."
 
+    def may_fight_in_shared_instance(self, allowed: bool) -> str | None:
+        """Whether a party may pick a fight with another party of the same shared quest instance (``terraforma.instances``), in a
+        place where PvP is $allowed: None if it may, otherwise why not. The strength window does not apply there, so by default
+        any party of the instance may be fought wherever PvP is on."""
+        return None if allowed else "Fighting other parties is not allowed here."
+
     def roll_drops(self, fight, rng) -> list:
         """Called when a fight ends, after the experience and the gold: rolls the drops of the monsters that died and
         gives them out (``fights.drops``). Returns the events, already applied to the fight."""

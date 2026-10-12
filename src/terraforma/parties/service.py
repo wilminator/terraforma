@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..fights.models import JoinOffer
 from ..heroes.models import Hero, Team, TeamMember
+from ..instances.models import InstanceParty, QuestInstance
 from ..world.start import ensure_start
 from ..towns.models import TownTeam, TownVisit
 from ..standing.models import PARTY, TEAM, StandingStatus
@@ -172,6 +173,20 @@ async def join_party(session: AsyncSession, party_id: int, team_id: int, party_s
     return party
 
 
+async def _instance_id(session: AsyncSession, party_id: int) -> int | None:
+    return await session.scalar(select(InstanceParty.instance_id).where(InstanceParty.party_id == party_id))
+
+
+async def _leave_instance(session: AsyncSession, party_id: int) -> None:
+    """A party that goes (or merges into another) leaves its quest instance; an instance nobody is in goes too."""
+    instance_id = await _instance_id(session, party_id)
+    if instance_id is None:
+        return
+    await session.execute(delete(InstanceParty).where(InstanceParty.party_id == party_id))
+    if not await session.scalar(select(func.count()).select_from(InstanceParty).where(InstanceParty.instance_id == instance_id)):
+        await session.execute(delete(QuestInstance).where(QuestInstance.id == instance_id))
+
+
 async def leave_party(session: AsyncSession, team_id: int) -> int | None:
     """The whole team leaves its party. An empty party goes with it. Returns the party's id (None: it wasn't in one)."""
     row = await session.scalar(select(PartyTeam).where(PartyTeam.team_id == team_id))
@@ -189,6 +204,7 @@ async def leave_party(session: AsyncSession, team_id: int) -> int | None:
         await session.execute(delete(TownVisit).where(TownVisit.party_id == party_id))
         await session.execute(delete(PartyRequest).where(PartyRequest.party_id == party_id))
         await session.execute(delete(JoinOffer).where(JoinOffer.party_id == party_id))
+        await _leave_instance(session, party_id)
         await session.execute(delete(StandingStatus).where(StandingStatus.target_kind == PARTY, StandingStatus.target_id == party_id))
         await session.execute(delete(Party).where(Party.id == party_id))
     else:
@@ -205,6 +221,8 @@ async def merge_parties(session: AsyncSession, keep_id: int, absorb_id: int, par
     keep, absorb = await get_party(session, keep_id), await get_party(session, absorb_id)
     await _check_whole(session, keep.id)
     await _check_whole(session, absorb.id)
+    if (await _instance_id(session, keep.id)) != (await _instance_id(session, absorb.id)):
+        raise PartyError("parties in different quest instances can't merge")
     have, coming = await size(session, keep.id), await size(session, absorb.id)
     if have + coming > party_size:
         raise PartyError(f"a party has room for {party_size} heroes: they have {have} and {coming} between them")
@@ -217,6 +235,7 @@ async def merge_parties(session: AsyncSession, keep_id: int, absorb_id: int, par
     await session.flush()
     await session.execute(delete(PartyRequest).where(PartyRequest.party_id == absorb.id))
     await session.execute(delete(JoinOffer).where(JoinOffer.party_id == absorb.id))
+    await _leave_instance(session, absorb.id)
     await session.execute(delete(StandingStatus).where(StandingStatus.target_kind == PARTY, StandingStatus.target_id == absorb.id))
     await session.execute(delete(Party).where(Party.id == absorb.id))
     return keep
