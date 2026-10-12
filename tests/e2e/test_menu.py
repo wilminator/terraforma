@@ -104,6 +104,26 @@ def test_the_model_offers_enemies_allies_or_the_fallen_to_aim_at(page, live_serv
     assert none == []
 
 
+NAMES = """async () => {
+  const { FightModel } = await import('/client/js/fight-model.js');
+  const hero = { party: 0, group: 0, character: 0, name: 'Aria', alive: true, fled: false, resources: { HP: [9, 9] }, statuses: [], yours: true, committed: false,
+    menu: { abilities: [{ key: 'slash', name: 'Slash' }, { key: 'mend', name: 'Mend' }], items: [{ key: 'potion', name: 'Potion' }] } };
+  const foe = { party: 1, group: 0, character: 0, name: 'Slime', alive: true, fled: false, resources: { HP: [9, 9] }, statuses: [], yours: false, committed: false };
+  const model = new FightModel({ id: 1, round: 1, over: false, vital: 'HP', deadline: null, fighters: [hero, foe] });
+  const said = [['Defend', [1, 0, 0]], ['Turn', [0, 0, 0]], ['Skill', ['slash']], ['Spell', ['mend']], ['Item', ['potion']], ['Skill', ['unknown']]].map((event) => model.apply(event).text);
+  model.apply(['Turn', [1, 0, 0]]);
+  return [said, model.apply(['Skill', ['bite']]).text];
+}"""
+
+
+def test_the_log_says_a_heros_abilities_and_items_by_name_and_a_defender_by_its_address(page, live_server):
+    page.goto("/")
+    said, theirs = page.evaluate(NAMES)
+    assert said[0] == ["fight.defend", {"name": "Slime"}], "told for the fighter whose address it carries, not whoever acted last"
+    assert said[2:] == [["fight.skill", {"name": "Aria", "what": "Slash"}], ["fight.spell", {"name": "Aria", "what": "Mend"}], ["fight.item", {"name": "Aria", "what": "Potion"}], ["fight.skill", {"name": "Aria", "what": "unknown"}]]
+    assert theirs == ["fight.skill", {"name": "Slime", "what": "bite"}], "the other side's abilities are only known by their keys"
+
+
 # --- the menu ---------------------------------------------------------------------------------------------------------
 
 def test_the_menu_offers_what_the_hero_can_do_and_says_whose_turn_it_is(page, live_server):
@@ -121,7 +141,7 @@ def test_defend_is_sent_at_once_and_the_round_plays(page, live_server):
     fight = taught_fight(page, live_server)
     menu(page, "defend").click()
     round_played(page, 1)
-    expect(page.locator("#fight-log")).to_contain_text("Slime attacks")  # (a hero who defends takes no turn)
+    expect(page.locator("#fight-log")).to_contain_text("Aria defends")
     assert view_of(page, fight)["round"] == 2
 
 
@@ -158,7 +178,7 @@ def test_a_skill_is_chosen_from_the_heros_list_and_aimed(page, live_server):
     choice(page, "Slash").click()
     page.locator(".fighter[data-targetable='true']").first.click()
     round_played(page, 1)
-    expect(page.locator("#fight-log")).to_contain_text("Aria uses slash")
+    expect(page.locator("#fight-log")).to_contain_text("Aria uses Slash")
 
 
 def test_a_spell_that_heals_is_aimed_at_the_heros_own_side_and_one_that_costs_too_much_is_not_offered_as_a_choice(page, live_server):
@@ -171,7 +191,7 @@ def test_a_spell_that_heals_is_aimed_at_the_heros_own_side_and_one_that_costs_to
     expect(page.locator(".fighter[data-side='left'][data-targetable='true']")).to_have_count(1)
     page.locator(".fighter[data-fighter='0.0.0']").click()
     round_played(page, 1)
-    expect(page.locator("#fight-log")).to_contain_text("Aria casts mend")
+    expect(page.locator("#fight-log")).to_contain_text("Aria casts Mend")
 
 
 def test_a_spell_that_names_its_own_targets_is_sent_without_asking_for_one(page, live_server):
@@ -179,7 +199,7 @@ def test_a_spell_that_names_its_own_targets_is_sent_without_asking_for_one(page,
     menu(page, "spell").click()
     choice(page, "Quake").click()
     round_played(page, 1)
-    expect(page.locator("#fight-log")).to_contain_text("Aria casts quake")
+    expect(page.locator("#fight-log")).to_contain_text("Aria casts Quake")
 
 
 def test_an_item_is_chosen_with_how_many_are_left(page, live_server):
@@ -190,7 +210,7 @@ def test_an_item_is_chosen_with_how_many_are_left(page, live_server):
     choice(page, "Potion").click()
     page.locator(".fighter[data-fighter='0.0.0']").click()
     round_played(page, 1)
-    expect(page.locator("#fight-log")).to_contain_text("Aria uses potion")
+    expect(page.locator("#fight-log")).to_contain_text("Aria uses Potion")
 
 
 def test_flee_is_sent_at_once(page, live_server):
@@ -224,7 +244,7 @@ def test_each_hero_is_commanded_in_turn_and_the_round_plays_when_the_last_has_ch
     expect(page.locator(".fighter[data-fighter='0.0.0']")).to_have_attribute("data-committed", "true")
     menu(page, "defend").click()
     round_played(page, 1)
-    expect(page.locator("#fight-log")).to_contain_text("Slime attacks")
+    expect(page.locator("#fight-log")).to_contain_text("Bo defends")
 
 
 def test_a_hero_that_has_chosen_can_choose_again_before_the_round_plays(page, live_server):

@@ -30,6 +30,13 @@ export class FightModel {
     return this.fighters.get(key) ?? null;
   }
 
+  /** What the log calls a skill, spell or item: its name when the acting hero is the player's (whose menu lists them), else its key. */
+  #called(type, key) {
+    const menu = this.fighter(this.actor)?.menu;
+    const found = type === "Item" ? menu?.items.find((each) => each.key === key) : menu?.abilities.find((each) => each.key === key);
+    return found?.name ?? key;
+  }
+
   /** The keys of the fighters a command from $actor can be aimed at: "enemy" (the standing fighters of other parties), "ally" (the standing
    * fighters of its own, itself included), "downed" (its fallen allies, for a revive) or "none" (the command names its own targets). */
   targets(actor, aim) {
@@ -78,9 +85,12 @@ export class FightModel {
       case "Skill":
       case "Spell":
       case "Item":
-        return done([`fight.${type.toLowerCase()}`, { name: name(this.actor), what: data[0] }], [{ key: this.actor, kind: "act" }]);
-      case "Defend":
-        return done(["fight.defend", { name: name(this.actor) }], [{ key: this.actor, kind: "act" }]);
+        return done([`fight.${type.toLowerCase()}`, { name: name(this.actor), what: this.#called(type, data[0]) }], [{ key: this.actor, kind: "act" }]);
+      case "Defend": {
+        // (told at the start of the round, for the fighter whose address it carries: a defender takes no turn)
+        const who = data.length >= 3 ? keyOf(data) : this.actor;
+        return done(["fight.defend", { name: name(who) }], [{ key: who, kind: "defend" }]);
+      }
       case "Run":
         return done(["fight.run", { name: name(this.actor) }]);
       case "Fled": {
