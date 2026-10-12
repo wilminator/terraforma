@@ -21,6 +21,7 @@ from ..models import Account, Map
 from ..npcs.models import NpcTalk
 from ..parties.models import PartyRequest, PartyTeam
 from ..profiles.models import TeamProfile
+from ..guild.ranks import forget_team as forget_ranks
 from ..quests.service import forget_team as forget_quests
 from ..standing import service as standing
 from ..world.start import ensure_start
@@ -208,6 +209,7 @@ async def delete_team(session: AsyncSession, account: Account, team_id: int, all
     await session.execute(delete(TeamMember).where(TeamMember.team_id == team.id))
     await session.execute(delete(TeamProfile).where(TeamProfile.team_id == team.id))
     await forget_quests(session, team.id)
+    await forget_ranks(session, team.id)
     await session.execute(delete(PartyRequest).where(PartyRequest.team_id == team.id))
     await standing.forget(session, "team", team.id)
     await session.delete(team)

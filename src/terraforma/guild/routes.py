@@ -59,7 +59,7 @@ async def guild(hero_id: Id, account: CurrentAccount, db: Db, hooks: GameNpcs, r
 
 
 async def _then_on(db, hooks, reach, inn, rules, economy, hero, result: dict) -> dict:
-    return {"result": result, "dialog": await npcs.answer(db, hooks, reach, hero, None, partial(inns.rest, db, inn, rules, economy))}
+    return {"result": result, "dialog": await npcs.answer(db, hooks, reach, hero, None, partial(inns.rest, db, inn, rules, economy), economy, rules)}
 
 
 @router.post("/add-team")

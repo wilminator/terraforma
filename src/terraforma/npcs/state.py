@@ -1,8 +1,10 @@
-"""The dialog tags that read or change the game's state: items and quests. The engine runs these itself (``script.STATE_TAGS``).
+"""The dialog tags that read or change the game's state: items, quests and standing with guilds. The engine runs these itself (``script.STATE_TAGS``).
 
 Each answers with the label to go to when its test fails or its change cannot be made, and "" to go on. The party they look
 at is the one the talking hero's team acts in right now (``towns.service.acting_party``); a hero on no team stands alone.
 """
+
+from decimal import Decimal
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..challenge import service as challenge
 from ..content.models import Item
 from ..economy import Economy, NotEnoughGold
+from ..fights.rules import Rules
+from ..guild import ranks
 from ..heroes import inventory
 from ..maps import travel
 from ..heroes.models import Hero, HeroItem, Team, TeamMember
@@ -23,10 +27,11 @@ from .script import ScriptError
 
 
 class DialogState:
-    def __init__(self, session: AsyncSession, hero: Hero, economy: Economy | None = None):
+    def __init__(self, session: AsyncSession, hero: Hero, economy: Economy | None = None, rules: Rules | None = None):
         self.session = session
         self.hero = hero
         self.economy = economy
+        self.rules = rules  # (to measure a party's strength: ``party_gate``)
         self._party: towns.ActingParty | None | bool = False  # (False: not asked yet)
 
     async def __call__(self, command: str, parts: list[str]) -> str:
@@ -124,6 +129,46 @@ class DialogState:
         return ""
 
     # --- the guild --------------------------------------------------------------------------------------------------------
+
+    async def _standing_team(self) -> int:
+        team_id = await self.team_id()
+        if team_id is None:
+            raise ScriptError("a hero on no team has no standing with a guild: put them on a team")
+        return team_id
+
+    async def add_guild_points(self, guild: str, points: str) -> str:
+        try:
+            await ranks.add_points(self.session, await self._standing_team(), guild, int(points))
+        except ranks.RankError as error:
+            raise ScriptError(str(error)) from error
+        return ""
+
+    async def set_guild_rank(self, guild: str, rank: str) -> str:
+        try:
+            await ranks.set_rank(self.session, await self._standing_team(), guild, int(rank))
+        except ranks.RankError as error:
+            raise ScriptError(str(error)) from error
+        return ""
+
+    async def guild_points(self, guild: str, op: str, n: str, scope: str, label: str) -> str:
+        found = [(await ranks.standing(self.session, team_id, guild))[0] for team_id in await self.teams(scope)]
+        return "" if self.holds(scope, [quests.compare(op, each, int(n)) for each in found]) else label
+
+    async def guild_rank(self, guild: str, op: str, n: str, scope: str, label: str) -> str:
+        found = [(await ranks.standing(self.session, team_id, guild))[1] for team_id in await self.teams(scope)]
+        return "" if self.holds(scope, [quests.compare(op, each, int(n)) for each in found]) else label
+
+    async def party_gate(self, guild: str, average: str, lowest: str, highest: str, pxp_min: str, pxp_max: str, label: str) -> str:
+        """The label unless the party (the teams acting together) passes the guild's gate: ranks (average, lowest, best) and strength."""
+        gate = ranks.Gate(Decimal(average), int(lowest), int(highest), int(pxp_min), int(pxp_max))
+        team_ids = await self.teams("any")
+        pxp = 0
+        if gate.pxp_min or gate.pxp_max:
+            if self.rules is None:
+                raise ScriptError("this dialog asks for a party's strength (party_gate), and there are no rules to measure it")
+            pxp = await ranks.party_pxp(self.session, self.rules, team_ids)
+        found = [(await ranks.standing(self.session, team_id, guild))[1] for team_id in team_ids]
+        return label if ranks.refusal(gate, found, pxp) else ""
 
     async def open_party(self, setting: str, label: str) -> str:
         """Opens (``on``) or closes (``off``) the party to requests from allies; only its leader may. The label if not."""
