@@ -49,6 +49,7 @@ def test_a_player_makes_a_page_writes_a_bio_and_shows_a_team(page, live_server):
     player_with_handle(live_server, "Mike", "MikeTheBold")
     page.goto("/account/")
     log_in(page, "Mike")
+    expect(page.locator("#who")).to_be_visible()  # the login has finished, so the calls below don't race it
     calls = Calls(page, "Mike")
     calls.post("/api/teams", {"name": "Vanguard", "heroes": [{"name": "Aria", "job": "fighter"}]})
     page.get_by_role("link", name="Your page").click()
@@ -98,6 +99,7 @@ def test_anyone_with_the_link_reads_the_page_and_follows_it_to_the_team_and_the_
     player_with_handle(live_server, "Mike", "MikeTheBold")
     page.goto("/account/")
     log_in(page, "Mike")
+    expect(page.locator("#who")).to_be_visible()  # the login has finished, so the calls below don't race it
     calls = Calls(page, "Mike")
     team = calls.post("/api/teams", {"name": "Vanguard", "heroes": [{"name": "Aria", "job": "fighter"}]})
     calls.post("/api/teams", {"name": "Hidden Ones", "heroes": [{"name": "Bo", "job": "fighter"}]})

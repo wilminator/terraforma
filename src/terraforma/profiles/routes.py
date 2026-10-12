@@ -137,6 +137,16 @@ async def alliance_bio(alliance_id: Id, body: Bio, request: Request, account: Ac
         raise refuse(error) from error
 
 
+@router.get("/alliances/{alliance_id}/roster")
+async def roster(alliance_id: Id, account: CurrentAccount, db: Db) -> list[dict]:
+    """The alliance's teams for its members: a team's page token only while it is visible, and its player's handle and page token
+    only if the player is in the directory (a hidden team is its name alone)."""
+    try:
+        return await service.member_roster(db, account, alliance_id)
+    except FAILURES as error:
+        raise refuse(error) from error
+
+
 @router.get("/alliances/{alliance_id}/teams/{team_id}/profile")
 async def member_team_page(alliance_id: Id, team_id: Id, account: CurrentAccount, db: Db) -> dict:
     """A visible team's page for the members of its alliance (with the player's page, if the player is in the directory)."""
