@@ -378,6 +378,20 @@ class Rules:
             return "You are in another fight."
         return None
 
+    def monster_absent(self, missed: int) -> bool:
+        """Whether a player who commands a fight's monsters (``monsterplay``) has lost control of them to the AI, having missed $missed
+        rounds so far. A round is missed when they gave none of their fighters a command; that round their monsters repeat their
+        last commands (the AI chooses when there are none, or they no longer make sense). Called right after each missed round.
+        DragonStar's way by default: the first missed round hands the monsters to the AI until the player commands again or says they
+        are back (``POST /api/fights/{id}/monsters/back``). The count itself is kept, for the rewards."""
+        return missed >= 1
+
+    def monster_flee_allowed(self, fight, address: tuple) -> bool:
+        """Whether the fighter at $address, a monster commanded by a player, may try to flee (on top of ``flee_allowed``, which still
+        has to say yes). Never, by default: monsters a player commands fight to the end. If a game turns it on, the fleeing design
+        applies as for heroes."""
+        return False
+
     #: The longest route (steps) a party may be given in one go, however far the client asked it to go.
     route_limit: int = 100
 
