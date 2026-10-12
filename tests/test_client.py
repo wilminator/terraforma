@@ -18,7 +18,7 @@ def game():
 
 
 def test_the_pages_are_served_with_the_security_headers(app_client):
-    for path in ("/", "/play/", "/account/", "/team/1", "/profile/", "/p/abcdefgh", "/p/team/abcdefgh", "/p/alliance/abcdefgh", "/confirm-email", "/change-email", "/reset-password", "/confirm-2fa"):
+    for path in ("/", "/play/", "/account/", "/team/1", "/profile/", "/alliances/", "/alliance/1", "/p/abcdefgh", "/p/team/abcdefgh", "/p/alliance/abcdefgh", "/confirm-email", "/change-email", "/reset-password", "/confirm-2fa"):
         page = expect(app_client.get(path), 200)
         assert page.headers["content-type"].startswith("text/html")
         assert "script-src" not in page.headers["content-security-policy"], "default-src 'self' covers scripts: nothing inline, nothing foreign"
@@ -39,7 +39,7 @@ def test_every_address_the_engine_mails_opens_an_account_page(app_client, mailbo
 
 
 def test_the_account_and_team_page_scripts_are_served(app_client):
-    for name in ("account", "forms", "register", "settings", "tokens", "team", "team-editor", "profile", "public"):
+    for name in ("account", "forms", "register", "settings", "tokens", "team", "team-editor", "profile", "public", "alliances", "alliance", "alliance-page", "ballots", "relationships"):
         expect(app_client.get(f"/client/js/{name}.js"), 200)
 
 
@@ -87,6 +87,7 @@ def test_the_example_game_is_valid_and_its_tileset_is_drawn_by_its_assets(app_cl
                 names = [f"{art['sheet']}.png", f"{art['sheet']}.sheet.json"]
                 names += [f"{art['sheet']}.alpha.png"] if info.get("alpha", True) else []
                 names += [f"{art['colors']}.colors.json"] if art.get("colors") else []
+                names += [f"{art['animations']}.anim.json"] if art.get("animations") else []
             for name in names:
                 expect(app_client.get(f"/assets/{name}"), 200)
 

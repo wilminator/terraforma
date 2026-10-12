@@ -532,6 +532,13 @@
      "sheet": "tiles",
      "frame": 9
     }
+   },
+   {
+    "name": "crystal",
+    "art": {
+     "sheet": "crystal",
+     "animations": "crystal"
+    }
    }
   ],
   "tiles": [
@@ -572,7 +579,7 @@
     0,
     0,
     0,
-    0,
+    2,
     1
    ],
    [
