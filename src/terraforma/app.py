@@ -34,6 +34,7 @@ from .heroes.routes import router as heroes_router
 from .alliances.ballot_routes import router as ballots_router
 from .alliances.routes import router as alliances_router
 from .challenge.routes import router as challenge_router
+from .storegrant.routes import router as storegrant_router
 from .guild.routes import router as guild_router
 from .standing.routes import router as standing_router
 from .maps.routes import router as maps_router
@@ -131,6 +132,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(timing_router)
     app.include_router(profiles_router)
     app.include_router(challenge_router)
+    app.include_router(storegrant_router)
     app.include_router(npcs_router)
     app.include_router(reach_router)
     app.include_router(market_router)

@@ -42,6 +42,8 @@ MONSTER_QUEUE_BY_ACCOUNT = Limit("monster-queue", 600, 60 * 60)
 PUBLIC_PROFILE_BY_ADDRESS = Limit("profile-public", 120, 15 * 60)
 # The server-to-server Challenge Token purchase call has no login: every attempt counts against the caller's address.
 CHALLENGE_PURCHASE_BY_ADDRESS = Limit("challenge-purchase", 600, 15 * 60)
+# The server-to-server store grant call has no login either.
+STORE_GRANT_BY_ADDRESS = Limit("store-grant", 600, 15 * 60)
 # Every limit above, for housekeeping: new limits go in here too (a test checks that none is missing).
 ALL_LIMITS = [value for value in list(globals().values()) if isinstance(value, Limit)]
 

@@ -34,7 +34,7 @@ def later(monkeypatch):
 CATEGORIES = {
     "accounts": ["accounts", "handles", "keys", "twofa", "mail", "logscrub", "settings"],
     "platform": ["app", "client", "categories", "content", "database", "housekeeping", "migrations", "db_commit_order", "qbtiles", "tilesheet", "colormap", "animations", "maps", "walking", "map_events", "parallel", "seed", "world"],
-    "heroes": ["heroes", "inventory", "field_use", "parties", "towns", "economy", "trading", "drops", "pending_drops", "challenge_tokens", "pvp", "npc_script", "npcs", "reach", "quests", "npc_state", "market", "inn", "guild", "standing", "token_tags"],
+    "heroes": ["heroes", "inventory", "field_use", "parties", "towns", "economy", "trading", "drops", "pending_drops", "challenge_tokens", "store_grant", "pvp", "npc_script", "npcs", "reach", "quests", "npc_state", "market", "inn", "guild", "standing", "token_tags"],
     "fights": ["round_time", "fight_rules", "fleeing", "monster_play", "monster_control", "fight_store", "live_fights", "joining", "experience", "rewards", "ai", "ai_statuses", "statuses"],
     "social": ["relations", "alliances", "ballots", "ratings", "profiles"],
 }
