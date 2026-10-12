@@ -13,7 +13,7 @@
   "map": "hub",
   "x": 1,
   "y": 1,
-  "dialog": "Fresh stock, traveller.`vend,herb,12,potion,40`\nCome again soon."
+  "dialog": "Fresh stock, traveller.`vend,herb,12,potion,40,antidote,20,ether,60,short_sword,60,dagger,40,mace,65,staff,70,bow,80,arrow,3,wooden_shield,35,leather_cap,25,leather_armor,70,cloth_robe,55,leather_boots,30`\nCome again soon."
  },
  {
   "key": "innkeeper",
