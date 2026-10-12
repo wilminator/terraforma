@@ -3,7 +3,9 @@
 A message belongs to a channel, which is a kind (``party``, ``alliance``, ``nearby``...) and a key text that kind understands.
 Nothing here links to a party or an alliance: any kind of channel, including a game's own, fits the same table."""
 
-from sqlalchemy import ForeignKey, Index, Integer, String, UniqueConstraint
+from datetime import datetime
+
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db.base import Base, Timestamps
@@ -55,3 +57,16 @@ class ChatFlag(Timestamps, Base):
     note: Mapped[str] = mapped_column(String(NOTE_MAX), default="", server_default="")
     state: Mapped[str] = mapped_column(String(10), default=OPEN, server_default=OPEN, index=True)
     resolved_by: Mapped[int | None] = mapped_column(Integer)
+
+
+class ChatBan(Timestamps, Base):
+    """A player an admin has barred from speaking, for a time (``until``) or for good (none). They can still read. One row per
+    player: banning again changes it."""
+
+    __tablename__ = "chat_bans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), unique=True)
+    until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reason: Mapped[str] = mapped_column(String(NOTE_MAX), default="", server_default="")
+    by_id: Mapped[int] = mapped_column(Integer)
