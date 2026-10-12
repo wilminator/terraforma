@@ -141,7 +141,7 @@ export async function accountView(shell, onLogout) {
     "div",
     { class: "stack" },
     h("p", { id: "who" }, t("account.signed_in", { username: shell.account.username })),
-    h("p", {}, h("a", { href: "/profile/", id: "to-profile" }, t("account.profile"))),
+    h("p", { class: "inline" }, h("a", { href: "/profile/", id: "to-profile" }, t("account.profile")), " ", h("a", { href: "/alliances/", id: "to-alliances" }, t("account.alliances"))),
     h("div", { class: "cards" }, handleCard(shell), emailCard(shell, status.enabled), twoFactorCard(shell, status)),
     h("p", {}, h("button", { type: "button", id: "logout", onclick: onLogout }, t("account.logout"))),
   );

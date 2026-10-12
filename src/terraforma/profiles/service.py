@@ -229,6 +229,13 @@ async def alliance_page(session: AsyncSession, token: str) -> dict:
     if row is None:
         raise NotFound("there's no such page")
     alliance = await session.get(Alliance, row.alliance_id)
+    teams = [{key: value for key, value in entry.items() if key not in ("team_id", "player")} for entry in await _roster(session, alliance)]
+    return {"name": alliance.name, "bio": row.bio, "teams": teams}
+
+
+async def _roster(session: AsyncSession, alliance: Alliance) -> list[dict]:
+    """Every team in the alliance in the order it joined: name and role, and while the team is visible the token of its page
+    and, if its player is in the directory, the handle and the token of the player's page. A hidden team is its name alone."""
     found = (await session.execute(
         select(Team, AllianceMember, TeamProfile, PlayerProfile, Account)
         .join(AllianceMember, AllianceMember.team_id == Team.id)
@@ -240,11 +247,19 @@ async def alliance_page(session: AsyncSession, token: str) -> dict:
     teams = []
     for team, member, team_row, player_row, owner in found:
         shown = team_row is not None and team_row.visible
-        entry = {"name": team.name, "role": member.role, "page": team_row.token if shown else None}
+        entry = {"team_id": team.id, "name": team.name, "role": member.role, "page": team_row.token if shown else None}
         if shown and player_row is not None and player_row.directory:
             entry["handle"] = owner.handle
+            entry["player"] = player_row.token
         teams.append(entry)
-    return {"name": alliance.name, "bio": row.bio, "teams": teams}
+    return teams
+
+
+async def member_roster(session: AsyncSession, account: Account, alliance_id: int) -> list[dict]:
+    """The roster as one of the alliance's own players reads it (NotFound for anyone else)."""
+    alliance = await alliances.get_alliance(session, alliance_id)
+    await alliances.reading_team(session, account, alliance)
+    return await _roster(session, alliance)
 
 
 async def member_team_page(session: AsyncSession, account: Account, alliance_id: int, team_id: int) -> dict:
