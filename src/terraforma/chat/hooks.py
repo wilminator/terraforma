@@ -216,6 +216,10 @@ class Chat:
         """The text as it is kept: trimmed, with runs of white space made single spaces. A game may filter words here."""
         return " ".join(body.split())
 
+    async def actioned(self, session: AsyncSession, admin: Account, sender_id: int, message: ChatMessage, reason: str) -> None:
+        """An admin settled a flag on $message as actioned: the place for the game's own consequence (a warning mail, a strike, a
+        timed ban through ``service.ban``). Nothing happens by default beyond the flag being recorded."""
+
     async def may_speak(self, session: AsyncSession, speaker: Account, kind: str, key: str, body: str) -> str | None:
         """Why the player may not say this just now (a muted player, a rule against links...), or None. Anyone may by default."""
         return None

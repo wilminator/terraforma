@@ -84,3 +84,21 @@ def test_a_flag_goes_to_the_admin_who_settles_it(page, live_server):
     expect(flag).to_contain_text("Mike the Bold flagged Zed the Fast: hello everyone (tou)")
     flag.get_by_role("button", name="Mark flag 1 actioned").click()
     expect(page.locator("#chat-admin-flags")).to_contain_text("No open flags.")
+
+
+def test_an_admin_bars_a_flagged_player_for_a_day_and_lifts_the_ban(page, live_server):
+    start(page, live_server)
+
+    async def promote(db):
+        await db.execute(update(Account).where(Account.username == "Mike").values(is_admin=True))
+
+    live_server.in_db(promote)
+    page.get_by_role("button", name="Flag Zed the Fast's message").click()
+    page.locator("#chat-flag-send").click()
+    expect(page.locator("#chat-flagged")).to_be_visible()
+    tab(page, "Nearby")
+    tab(page, "Chat")
+    page.get_by_role("button", name="Bar Zed the Fast from chat for 24 hours").click()
+    expect(page.locator("#chat-admin-bans [data-ban='Zed the Fast']")).to_contain_text("Zed the Fast until")
+    page.get_by_role("button", name="Lift Zed the Fast's ban").click()
+    expect(page.locator("#chat-admin-bans")).to_contain_text("Nobody is barred.")

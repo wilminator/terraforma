@@ -176,6 +176,7 @@ export function chatPanel(shell) {
       return;
     }
     const flags = (await api.get("/api/chat/admin/flags")).flags;
+    const bans = (await api.get("/api/chat/admin/bans")).bans;
     admin.hidden = false;
     replace(
       admin,
@@ -205,6 +206,20 @@ export function chatPanel(shell) {
   async function settle(id, state) {
     await attempt(shell, problem, async () => {
       await api.post("/api/chat/admin/settle", { flag_id: id, state });
+      await drawAdmin(true);
+    });
+  }
+
+  async function ban(name) {
+    await attempt(shell, problem, async () => {
+      await api.post("/api/chat/admin/ban", { handle: name, hours: 24, reason: "" });
+      await drawAdmin(true);
+    });
+  }
+
+  async function unban(name) {
+    await attempt(shell, problem, async () => {
+      await api.post("/api/chat/admin/unban", { handle: name });
       await drawAdmin(true);
     });
   }
