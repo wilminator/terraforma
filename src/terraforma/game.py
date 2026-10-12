@@ -18,6 +18,7 @@ from .pvp.hooks import PvpZones
 from .market.hooks import Market
 from .guild.hooks import Guild
 from .heroes.hooks import Roster
+from .storage.hooks import NoStorage, Storage
 from .npcs.hooks import Npcs
 from .npcs.inn import Inn
 from .reach.hooks import Reach
@@ -56,3 +57,5 @@ class Game:
     guild: Guild = field(default_factory=Guild)
     # What may change about the heroes of a saved team: removing, replacing and moving them (refused by default; a game may sell it).
     roster: Roster = field(default_factory=Roster)
+    # Whether teams (or accounts) keep items in storage beside the heroes' packs, how much, and when it may be used (none, by default).
+    storage: Storage = field(default_factory=NoStorage)

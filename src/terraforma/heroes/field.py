@@ -10,6 +10,7 @@ stream for this hero, item and stack size, so it repeats for the same state and 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..content.models import Item
 from ..fights.models import FightParticipant, FightRecord
 from ..fights.rules import Rules
 from ..fights.specs import EffectSpec
@@ -42,6 +43,17 @@ async def use_item(session: AsyncSession, user: Hero, position: int, target: Her
     if found is None:
         raise FieldUseError("there's nothing in that position")
     stack, item = found
+    result = await apply_use(session, user, item, stack.qty, target, rules)
+    if item.one_use:
+        await remove_item(session, user, position, 1)
+    await session.flush()
+    return result
+
+
+async def apply_use(session: AsyncSession, user: Hero, item: Item, stack_qty: int, target: Hero, rules: Rules) -> dict:
+    """The effect of $user using $item (from a stack of $stack_qty) on $target: checks it can be done, changes the target's
+    resources and returns them before and after. Taking the item from wherever it was is the caller's job (``used_up`` says
+    whether it goes)."""
     if not item.use_effect:
         raise FieldUseError(f"{item.name} can't be used")
     if user.account_id != target.account_id:
@@ -51,14 +63,11 @@ async def use_item(session: AsyncSession, user: Hero, position: int, target: Her
             raise FieldUseError(f"{hero.name} is in a fight")
     before, maximums = vitals_of(target, rules)
     world = await session.get(World, (await session.get(Map, target.map_id)).world_id)
-    rng = WorldRng(world.seed).stream("field-use", user.id, target.id, item.key, stack.qty)
+    rng = WorldRng(world.seed).stream("field-use", user.id, target.id, item.key, stack_qty)
     after = rules.field_use(rng, EffectSpec.from_dict(item.use_effect), before, maximums)
     if after is None:
         raise FieldUseError(f"{item.name} can only be used in a fight")
     if after == before:
         raise FieldUseError(f"{item.name} would do nothing to {target.name}")
     target.vitals = None if after == maximums else after
-    if item.one_use:
-        await remove_item(session, user, position, 1)
-    await session.flush()
     return {"hero_id": target.id, "before": before, "after": after, "used_up": item.one_use}

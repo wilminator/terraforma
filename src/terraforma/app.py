@@ -30,6 +30,7 @@ from .fights.timing_routes import router as timing_router
 from .content.loader import load_content
 from .game import Game
 from .heroes.inventory_routes import router as inventory_router
+from .storage.routes import router as storage_router
 from .heroes.routes import router as heroes_router
 from .alliances.ballot_routes import router as ballots_router
 from .alliances.routes import router as alliances_router
@@ -120,6 +121,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(twofa_router)
     app.include_router(heroes_router)
     app.include_router(inventory_router)
+    app.include_router(storage_router)
     app.include_router(trading_router)
     app.include_router(pending_drops_router)
     app.include_router(relations_router)
