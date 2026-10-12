@@ -253,6 +253,7 @@ export const STRINGS = {
   "shop.buy_label": "Buy {name}",
   "shop.sell_label": "Sell {name}",
   "shop.bought": "Bought {count} for {cost} gold.",
+  "shop.not_fitting": "{count} did not fit in the pack and were not charged for.",
   "shop.sold": "Sold {count} for {gain} gold.",
   "shop.done": "Done",
   "pack.hero": "Hero",
