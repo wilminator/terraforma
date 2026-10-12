@@ -17,17 +17,19 @@ see a ``Volunteer`` whose ``account_id`` may be None.
 
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import wallclock
+from ..challenge import service as challenge
+from ..fights.fight import Fight
 from ..fights.models import FightActionRecord, FightParticipant, FightRecord
 from ..fights.rules import Rules
 from ..heroes.models import Hero, Team, TeamMember
 from ..models import Account
 from ..relations import service as relationships
 from ..relations.hooks import Ref, Relations
-from .facts import Seating, Volunteer
+from .facts import Seating, SeatResult, Volunteer
 from .models import MonsterLockout, MonsterSeat, MonsterVolunteer
 
 #: The party the monsters are in a fight the engine starts (the heroes are party 0).
@@ -236,3 +238,34 @@ async def take_over(session: AsyncSession, rules: Rules, record: FightRecord, ac
 async def _hero_accounts(session: AsyncSession, record: FightRecord) -> set[int]:
     hero_ids = (await session.scalars(select(FightParticipant.hero_id).where(FightParticipant.fight_id == record.id, FightParticipant.hero_id.is_not(None)))).all()
     return set((await session.scalars(select(Hero.account_id).where(Hero.id.in_(hero_ids)))).all())
+
+
+# --- when the fight ends ----------------------------------------------------------------------------------------------
+
+async def settle(session: AsyncSession, rules: Rules, record: FightRecord, fight: Fight) -> int:
+    """Settles the fight's seat once it has ended: the Challenge Tokens ``Rules.monster_challenge_earned`` says it earned (cut to
+    the daily and purse caps; none for a seat an admin took) and, for an account that is not an admin, the lockout
+    ``Rules.monster_lockout_seconds`` sets (never shorter than one already running). Safe to call again: a seat settles once. Returns
+    the tokens paid."""
+    seat = await session.get(MonsterSeat, record.id)
+    if seat is None or seat.settled:
+        return 0
+    claimed = await session.execute(update(MonsterSeat).where(MonsterSeat.fight_id == record.id, MonsterSeat.settled.is_(False)).values(settled=True))
+    if claimed.rowcount == 0:  # settled meanwhile
+        return 0
+    party = fight.parties.get(seat.party)
+    result = SeatResult(record.id, seat.account_id, seat.party, seat.missed == 0, party is not None and not party.dead(rules), seat.absent, seat.missed, seat.admin)
+    paid = 0
+    if not seat.admin:
+        if (amount := max(0, int(rules.monster_challenge_earned(result)))) > 0:
+            paid = await challenge.earn(session, rules, seat.account_id, amount, record.id)
+        account = await session.get(Account, seat.account_id)
+        if account is not None and not account.is_admin and (seconds := int(rules.monster_lockout_seconds(result))) > 0:
+            until = wallclock.now() + timedelta(seconds=seconds)
+            lockout = await session.get(MonsterLockout, seat.account_id)
+            if lockout is None:
+                session.add(MonsterLockout(account_id=seat.account_id, until=until))
+            elif _aware(lockout.until) < until:
+                lockout.until = until
+    await session.flush()
+    return paid

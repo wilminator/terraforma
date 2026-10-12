@@ -32,6 +32,9 @@ class Party:
     #: The players' teams in this party: team id -> the ids of its heroes (``Combatant.charid``). Only fighters on
     #: a team earn experience; monsters and NPCs, which are on none, do not (but still count in the shares).
     teams: dict[int, list[int]] = field(default_factory=dict)
+    #: The damage dealt to this party's fighters beyond their last hit points, added up from the log's ``Died`` events (not stored:
+    #: a replay finds it again). The heroes' bonus for beating a player's monsters reads it.
+    overkill: int = 0
 
     def dead(self, rules: Rules) -> bool:
         """Nobody of the party is left in the fight (all down or fled): it has left, and plays no more."""
@@ -64,6 +67,9 @@ class Fight:
     area_drops: list[str] = field(default_factory=list)
     #: Whether fighters may flee (or be ejected) at all: the map's zone or a scripted fight can turn it off.
     can_flee: bool = True
+    #: The parties a player commanded at some point (``monsterplay``), whether or not they still do. Not stored in the fight: the store
+    #: sets it from the seats whenever it replays the fight.
+    player_parties: set[int] = field(default_factory=set)
 
     def drop_item(self, key: str):
         """The item a drop table names by $key."""
