@@ -22,7 +22,7 @@ class EventType(StrEnum):
     ITEM = "Item"  # [item key]
     EQUIP = "Equip"  # [item key] or [item key, ammo key]
     UNEQUIP = "Unequip"  # [item name]
-    DEFEND = "Defend"  # []
+    DEFEND = "Defend"  # [party, group, character] of the fighter that defends; told at the start of the round, as a defender takes no turn
     RUN = "Run"  # []: a fighter tries to flee
     FLED = "Fled"  # [party, group, character, how]: it has left the fight ("flee" or "eject"); it acts and is hit no more
     FLEE_FAILED = "FleeFailed"  # [party, group, character]: the try did not work (it cost the fighter's turn)

@@ -10,6 +10,7 @@
 import * as api from "./api.js";
 import { h, replace } from "./dom.js";
 import { FightLink } from "./fight-link.js";
+import { FightMenu } from "./fight-menu.js";
 import { FightModel } from "./fight-model.js";
 
 const SPEEDS = [1, 2, 4];
@@ -29,6 +30,7 @@ export class FightScene {
     this.model = null;
     this.link = null;
     this.cards = new Map();
+    this.menu = new FightMenu(this);
     this.queue = [];
     this.playing = false;
     this.skipping = false;
@@ -77,6 +79,7 @@ export class FightScene {
     this.link = null;
     for (const each of this.moving) each.cancel();
     this.moving.clear();
+    this.menu.detach();
     this.layer?.remove();
     this.layer = null;
     this.model = null;
@@ -155,6 +158,8 @@ export class FightScene {
       api.post(`/api/fights/${this.model.id}/playback-done`, { round: round.round }).catch(() => {});
     }
     if (run !== this.run) return;
+    if (!this.model.over) await this.refreshMenu(run);
+    if (run !== this.run) return;
     this.playing = false;
     this.skipping = false;
     this.#data();
@@ -197,6 +202,24 @@ export class FightScene {
     } else if (mark.kind === "died" || mark.kind === "fled") {
       await run(card, [{ opacity: 1 }, { opacity: 0.35 }], { fill: "forwards" });
     }
+  }
+
+  /** Asks the server what the player's heroes can do now and who has chosen (the menu's choices change as items and MP are spent). */
+  async refreshMenu(run = this.run) {
+    try {
+      const view = await api.get(`/api/fights/${this.model.id}`);
+      if (run === this.run && this.model) {
+        this.model.refresh(view);
+        this.#paint();
+      }
+    } catch {
+      // (the menu keeps what it had; the next round asks again)
+    }
+  }
+
+  /** Draws the fight again from the model (the menu calls it when it changes something). */
+  repaint() {
+    this.#paint();
   }
 
   skip() {
@@ -253,6 +276,7 @@ export class FightScene {
       this.lines,
     );
     this.host.append(this.layer);
+    this.menu.attach(this.layer);
     this.#paint();
   }
 
@@ -281,6 +305,7 @@ export class FightScene {
     this.speedButton.textContent = this.t("fight.speed", { speed: this.speed });
     this.skipButton.disabled = !this.playing;
     this.leaveButton.hidden = !(this.model.over && !this.playing);
+    this.menu.sync();
   }
 
   #data() {
@@ -292,6 +317,10 @@ export class FightScene {
     set("over", this.model ? this.model.over : null);
     set("speed", this.model ? this.speed : null);
     set("shown", this.model ? this.shown : null);
+    if (!this.model) {
+      set("menu", null);
+      set("hero", null);
+    }
     if (this.layer) this.#paint();
   }
 }

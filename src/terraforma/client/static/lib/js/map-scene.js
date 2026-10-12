@@ -6,7 +6,7 @@
 // suspended until the fight is left.
 
 import * as api from "./api.js";
-import { frameRect } from "./art.js";
+import { drawFrame, frameRect } from "./art.js";
 import { DESIGN_HEIGHT, DESIGN_WIDTH } from "./stage.js";
 
 export const TILE = 32;
@@ -38,6 +38,8 @@ export class MapScene {
     this.context = canvas.getContext("2d");
     this.map = null;
     this.art = [];
+    this.stopAnimating = () => {};
+    this.shown = ""; // which frame each animated tile kind showed when the stage was last drawn
     this.partyId = null;
     this.tile = { x: 0, y: 0 }; // where the server says the party is
     this.at = { x: 0, y: 0 }; // where it is drawn (between tiles while it walks)
@@ -109,9 +111,27 @@ export class MapScene {
     this.art = await Promise.all(
       this.map.tileset.map(async (kind) => {
         const loaded = kind.art ? await this.shell.art.load(kind.art).catch(() => null) : null;
-        return loaded && { loaded, frame: typeof kind.art === "object" ? (kind.art.frame ?? 0) : 0 };
+        const player = loaded?.animations && kind.art.animations ? loaded.animations.play("base") : null;
+        return loaded && { loaded, frame: typeof kind.art === "object" ? (kind.art.frame ?? 0) : 0, player };
       }),
     );
+    this.#animate();
+  }
+
+  /** Redraws the stage whenever an animated tile kind of the map (it plays "base") shows another frame; one timer serves them all. */
+  #animate() {
+    this.stopAnimating();
+    this.shown = "";
+    this.stopAnimating = this.art.some((art) => art?.player)
+      ? this.shell.art.clock.subscribe(() => {
+          const now = this.#frames();
+          if (now !== this.shown && !this.suspended) this.#draw();
+        })
+      : () => {};
+  }
+
+  #frames() {
+    return this.art.map((art) => art?.player?.frameAt().index ?? "-").join(",");
   }
 
   #conversationMoved() {
@@ -127,6 +147,7 @@ export class MapScene {
     set("partyX", this.map ? this.tile.x : null);
     set("partyY", this.map ? this.tile.y : null);
     set("walking", this.map ? this.walking : null);
+    set("animated", this.map ? this.art.filter((art) => art?.player).length : null); // how many of them play an animation
     set("art", this.map ? this.art.filter(Boolean).length : null); // how many of the map's tile kinds have their picture
     this.stage.setAttribute("aria-label", this.map ? this.t("map.label", { map: this.map.title || this.map.map, x: this.tile.x, y: this.tile.y }) : this.t("play.stage"));
   }
@@ -148,6 +169,7 @@ export class MapScene {
       return;
     }
     const map = this.map;
+    this.shown = this.#frames();
     const corner = viewCorner(map, this.at.x + TILE / 2, this.at.y + TILE / 2);
     const first = tileAt(corner, 0, 0);
     const last = tileAt(corner, DESIGN_WIDTH - 1, DESIGN_HEIGHT - 1);
@@ -192,7 +214,10 @@ export class MapScene {
     const c = this.context;
     if (art?.loaded.source) {
       const { loaded, frame } = art;
-      if (loaded.frame) {
+      if (art.player) {
+        const shows = art.player.frameAt();
+        drawFrame(c, loaded, shows.frame, x, y, TILE, TILE, shows.ops);
+      } else if (loaded.frame) {
         const rect = frameRect(loaded, frame);
         c.drawImage(loaded.source, rect.x, rect.y, rect.w, rect.h, x, y, TILE, TILE);
       } else {
