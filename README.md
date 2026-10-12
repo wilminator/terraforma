@@ -206,9 +206,35 @@ A picture in a seed file (a tile's `art`) is a file name under the game's assets
 
 - `knight.png` is the indexed-color sheet, `knight.alpha.png` its transparency (an 8-bit gray image of the same size) and `knight.sheet.json` describes it: `frame` (`[w, h]`), `grid` (`[columns, rows]`), `frames`, `palette` (hex colors) and `alpha` (`false` for a sheet with no alpha file). The browser combines the two images on a canvas when it loads the sheet.
 - `red_team.colors.json` is a color map, `{"#3050a0": "#a03030"}`. Each pixel is snapped to the nearest palette color, then swapped if the map lists it; colors the map leaves out stay. One sheet serves many recolors, and each sheet-and-map pair is combined once and cached.
-- `knight.anim.json` (animations) is accepted in the reference now and played in a later slice.
+- `knight.anim.json` is the sheet's animations (the sections below say what it holds). One file belongs to one sheet, so a hero's fight art and map art, which are separate sheets, each have their own.
 
-In the browser a game calls `shell.art.load(reference)`, which resolves to `{source, frame, grid, frames, palette, animations}`; `source` goes straight to `drawImage`.
+In the browser a game calls `shell.art.load(reference)`, which resolves to `{source, frame, grid, frames, palette, animations}`; `source` goes straight to `drawImage`, and `animations` is the animation set (or `null` when the reference names no animation file). `drawFrame(context, loaded, index, x, y, width, height, ops)` from `art.js` draws a frame of a sheet, changed by the transforms an animation asks for.
+
+### Animations
+
+`knight.anim.json` holds the sheet's named animations and aliases (a public format; the license exception covers it). The server checks every `*.anim.json` in the game's assets folder when it starts (against the frame count of the sheet with the same name, if there is one) and refuses to start on a bad one; it never plays them.
+
+```json
+{
+ "animations": {
+  "stand_right": {"frames": [0, {"frame": 1, "ms": 250, "rotate": 10}], "ms": 100, "loop": true, "sync": "shared"},
+  "move_right": {"frames": [2, 3, 4, 5], "ms": 80}
+ },
+ "aliases": {
+  "stand_left": {"of": "stand_right", "flip_x": true},
+  "stand_up": {"of": "stand_left", "scale": 1.5, "pivot": [8, 16]}
+ }
+}
+```
+
+- An **animation** has `frames`: each a number (a frame of the sheet, counting as for `frame` above) or `{"frame", "ms", ...}` with its own time and transform. `ms` is how long each frame shows unless it says (100 by default), `loop` is on by default (off: it holds its last frame) and `sync` is `shared` (the default: everything playing it is in step, counting from the same clock) or `random` (each starts at a random moment of it).
+- An **alias** is another name for an animation or another alias (`of`), with a transform of its own. A loop of aliases, an alias of nothing, a name that is both an animation and an alias, or a frame the sheet doesn't have is an error. Names are lowercase letters, digits and `_`, starting with a letter.
+- A **transform** is `flip_x`, `flip_y`, `scale` (above 0, at most 16), `rotate` (degrees clockwise, -360 to 360) and optionally `pivot` (`[x, y]` in pixels of the frame; the frame's center if left out), allowed on a frame and on an alias. Within one transform the order is flip, then scale, then rotate. A frame's own transform comes first, then the aliases it was reached through, the one nearest the animation first.
+- **Names.** Fight art (its own sheet) uses `base`, `equip`, `hit`, `die`, `flee`, `attack_close`, `attack_throw`, `attack_shoot`, `skill`, `spell` and `item`. Map art uses `stand_<dir>` and `move_<dir>` (`up`, `down`, `left`, `right`), and the map versions of actions that can also happen there, such as `cast` and `equip`, each with an optional `_<dir>`. A game may add names of its own and play them through its client code.
+- **Fallbacks.** The client plays the first of these that the file has: the name asked for, then `stand`, then `base`, each as `NAME_<dir>`, `NAME` and `NAME_down` (a missing direction becomes down). So a fight sheet's missing `hit` plays `base`, and a map sheet's `move_left` that is missing plays `move_down`, or `stand_left` if there is no `move` at all. A file with none of them plays nothing (the picture stays as drawn).
+- **Playing.** `loaded.animations.play(name, {direction})` gives a player (or `null`); `player.frameAt()` says which frame to draw and which transforms to apply. All players share one clock (`Clock`, in `animation.js`, one `requestAnimationFrame` loop for everything that subscribes), so animations that are `shared` stay in step; a player who asks for less motion (`prefers-reduced-motion`) sees the first frame of each animation and the clock runs no loop. The server never depends on a frame.
+- The map scene plays `base` for a tile kind whose `art` names an `animations` file (the example's cellar has a crystal), and sets the stage's `data-animated` to how many tile kinds do. The fight scene's sprites come with the slice that gives monsters and personalities their art.
+
 
 ## Maps
 
