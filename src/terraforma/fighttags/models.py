@@ -2,13 +2,13 @@
 
 Team and alliance ids are plain numbers without links, like a relationship's: they go with the team or alliance."""
 
-from sqlalchemy import Boolean, Float, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Double, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db.base import Base, Timestamps
 
 #: Scores are doubles on every database (a plain ``Float`` is a 4-byte number on MySQL).
-SCORE = Float(53)
+SCORE = Double()
 
 
 class FightTeam(Timestamps, Base):

@@ -23,8 +23,8 @@ def upgrade() -> None:
     sa.Column('party', sa.Integer(), nullable=False),
     sa.Column('pvp', sa.Boolean(), nullable=False),
     sa.Column('won', sa.Boolean(), nullable=False),
-    sa.Column('overkill', sa.Float(precision=53), nullable=False),
-    sa.Column('underdog', sa.Float(precision=53), nullable=False),
+    sa.Column('overkill', sa.Double(), nullable=False),
+    sa.Column('underdog', sa.Double(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['fight_id'], ['fights.id'], name=op.f('fk_fight_teams_fight_id_fights')),
@@ -37,7 +37,7 @@ def upgrade() -> None:
     sa.Column('team_id', sa.Integer(), autoincrement=False, nullable=False),
     sa.Column('kind', sa.String(length=16), nullable=False),
     sa.Column('fight_id', sa.Integer(), nullable=False),
-    sa.Column('score', sa.Float(precision=53), nullable=False),
+    sa.Column('score', sa.Double(), nullable=False),
     sa.ForeignKeyConstraint(['fight_id'], ['fights.id'], name=op.f('fk_team_tags_fight_id_fights')),
     sa.PrimaryKeyConstraint('team_id', 'kind', name=op.f('pk_team_tags'))
     )
@@ -60,7 +60,7 @@ def upgrade() -> None:
     sa.Column('kind', sa.String(length=16), nullable=False),
     sa.Column('fight_id', sa.Integer(), autoincrement=False, nullable=False),
     sa.Column('team_id', sa.Integer(), nullable=False),
-    sa.Column('score', sa.Float(precision=53), nullable=False),
+    sa.Column('score', sa.Double(), nullable=False),
     sa.ForeignKeyConstraint(['fight_id'], ['fights.id'], name=op.f('fk_alliance_tops_fight_id_fights')),
     sa.PrimaryKeyConstraint('alliance_id', 'kind', 'fight_id', name=op.f('pk_alliance_tops'))
     )
