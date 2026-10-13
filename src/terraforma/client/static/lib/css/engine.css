@@ -225,6 +225,10 @@ select, .inline input {
 .note { color: var(--accent); min-height: 1.5em; margin: 0 0 0.5rem; }
 .secret { font-size: 1.1rem; overflow-wrap: anywhere; user-select: all; }
 .codes { columns: 2; padding-left: 1.25rem; }
+.factor { margin-top: var(--gutter); padding-top: var(--gutter); border-top: 1px solid var(--border); }
+.factor h3 { margin: 0 0 0.5rem; font-size: 1rem; }
+.factor ul { padding-left: 1.25rem; margin: 0 0 0.5rem; }
+.second { margin-bottom: 0.75rem; }
 .links { margin: 0; }
 .check { display: inline-flex; gap: 0.35rem; align-items: center; }
 .field textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 0.5em; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text); }

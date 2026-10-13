@@ -10,6 +10,7 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .accounts.hooks import SignIn
 from .economy import Economy, TeamGold
 from .fights.rules import Rules
 from .alliances.hooks import Alliances
@@ -65,5 +66,8 @@ class Game:
     weekly_quests: WeeklyQuests = field(default_factory=WeeklyQuests)
     # What may change about the heroes of a saved team: removing, replacing and moving them (refused by default; a game may sell it).
     roster: Roster = field(default_factory=Roster)
+    # Two things about logging in: how long a browser that proved a second factor may skip it, and the note a player with a single
+    # second factor sees (see accounts.hooks).
+    sign_in: SignIn = field(default_factory=SignIn)
     # Where a new team starts: the engine's hub, unless the game offers places to pick from (the capitals).
     start: Start = field(default_factory=Start)

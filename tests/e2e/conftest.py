@@ -140,11 +140,11 @@ def console():
 
 @pytest.fixture
 def new_page(browser, live_server, console):
-    """Opens a page on the live server; $viewport sets the window (landscape by default)."""
+    """Opens a page on the live server; $viewport sets the window (landscape by default), $url the address it is reached at."""
     contexts = []
 
-    def open_page(viewport=None):
-        context = browser.new_context(viewport=viewport or {"width": 1280, "height": 720}, base_url=live_server.url)
+    def open_page(viewport=None, url=None):
+        context = browser.new_context(viewport=viewport or {"width": 1280, "height": 720}, base_url=url or live_server.url)
         contexts.append(context)
         page = context.new_page()
         page.on("console", lambda message: console.problems.append(f"console {message.type}: {message.text}") if message.type in ("error", "warning") else None)

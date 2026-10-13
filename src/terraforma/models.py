@@ -136,6 +136,9 @@ class Account(Timestamps, Base):
     recovery_codes: Mapped[list | None] = mapped_column(JSON)
     # Names the one emailed 2FA change that is still open (a newer request replaces it).
     twofa_change_nonce: Mapped[str | None] = mapped_column(String(43))
+    # How many security keys (WebAuthn) count as a second factor; kept in step with the confirmed rows of webauthn_keys, so
+    # "is two-factor login on" never needs a query.
+    webauthn_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     # Set only by a game's own setup (``challenge.service.set_admin``), never by a call a player can make.
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
@@ -157,6 +160,49 @@ class ExternalIdentity(Timestamps, Base):
     subject: Mapped[str] = mapped_column(String(255))
     # The address the provider gave when this was linked, for showing which account it is.
     email: Mapped[str | None] = mapped_column(String(254))
+
+
+class WebauthnKey(Timestamps, Base):
+    """A security key or passkey (WebAuthn) of an account: a second factor next to the authenticator app (see accounts.keys).
+
+    A key counts once ``confirmed_at`` is set, which the emailed link does; a registration that was never confirmed is
+    replaced by the next one and tidied up by housekeeping.
+    """
+
+    __tablename__ = "webauthn_keys"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
+    # The authenticator's id for the key, base64url (up to 1023 bytes by the standard; real ones are 16 to 128).
+    credential_id: Mapped[str] = mapped_column(String(255), unique=True)
+    # The COSE public key, as the authenticator gave it.
+    # The COSE public key as base64url text (a bytes parameter does not go through every driver).
+    public_key: Mapped[str] = mapped_column(String(1024))
+    # The authenticator's counter at its last use: a counter that does not go up is a cloned key (0 means it keeps none).
+    sign_count: Mapped[int] = mapped_column(BigInteger, default=0)
+    # What the player calls it ("Phone", "YubiKey").
+    name: Mapped[str] = mapped_column(String(40))
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class RememberedBrowser(Timestamps, Base):
+    """A browser that proved a second factor and may skip it until ``expires_at`` (see accounts.remember).
+
+    The browser holds a random secret in a cookie; only its hash is kept here. It stops counting when the account's session
+    version moves on (a password reset, an email change) and when two-factor login changes.
+    """
+
+    __tablename__ = "remembered_browsers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
+    secret_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    session_version: Mapped[int] = mapped_column(Integer)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # The browser's own words for itself, cut short, so the player can tell which is which.
+    label: Mapped[str] = mapped_column(String(80), default="")
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class RateLimitHit(Base):
@@ -199,6 +245,7 @@ from .chat import models as _chat  # noqa: E402,F401
 from .playtime import models as _playtime  # noqa: E402,F401
 from .social import models as _social  # noqa: E402,F401
 from .monsterplay import models as _monsterplay  # noqa: E402,F401
+from .storegrant import models as _storegrant  # noqa: E402,F401
 from .fighttags import models as _fighttags  # noqa: E402,F401
 from .fightpages import models as _fightpages  # noqa: E402,F401
 from .voice import models as _voice  # noqa: E402,F401
