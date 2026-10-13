@@ -5,8 +5,7 @@
 import { get, post } from "./api.js";
 import { h, replace } from "./dom.js";
 import { field, formCard, problemText } from "./forms.js";
-
-const CODE = { autocomplete: "one-time-code", maxlength: 32, inputmode: "text" };
+import { proofField, secondFactorRows } from "./second-factor.js";
 
 /** The "Continue with ..." links under the login form; nothing when the game sets up no provider. $next is a page name (play, profile) or null. */
 export async function providerButtons(shell, next = null) {
@@ -55,33 +54,43 @@ export function finishCard(shell, pending, onDone) {
   }).form;
 }
 
-/** The provider vouched for the player, but the account has two-factor login on. */
+/** The provider vouched for the player, but the account has two-factor login on: a code or a security key. */
 export function twoFactorStep(shell, onDone) {
   const t = (key, values) => shell.text.get(key, values);
-  const code = field("external-code", t("login.code"), { ...CODE, required: true });
-  return formCard(shell, {
-    id: "external-2fa-form",
-    title: "external.twofa_title",
-    submit: "login.submit",
-    rows: [code.row],
-    run: async () => {
-      const answer = await post("/api/external/2fa", { code: code.input.value.trim() });
-      code.input.value = "";
-      onDone(answer);
-    },
-  }).form;
+  const rows = h("div", { class: "second" });
+  let asking = null;
+  const send = async (extra = {}) => {
+    if (!asking) return;
+    const body = { ...extra };
+    if (asking.remember()) body.remember = true;
+    if (!extra.assertion) body.code = asking.code.value.trim();
+    const answer = await post("/api/external/2fa", body);
+    asking.code.value = "";
+    onDone(answer);
+  };
+  const card = formCard(shell, { id: "external-2fa-form", title: "external.twofa_title", submit: "login.submit", rows: [rows], run: () => send() });
+  get("/api/external/2fa").then((offer) => {
+    asking = secondFactorRows(shell, {
+      offer,
+      prefix: "external",
+      submit: (extra) => send(extra).catch((error) => { card.problem.textContent = error.message; }),
+      fresh: () => get("/api/external/2fa"),
+    });
+    replace(rows, ...asking.rows);
+    asking.focus();
+  }).catch((error) => { card.problem.textContent = problemText(shell, error); });
+  return card.form;
 }
 
 /** On the account page: the providers linked to this account (each can be unlinked), the ones that can be linked, and a first password. */
-export async function signInMethodsCard(shell, twoFactorOn, redraw) {
+export async function signInMethodsCard(shell, status, redraw) {
   const t = (key, values) => shell.text.get(key, values);
   const [{ providers }, { identities, has_password: hasPassword }] = await Promise.all([get("/api/external/providers"), get("/api/external/identities")]);
   if (!providers.length && !identities.length) return null;
 
   const problem = h("p", { class: "problem", role: "alert" });
-  const code = field("methods-code", t("twofa.code"), { ...CODE, required: twoFactorOn });
-  code.row.hidden = !twoFactorOn;
-  const withCode = (body) => (twoFactorOn ? { ...body, code: code.input.value.trim() } : body);
+  const proof = proofField(shell, status, "methods-code");
+  const withCode = async (body) => ({ ...body, ...(await proof.collect()) });
   const attempt = async (work) => {
     problem.textContent = "";
     try {
@@ -104,7 +113,7 @@ export async function signInMethodsCard(shell, twoFactorOn, redraw) {
         id: `unlink-${each.provider}`,
         onclick: () =>
           attempt(async () => {
-            await post("/api/external/unlink", withCode({ provider: each.provider }));
+            await post("/api/external/unlink", await withCode({ provider: each.provider }));
             await redraw();
           }),
       }, t("external.unlink")),
@@ -118,7 +127,7 @@ export async function signInMethodsCard(shell, twoFactorOn, redraw) {
         id: `link-${each.name}`,
         onclick: () =>
           attempt(async () => {
-            const answer = await post(`/api/external/${each.name}/link`, withCode({}));
+            const answer = await post(`/api/external/${each.name}/link`, await withCode({}));
             location.assign(answer.url);
           }),
       }, t("external.link", { provider: each.label })),
@@ -135,7 +144,7 @@ export async function signInMethodsCard(shell, twoFactorOn, redraw) {
           onsubmit: (event) => {
             event.preventDefault();
             attempt(async () => {
-              await post("/api/external/password", withCode({ password: newPassword.input.value }));
+              await post("/api/external/password", await withCode({ password: newPassword.input.value }));
               newPassword.input.value = "";
               await redraw();
             });
@@ -152,8 +161,8 @@ export async function signInMethodsCard(shell, twoFactorOn, redraw) {
     h("h2", {}, t("external.methods_title")),
     rows.length ? h("ul", {}, rows) : null,
     !hasPassword && rows.length ? h("p", { class: "hint" }, t("external.only_way")) : null,
-    twoFactorOn ? h("p", { class: "hint" }, t("external.code_needed")) : null,
-    code.row,
+    status.enabled ? h("p", { class: "hint" }, t("external.code_needed")) : null,
+    proof.row,
     links.length ? h("p", {}, links) : null,
     passwordForm,
     problem,

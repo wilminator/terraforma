@@ -19,7 +19,7 @@ from . import __doc__ as ENGINE
 from . import logscrub
 from .accounts.external_routes import router as external_router
 from .accounts.routes import router as account_router
-from .accounts.twofa_routes import router as twofa_router
+from .accounts.twofa_routes import admin_router, router as twofa_router
 from .accounts.tokens import Tokens
 from .api.security import TolerantSessionMiddleware
 from .db.session import make_engine, make_sessionmaker
@@ -130,6 +130,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     )
     app.include_router(account_router)
     app.include_router(twofa_router)
+    app.include_router(admin_router)
     app.include_router(external_router)
     app.include_router(heroes_router)
     app.include_router(inventory_router)
