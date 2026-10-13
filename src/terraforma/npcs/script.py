@@ -37,7 +37,8 @@ its command, followed by comma separated parameters. Text outside tags is shown.
     add_gold,amount,label               pays that much gold into the hero's purse, the game's economy decides where (the label if it cannot)
     warp,map,x,y,label                  moves the party to that tile of that map and leaves the dialog (the label if it cannot: a party apart in a town, a hero in a fight)
     open_party,on|off,label             the leader opens or closes the party to requests (the label if not the leader)
-    add_team, find_party, party_requests  the guild's activities (guild.service): add one of your teams, ask an open party, answer asks
+    add_team[,tokens], find_party, party_requests  the guild's activities (guild.service): add one of your teams (for that many Challenge
+                                        Tokens if given, taken only once the team is added), ask an open party, answer asks
     resurrect,price,label  cure,price,label  uncurse,price,label   the game's paid actions (cancelling jumps to the label)
     pause,ms             wait this long (the browser does)
     sound,clip  music,clip  mute        sound cues (the browser plays them)
@@ -153,8 +154,13 @@ def check_tag(parts: list[str]) -> list[str]:
         for price in args[1::3]:
             _whole(command, price, "a price")
         return args[2::3]
-    elif command in ("mute", "ack", "end", "heal", "recharge", "select_team", "add_team", "find_party", "party_requests"):
+    elif command in ("mute", "ack", "end", "heal", "recharge", "select_team", "find_party", "party_requests"):
         count(0)
+    elif command == "add_team":
+        if len(args) > 1:
+            raise ScriptError(f"add_team tag takes an optional number of Challenge Tokens, {len(args)} parameters given")
+        if args and _whole(command, args[0], "the Challenge Tokens") < 1:
+            raise ScriptError("add_team tag: the Challenge Tokens are at least 1")
     elif command == "add_status":
         count(5)
         _one_of(command, args[0], ("hero", "team", "party"), "the target")

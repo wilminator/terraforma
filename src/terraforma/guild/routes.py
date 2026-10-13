@@ -68,8 +68,9 @@ async def add_team(hero_id: Id, body: AddTeam, request: Request, account: Acting
     await limited(request, ratelimit.TRADE_BY_ACCOUNT, str(account.id))
     try:
         hero = await heroes.own_hero(db, account, hero_id)
-        await npcs.activity(db, hooks, reach, hero, ("add_team",))
-        result = await service.add_team(db, hero, body.team_id, rules.party_size, guild)
+        prompt = await npcs.activity(db, hooks, reach, hero, ("add_team",))
+        tokens = int(prompt["parts"][0]) if prompt["parts"] else 0
+        result = await service.add_team(db, hero, body.team_id, rules.party_size, guild, tokens)
         return await _then_on(db, hooks, reach, inn, rules, economy, hero, result)
     except (heroes.HeroError, npcs.NpcError, service.GuildError) as error:
         raise refuse(error) from error
