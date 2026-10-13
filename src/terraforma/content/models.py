@@ -64,6 +64,9 @@ class Personality(ContentRow, Base):
 
     animations: Mapped[dict] = mapped_column(JSON)
     overworld: Mapped[dict] = mapped_column(JSON)
+    # Pictures (a sheet reference or a file name) for a fight and for the map; null for a personality with none.
+    fight_art: Mapped[dict | str | None] = mapped_column(JSON)
+    map_art: Mapped[dict | str | None] = mapped_column(JSON)
 
 
 class Monster(ContentRow, Base):

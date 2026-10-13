@@ -5,12 +5,26 @@
   "xp_needed": 20,
   "stat_growth": {
    "HP": 24,
+   "MP": 4,
    "Strength": 5,
    "Speed": 3,
    "Accuracy": 4,
    "Dodge": 2,
-   "Block": 4
-  }
+   "Block": 4,
+   "Power": 1,
+   "Resistance": 2,
+   "Focus": 1
+  },
+  "abilities": [
+   {
+    "ability": "power_strike",
+    "level": 2
+   },
+   {
+    "ability": "cleave",
+    "level": 4
+   }
+  ]
  },
  {
   "key": "scout",
@@ -18,11 +32,93 @@
   "xp_needed": 20,
   "stat_growth": {
    "HP": 16,
+   "MP": 6,
    "Strength": 3,
    "Speed": 6,
    "Accuracy": 6,
    "Dodge": 5,
-   "Block": 1
-  }
+   "Block": 1,
+   "Power": 2,
+   "Resistance": 2,
+   "Focus": 2
+  },
+  "abilities": [
+   {
+    "ability": "poison_dart",
+    "level": 2
+   },
+   {
+    "ability": "daze",
+    "level": 4
+   }
+  ]
+ },
+ {
+  "key": "mage",
+  "name": "Mage",
+  "xp_needed": 24,
+  "stat_growth": {
+   "HP": 12,
+   "MP": 14,
+   "Strength": 1,
+   "Speed": 3,
+   "Accuracy": 3,
+   "Dodge": 3,
+   "Block": 0,
+   "Power": 6,
+   "Resistance": 4,
+   "Focus": 5
+  },
+  "abilities": [
+   "spark",
+   {
+    "ability": "fire",
+    "level": 3
+   },
+   {
+    "ability": "chill",
+    "level": 5
+   }
+  ]
+ },
+ {
+  "key": "cleric",
+  "name": "Cleric",
+  "xp_needed": 24,
+  "stat_growth": {
+   "HP": 18,
+   "MP": 12,
+   "Strength": 2,
+   "Speed": 3,
+   "Accuracy": 3,
+   "Dodge": 2,
+   "Block": 2,
+   "Power": 4,
+   "Resistance": 6,
+   "Focus": 4
+  },
+  "abilities": [
+   "mend",
+   {
+    "ability": "cure",
+    "level": 2
+   },
+   {
+    "ability": "bless",
+    "level": 3
+   },
+   {
+    "ability": "renew",
+    "level": 4
+   },
+   {
+    "ability": "mend_all",
+    "level": 5
+   },
+   {
+    "ability": "raise",
+    "level": 6
+   }
+  ]
  }
 ]
