@@ -24,6 +24,7 @@ from ..fights.models import (
 from ..fights.rules import Rules
 from ..monsterplay.models import MonsterSeat
 from ..relations.models import RatingPrompt
+from ..fightpages.models import PublicFight
 from . import scoring
 from .models import AllianceKept, AllianceTop, FightTeam, TeamKept, TeamTag
 
@@ -50,6 +51,8 @@ async def record_fight(session: AsyncSession, record: FightRecord, fight: Fight,
     for result in results:
         session.add(FightTeam(fight_id=record.id, team_id=result.team_id, party=result.party, pvp=result.pvp, won=result.won,
                               overkill=result.overkill, underdog=result.underdog))
+    if rules.public_fight(fight):
+        session.add(PublicFight(fight_id=record.id))
     await session.flush()
     for result in results:
         if not result.won:
@@ -164,7 +167,7 @@ async def alliance_release(session: AsyncSession, alliance_id: int, fight_id: in
 def held_fights():
     """The ids of the fights that a tag, a list or a slot holds."""
     return (
-        select(TeamTag.fight_id).union(select(TeamKept.fight_id), select(AllianceTop.fight_id), select(AllianceKept.fight_id))
+        select(TeamTag.fight_id).union(select(TeamKept.fight_id), select(AllianceTop.fight_id), select(AllianceKept.fight_id), select(PublicFight.fight_id))
     )
 
 

@@ -48,6 +48,7 @@ from .reach.routes import router as reach_router
 from .parties.routes import router as parties_router
 from .playtime.routes import router as playtime_router
 from .fighttags.routes import router as fighttags_router
+from .fightpages.routes import router as fightpages_router
 from .profiles.routes import router as profiles_router
 from .social.routes import router as social_router
 from .relations.rating_routes import router as ratings_router
@@ -148,6 +149,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(playtime_router)
     app.include_router(social_router)
     app.include_router(fighttags_router)
+    app.include_router(fightpages_router)
     app.include_router(challenge_router)
     app.include_router(npcs_router)
     app.include_router(reach_router)
