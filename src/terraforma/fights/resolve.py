@@ -419,6 +419,7 @@ def inflict_damage(fight, rules, actor, target, target_address, damage, critical
     target.current[vital] -= damage
     if target.current[vital] <= 0:
         log.add(EventType.DIED, *target_address, damage, -target.current[vital])
+        fight.parties[target_address[0]].overkill += -target.current[vital]
         target.current[vital] = 0
     gauge_changed(fight, rules, actor, target_address, vital, before, target.current[vital], maximum, log)
     if damage != 0 and not log.ticking:
@@ -438,6 +439,7 @@ def restore_vital(fight, rules, actor, target, target_address, amount, log) -> N
             overkill = -target.current[vital]
             target.current[vital] = 0
             log.add(EventType.DIED, *target_address, -amount, overkill)
+            fight.parties[target_address[0]].overkill += overkill
     else:
         if target.current[vital] > 0 and before == 0:
             log.add(EventType.REVIVED, *target_address)
