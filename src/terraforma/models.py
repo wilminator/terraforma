@@ -181,3 +181,4 @@ from .chat import models as _chat  # noqa: E402,F401
 from .playtime import models as _playtime  # noqa: E402,F401
 from .social import models as _social  # noqa: E402,F401
 from .monsterplay import models as _monsterplay  # noqa: E402,F401
+from .voice import models as _voice  # noqa: E402,F401

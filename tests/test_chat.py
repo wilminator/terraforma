@@ -113,6 +113,13 @@ def test_a_player_with_no_party_or_alliance_is_in_the_town_the_nearby_and_the_gl
     assert kinds == ["nearby", "town", "global"]
 
 
+def test_the_channel_list_says_whether_the_player_is_an_admin(players):
+    client, _ = players
+    assert call(client, "GET", "Mike", "/api/chat/channels")["admin"] is False
+    make_admin(client, "Mike")
+    assert call(client, "GET", "Mike", "/api/chat/channels")["admin"] is True
+
+
 def test_party_and_alliance_channels_appear_with_the_party_and_the_alliance(players):
     client, ids = players
     assert [each["kind"] for each in call(client, "GET", "Yan", "/api/chat/channels")["channels"]] == ["nearby", "town", "global"]
@@ -473,3 +480,90 @@ def test_zero_days_keeps_everything(players):
     age(client, old, 3650)
     assert run_pass(client, 0)["old_chat_messages"] == 0
     assert kept(client) == ["ancient"]
+
+
+# --- chat bans -----------------------------------------------------------------------------------------------------------------
+
+def ban(client, who, handle, hours=None, reason="", status=200):
+    return call(client, "POST", who, "/api/chat/admin/ban", {"handle": handle, "hours": hours, "reason": reason}, status)
+
+
+def test_a_barred_player_can_read_but_not_speak_until_the_ban_is_lifted(players):
+    client, _ = players
+    make_admin(client, "Yan")
+    say(client, "Zed", "global", "all", "before")
+    listed = ban(client, "Yan", "zedthebold", hours=24, reason="rude")["bans"]
+    assert [(each["handle"], each["reason"]) for each in listed] == [("Zedthe" + "Bold", "rude")] and listed[0]["until"]
+    refusal = say(client, "Zed", "global", "all", "after", 409)["detail"]
+    assert refusal.startswith("you are barred from chat until ") and refusal.endswith(": rude")
+    assert bodies(hear(client, "Zed", "global", "all")) == ["before"], "reading is still allowed"
+    assert call(client, "POST", "Yan", "/api/chat/admin/unban", {"handle": "Zedthe" + "Bold"})["bans"] == []
+    say(client, "Zed", "global", "all", "after")
+
+
+def test_a_ban_for_good_has_no_end_and_a_new_ban_replaces_the_old(players):
+    client, _ = players
+    make_admin(client, "Yan")
+    ban(client, "Yan", "Zedthe" + "Bold", hours=1)
+    [only] = ban(client, "Yan", "Zedthe" + "Bold", reason="again")["bans"]
+    assert only["until"] is None
+    assert say(client, "Zed", "global", "all", "hi", 409)["detail"] == "you are barred from chat: again"
+
+
+def test_a_ban_that_has_run_out_no_longer_stops_anyone_and_is_not_listed(players):
+    client, _ = players
+    make_admin(client, "Yan")
+    ban(client, "Yan", "Zedthe" + "Bold", hours=1)
+
+    async def run_out(db):
+        from terraforma.chat.models import ChatBan
+
+        await db.execute(update(ChatBan).values(until=wallclock.now() - timedelta(minutes=1)))
+
+    in_app_db(client, run_out)
+    say(client, "Zed", "global", "all", "back")
+    assert call(client, "GET", "Yan", "/api/chat/admin/bans")["bans"] == []
+
+
+def test_only_an_admin_bans_and_an_admin_cannot_be_barred(players):
+    client, _ = players
+    ban(client, "Mike", "Zedthe" + "Bold", hours=1, status=403)
+    call(client, "GET", "Mike", "/api/chat/admin/bans", None, 403)
+    call(client, "POST", "Mike", "/api/chat/admin/unban", {"handle": "Zedthe" + "Bold"}, 403)
+    make_admin(client, "Yan")
+    make_admin(client, "Zed")
+    assert "admin" in ban(client, "Yan", "Zedthe" + "Bold", hours=1, status=409)["detail"]
+    ban(client, "Yan", "Nobody Here", hours=1, status=404)
+    ban(client, "Yan", "Mikethe" + "Bold", hours=0, status=422)
+
+
+def test_the_game_hears_of_an_actioned_flag_and_not_of_a_dismissed_one(players, monkeypatch):
+    client, _ = players
+    heard = []
+
+    async def actioned(self, session, admin, sender_id, message, reason):
+        heard.append((message.body, reason))
+
+    monkeypatch.setattr(Chat, "actioned", actioned)
+    make_admin(client, "Yan")
+    first = say(client, "Zed", "global", "all", "one")["id"]
+    second = say(client, "Zed", "global", "all", "two")["id"]
+    for message, state in ((first, "dismissed"), (second, "actioned")):
+        flag_id = flag(client, "Mike", message)["id"]
+        call(client, "POST", "Yan", "/api/chat/admin/settle", {"flag_id": flag_id, "state": state})
+    assert heard == [("two", "tou")]
+
+
+def test_a_game_can_ban_from_its_own_actioned_hook(players, monkeypatch):
+    client, _ = players
+    from terraforma.chat import service
+
+    async def strike(self, session, admin, sender_id, message, reason):
+        sender = await session.get(Account, sender_id)
+        await service.ban(session, admin, sender.handle, 24, "flagged")
+
+    monkeypatch.setattr(Chat, "actioned", strike)
+    make_admin(client, "Yan")
+    bad = say(client, "Zed", "global", "all", "rude")["id"]
+    call(client, "POST", "Yan", "/api/chat/admin/settle", {"flag_id": flag(client, "Mike", bad)["id"], "state": "actioned"})
+    say(client, "Zed", "global", "all", "again", 409)
