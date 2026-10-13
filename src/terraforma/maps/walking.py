@@ -29,6 +29,7 @@ from ..fights.models import FightRecord
 from ..fights.rules import Rules
 from ..heroes.models import Hero
 from ..models import Map, World
+from ..relations.hooks import Relations
 from ..parties import service as parties
 from ..parties.models import Party
 from ..towns import service as towns
@@ -195,7 +196,7 @@ async def _stop(session: AsyncSession, party: Party, game_map: Map, why: str) ->
 
 async def step(
     session: AsyncSession, rules: Rules, account_id: int, party_id: int, x: int, y: int,
-    run_edge: Callable[[Hero, MapObject], Awaitable[dict]] | None = None, town_hooks: Towns | None = None,
+    run_edge: Callable[[Hero, MapObject], Awaitable[dict]] | None = None, town_hooks: Towns | None = None, relations: Relations | None = None,
 ) -> dict:
     """The client has arrived on (x, y), the next tile of the party's route. Confirms it (the party moves there and may meet
     monsters: ``fight`` is then the fight's number and ``monsters`` its keys, and the route is over) or, if it can't, says
@@ -230,7 +231,7 @@ async def step(
     party.walked += 1
     at = route["at"] + 1
     result = {"confirmed": True, "map": game_map.name, "revision": game_map.revision, "x": x, "y": y, "done": at == len(route["tiles"]) - 1}
-    record, monsters = await _meet(session, rules, party, game_map)
+    record, monsters = await _meet(session, rules, party, game_map, relations)
     if record is not None:
         result |= {"fight": record.id, "monsters": monsters, "done": True}
     elif town_hooks is not None and await towns.settle(session, town_hooks, party.id) is not None:
@@ -260,7 +261,7 @@ async def _leave(session: AsyncSession, party: Party, game_map: Map, tile: Tile,
     return result
 
 
-async def _meet(session: AsyncSession, rules: Rules, party: Party, game_map: Map) -> tuple[FightRecord | None, list[str]]:
+async def _meet(session: AsyncSession, rules: Rules, party: Party, game_map: Map, relations: Relations | None = None) -> tuple[FightRecord | None, list[str]]:
     """The roll for monsters at the end of a step, and the fight it starts. (None, []) if the party meets none."""
     if party.steps <= game_map.safe_steps:
         return None, []
@@ -275,6 +276,6 @@ async def _meet(session: AsyncSession, rules: Rules, party: Party, game_map: Map
     monsters = rolls.choices(fits, weights=[each["weight"] for each in fits])[0]["monsters"]
     try:
         async with session.begin_nested():
-            return await live.start_party_fight(session, party.id, monsters, rules), monsters
+            return await live.start_party_fight(session, party.id, monsters, rules, monster_play=True, relations=relations), monsters
     except live.Refused:  # a party with no heroes, say: nothing to fight
         return None, []
