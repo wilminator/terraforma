@@ -67,14 +67,14 @@ def test_setup_does_nothing_until_a_code_and_the_emailed_link_confirm_it(mike, m
     client, headers = mike
     setup = expect(client.post("/api/2fa/setup", headers=headers), 200).json()
     assert setup["uri"].startswith("otpauth://totp/") and setup["secret"] in setup["uri"]
-    assert client.get("/api/2fa").json() == {"enabled": False, "recovery_codes_left": 0}
+    assert client.get("/api/2fa").json() == {"enabled": False, "recovery_codes_left": 0, "app": False, "keys": []}
     assert client.post("/api/2fa/enable", json={"code": "000000"}, headers=headers).status_code == 401
     assert client.post("/api/2fa/enable", json={"code": code_now(setup["secret"])}, headers=headers).status_code == 202
     assert client.get("/api/2fa").json()["enabled"] is False, "not until the link is followed"
     token = token_in(mailbox.last_to(EMAIL))
     answer = client.post("/api/2fa/confirm", json={"token": token}, headers=headers).json()
     assert answer["enabled"] is True and len(answer["recovery_codes"]) == 10
-    assert client.get("/api/2fa").json() == {"enabled": True, "recovery_codes_left": 10}
+    assert client.get("/api/2fa").json() == {"enabled": True, "recovery_codes_left": 10, "app": True, "keys": []}
     assert client.post("/api/2fa/confirm", json={"token": token}, headers=headers).status_code == 400, "once"
 
 
@@ -130,7 +130,7 @@ def test_login_with_2fa_asks_for_a_code_and_each_code_works_once(mike, mailbox, 
     secret, _ = turn_on(client, headers, mailbox, later)
     client.post("/api/logout", headers=headers)
     asked = log_in(client)
-    assert asked.status_code == 202 and asked.json() == {"needs_code": True}
+    assert asked.status_code == 202 and asked.json() == {"needs_code": True, "methods": ["app"], "webauthn": None, "remember_days": 30}
     assert client.get("/api/me").status_code == 401, "no login without the code"
     assert log_in(client, code="000000").status_code == 401
     code = code_now(secret)
