@@ -19,7 +19,7 @@ from .voice.hooks import Voice
 from .pvp.hooks import PvpZones
 from .market.hooks import Market
 from .guild.hooks import Guild
-from .heroes.hooks import Roster
+from .heroes.hooks import Roster, Start
 from .storage.hooks import NoStorage, Storage
 from .npcs.hooks import Npcs
 from .npcs.inn import Inn
@@ -65,3 +65,5 @@ class Game:
     roster: Roster = field(default_factory=Roster)
     # Whether teams (or accounts) keep items in storage beside the heroes' packs, how much, and when it may be used (none, by default).
     storage: Storage = field(default_factory=NoStorage)
+    # Where a new team starts: the engine's hub, unless the game offers places to pick from (the capitals).
+    start: Start = field(default_factory=Start)
