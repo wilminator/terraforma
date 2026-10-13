@@ -8,23 +8,21 @@ without the browser asking this server first (and it says no).
 
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 
-from ..api.deps import ActingAccount, CurrentAccount, Db, client_address, current_account
+from ..api.deps import ActingAccount, CurrentAccount, Db, client_address, current_account, sign_in_of
 from ..api.security import SESSION_CSRF, start_session
 from ..mail import Mail
-from . import ratelimit, service, twofa
+from ..models import Account
+from . import ratelimit, remember, second, service, twofa
+from .common import Strict, limited
 from .tokens import TokenError
 
 router = APIRouter(prefix="/api")
 
 ACCEPTED = {"ok": True}
-
-
-class Strict(BaseModel):
-    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
 
 
 class RegisterRequest(Strict):
@@ -37,21 +35,21 @@ class TokenRequest(Strict):
     token: str = Field(min_length=1, max_length=512)
 
 
-class LoginRequest(Strict):
+class LoginRequest(second.Proof):
     username: str = Field(min_length=1, max_length=32)
     password: str = Field(min_length=1, max_length=service.PASSWORD_MAX)
-    # An app code or a recovery code; only for accounts with 2FA on.
-    code: str | None = Field(default=None, min_length=1, max_length=32)
+    # (code or assertion: the second factor, only for accounts with 2FA on)
+    # Remember this browser, so it skips the second factor for the number of days the game sets.
+    remember: bool = False
 
 
 class HandleRequest(Strict):
     handle: str = Field(min_length=1, max_length=24)
 
 
-class EmailChangeRequest(Strict):
+class EmailChangeRequest(second.Proof):
     email: str = Field(min_length=3, max_length=254)
-    # An app code or a recovery code; required when 2FA is on.
-    code: str | None = Field(default=None, min_length=1, max_length=32)
+    # (code or assertion: the second factor, required when 2FA is on)
 
 
 class ResetRequest(Strict):
@@ -61,15 +59,6 @@ class ResetRequest(Strict):
 class ResetComplete(Strict):
     token: str = Field(min_length=1, max_length=512)
     password: str = Field(max_length=service.PASSWORD_MAX)
-
-
-async def limited(request: Request, limit: ratelimit.Limit, value: str) -> None:
-    try:
-        await ratelimit.hit(request.app.state.sessionmaker, limit, value)
-    except ratelimit.RateLimited as error:
-        raise HTTPException(
-            status.HTTP_429_TOO_MANY_REQUESTS, str(error), headers={"Retry-After": str(error.retry_after)}
-        ) from error
 
 
 def link(request: Request, path: str, token: str) -> str:
@@ -132,7 +121,7 @@ async def confirm_email(body: TokenRequest, request: Request, db: Db) -> dict:
 
 
 @router.post("/login")
-async def login(body: LoginRequest, request: Request, db: Db) -> dict:
+async def login(body: LoginRequest, request: Request, response: Response, db: Db) -> dict:
     await limited(request, ratelimit.LOGIN_BY_ADDRESS, client_address(request))
     await limited(request, ratelimit.LOGIN_BY_NAME, body.username)
     account = await service.authenticate(db, body.username, body.password)
@@ -140,15 +129,23 @@ async def login(body: LoginRequest, request: Request, db: Db) -> dict:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "wrong username or password")
     if account.email_confirmed_at is None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "confirm your email address first: the link is in your inbox")
-    if twofa.enabled(account):
-        if body.code is None:
-            # The password was right; now the second factor. No login yet.
-            return JSONResponse({"needs_code": True}, status_code=status.HTTP_202_ACCEPTED)
-        await limited(request, ratelimit.TWOFA_CODE_BY_ACCOUNT, str(account.id))
-        if not twofa.check_code(request.app.state.keys, account, body.code):
+    if twofa.enabled(account) and not await remember.is_remembered(request, db, account):
+        if body.code is None and body.assertion is None:
+            # The password was right; now the second factor (the page is told which ways there are). No login yet.
+            return JSONResponse({"needs_code": True, **await second.offer(request, db, account)}, status_code=status.HTTP_202_ACCEPTED)
+        if not await second.verify(request, db, account, body):
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "wrong username, password or code")
+        if body.remember:
+            await remember.remember(request, response, db, account, sign_in_of(request).remember_browser_days)
     token = start_session(request, account.id, account.session_version)
-    return {"username": account.username, "csrf_token": token}
+    return {"username": account.username, "csrf_token": token, "note": single_method_note(request, account)}
+
+
+def single_method_note(request: Request, account: Account) -> str | None:
+    """What the game says to a player whose second factor is a single method (None: nothing, or two-factor login is off)."""
+    if not twofa.enabled(account):
+        return None
+    return sign_in_of(request).single_method_note(account, twofa.methods(account))
 
 
 @router.post("/logout")
@@ -229,10 +226,8 @@ async def email_change(body: EmailChangeRequest, request: Request, account: Acti
     sees the same answer either way. With 2FA on, a live code is needed as well.
     """
     await limited(request, ratelimit.EMAIL_CHANGE_BY_ACCOUNT, str(account.id))
-    if twofa.enabled(account):
-        await limited(request, ratelimit.TWOFA_CODE_BY_ACCOUNT, str(account.id))
-        if body.code is None or not twofa.check_code(request.app.state.keys, account, body.code):
-            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "a current two-factor code is needed to change your email")
+    if twofa.enabled(account) and not await second.verify(request, db, account, body):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "a current two-factor code is needed to change your email")
     try:
         new_email = service.check_email(body.email)
         if account.handle:

@@ -504,6 +504,14 @@ class Rules:
         purchase that would not fit is refused whole."""
         return None
 
+    def store_grant(self, account_id: int, tokens: int, items: dict[str, int], message: str) -> str | None:
+        """Called when the game's store asks to grant an account $tokens (negative to take) and $items (content key -> quantity,
+        always positive) with a $message for the player, before anything changes: None grants it (the default), otherwise
+        why not, which the store is shown and which grants nothing. This is where a game checks that a spend is allowed
+        or that a purchase makes sense. The engine has checked the account and items exist, the balance can't go below zero
+        and the purse cap holds; the ledger and the parcels stay the engine's."""
+        return None
+
     def drop_recipients(self, fight, party: int, monsters, share: str, rng) -> list:
         """Who in $party receives one drop of the monsters that died ($monsters: the one that dropped it, or all of them for
         an area's table), given its $share (``one``, ``each_team`` or ``each_member``). Returns the fighters' addresses.

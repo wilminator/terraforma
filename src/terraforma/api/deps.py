@@ -6,6 +6,7 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..accounts.hooks import SignIn
 from ..economy import Economy, TeamGold
 from ..alliances.hooks import Alliances
 from ..relations.hooks import Relations
@@ -110,6 +111,13 @@ async def acting_account(request: Request, account: Annotated[Account, Depends(c
     return account
 
 
+async def admin_account(account: Annotated[Account, Depends(acting_account)]) -> Account:
+    """For the few calls only an admin may make (logged in, CSRF token matching, ``is_admin`` set by the game's own setup)."""
+    if not account.is_admin:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "administrators only")
+    return account
+
+
 async def viewer_id(request: Request, db: Db) -> int | None:
     """For public pages that no login is needed to see: the id of the logged-in account looking, or None for anyone else (a bad login is no error here)."""
     account_id = request.session.get(SESSION_ACCOUNT)
@@ -122,6 +130,7 @@ async def viewer_id(request: Request, db: Db) -> int | None:
 CurrentAccount = Annotated[Account, Depends(current_account)]
 Viewer = Annotated[int | None, Depends(viewer_id)]
 ActingAccount = Annotated[Account, Depends(acting_account)]
+AdminAccount = Annotated[Account, Depends(admin_account)]
 
 
 def client_address(request: Request) -> str:
@@ -181,6 +190,12 @@ def get_roster(request: Request) -> Roster:
 
 
 GameRoster = Annotated[Roster, Depends(get_roster)]
+
+
+def sign_in_of(request: Request) -> SignIn:
+    """The game's sign-in choices (the engine's defaults, when the app runs without a game)."""
+    game = request.app.state.game
+    return game.sign_in if game else SignIn()
 
 
 def get_start(request: Request) -> Start:

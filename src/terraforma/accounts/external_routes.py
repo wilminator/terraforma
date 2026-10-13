@@ -23,16 +23,17 @@ import secrets
 from typing import Annotated, Literal
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..api.deps import ActingAccount, CurrentAccount, Db, client_address, current_account
+from ..api.deps import ActingAccount, CurrentAccount, Db, client_address, current_account, sign_in_of
 from ..api.security import start_session
 from ..models import Account
 from ..settings import ExternalProvider
-from . import oidc, ratelimit, service, twofa
-from .routes import Strict, limited
+from . import oidc, ratelimit, remember, second, service, twofa
+from .common import Strict, limited
+from .routes import single_method_note
 
 router = APIRouter(prefix="/api/external")
 
@@ -68,23 +69,22 @@ class FinishRequest(Strict):
     password: str | None = Field(default=None, max_length=service.PASSWORD_MAX)
 
 
-class TwoFactorRequest(Strict):
-    code: str = Field(min_length=1, max_length=32)
+class TwoFactorRequest(second.Proof):
+    # Remember this browser, so it skips the second factor for the number of days the game sets.
+    remember: bool = False
 
 
-class LinkRequest(Strict):
-    # An app code or a recovery code; required when two-factor login is on.
-    code: str | None = Field(default=None, min_length=1, max_length=32)
+class LinkRequest(second.Proof):
+    # (code or assertion: the second factor, required when two-factor login is on)
+    pass
 
 
-class UnlinkRequest(Strict):
+class UnlinkRequest(second.Proof):
     provider: str = Field(min_length=1, max_length=32)
-    code: str | None = Field(default=None, min_length=1, max_length=32)
 
 
-class PasswordRequest(Strict):
+class PasswordRequest(second.Proof):
     password: str = Field(max_length=service.PASSWORD_MAX)
-    code: str | None = Field(default=None, min_length=1, max_length=32)
 
 
 def provider_of(request: Request, name: str) -> ExternalProvider:
@@ -120,12 +120,9 @@ def read_flow(request: Request) -> oidc.Flow | None:
         return None
 
 
-async def require_code(request: Request, account: Account, code: str | None, what: str) -> None:
-    """With two-factor login on, $what needs a live code (or a recovery code) as well."""
-    if not twofa.enabled(account):
-        return
-    await limited(request, ratelimit.TWOFA_CODE_BY_ACCOUNT, str(account.id))
-    if code is None or not twofa.check_code(request.app.state.keys, account, code):
+async def require_code(request: Request, db: Db, account: Account, proof: second.Proof, what: str) -> None:
+    """With two-factor login on, $what needs a live second factor (a code, a recovery code or a security key) as well."""
+    if twofa.enabled(account) and not await second.verify(request, db, account, proof):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"a current two-factor code is needed to {what}")
 
 
@@ -155,7 +152,7 @@ async def link(name: str, body: LinkRequest, request: Request, account: ActingAc
     """Begins adding a provider to the logged-in account: answers the address to send the browser to."""
     provider = provider_of(request, name)
     await limited(request, ratelimit.SIGN_IN_METHOD_BY_ACCOUNT, str(account.id))
-    await require_code(request, account, body.code, "link a sign-in provider")
+    await require_code(request, db, account, body, "link a sign-in provider")
     if any(each.provider == name for each in await service.identities_of(db, account)):
         raise HTTPException(status.HTTP_409_CONFLICT, "this account is already linked to that provider")
     flow = oidc.new_flow(provider, "link", account_id=account.id)
@@ -193,7 +190,7 @@ async def callback(name: str, query: Annotated[CallbackQuery, Query()], request:
         account = await db.get(Account, known.account_id)
         if account is None:
             return back("error", "failed")
-        return _logged_in(request, account, flow.next)
+        return await _logged_in(request, db, account, flow.next)
 
     # A first sign-in with this provider: it needs an email the provider has verified, that no account has.
     try:
@@ -208,9 +205,9 @@ async def callback(name: str, query: Annotated[CallbackQuery, Query()], request:
     return back("finish", next=flow.next)
 
 
-def _logged_in(request: Request, account: Account, next: str | None) -> RedirectResponse:
-    """Logs $account in, or, with two-factor login on, waits for the code."""
-    if twofa.enabled(account):
+async def _logged_in(request: Request, db: Db, account: Account, next: str | None) -> RedirectResponse:
+    """Logs $account in, or, with two-factor login on (and this browser not remembered), waits for the second factor."""
+    if twofa.enabled(account) and not await remember.is_remembered(request, db, account):
         request.session.clear()
         request.session[SESSION_TWOFA] = {"account_id": account.id, "version": account.session_version, "next": next}
         return back("twofa", next=next)
@@ -271,18 +268,33 @@ async def finish(body: FinishRequest, request: Request, db: Db) -> dict:
     return {"username": account.username, "csrf_token": token, "next": signup.get("next")}
 
 
-@router.post("/2fa")
-async def two_factor(body: TwoFactorRequest, request: Request, db: Db) -> dict:
-    """The second step of a provider sign-in for an account with two-factor login on."""
+async def _waiting(request: Request, db: Db) -> tuple[Account, dict]:
+    """The account whose provider sign-in is waiting for the second factor, and what the session kept about it."""
     waiting = request.session.get(SESSION_TWOFA)
     account = await db.get(Account, waiting["account_id"]) if isinstance(waiting, dict) else None
     if account is None or account.session_version != waiting.get("version"):
         raise HTTPException(status.HTTP_409_CONFLICT, "sign in with a provider first")
-    await limited(request, ratelimit.TWOFA_CODE_BY_ACCOUNT, str(account.id))
-    if not twofa.check_code(request.app.state.keys, account, body.code):
+    return account, waiting
+
+
+@router.get("/2fa")
+async def two_factor_options(request: Request, db: Db) -> dict:
+    """For the second step of a provider sign-in: which methods count, and the options a security key is asked with."""
+    account, _ = await _waiting(request, db)
+    return await second.offer(request, db, account)
+
+
+@router.post("/2fa")
+async def two_factor(body: TwoFactorRequest, request: Request, response: Response, db: Db) -> dict:
+    """The second step of a provider sign-in for an account with two-factor login on."""
+    account, waiting = await _waiting(request, db)
+    if not await second.verify(request, db, account, body):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "that code is wrong or already used")
+    if body.remember:
+        await remember.remember(request, response, db, account, sign_in_of(request).remember_browser_days)
+    note = single_method_note(request, account)
     token = start_session(request, account.id, account.session_version)
-    return {"username": account.username, "csrf_token": token, "next": waiting.get("next")}
+    return {"username": account.username, "csrf_token": token, "next": waiting.get("next"), "note": note}
 
 
 @router.get("/identities")
@@ -301,7 +313,7 @@ async def identities(request: Request, account: CurrentAccount, db: Db) -> dict:
 async def unlink(body: UnlinkRequest, request: Request, account: ActingAccount, db: Db) -> dict:
     """Removes a linked provider. Needs a fresh two-factor check, and never removes the last way in."""
     await limited(request, ratelimit.SIGN_IN_METHOD_BY_ACCOUNT, str(account.id))
-    await require_code(request, account, body.code, "unlink a sign-in provider")
+    await require_code(request, db, account, body, "unlink a sign-in provider")
     linked = await service.identities_of(db, account)
     target = next((each for each in linked if each.provider == body.provider), None)
     if target is None:
@@ -318,7 +330,7 @@ async def set_password(body: PasswordRequest, request: Request, account: ActingA
     await limited(request, ratelimit.SIGN_IN_METHOD_BY_ACCOUNT, str(account.id))
     if account.password_hash:
         raise HTTPException(status.HTTP_409_CONFLICT, "this account already has a password: use the reset link to change it")
-    await require_code(request, account, body.code, "set a password")
+    await require_code(request, db, account, body, "set a password")
     try:
         await service.set_first_password(db, account, body.password)
     except service.AccountError as error:
