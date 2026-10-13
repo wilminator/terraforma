@@ -175,7 +175,7 @@ body.play { height: 100dvh; min-height: 0; overflow: hidden; }
 .choices button { text-align: left; }
 button.quiet { background: transparent; }
 .qty { width: 4.5rem; font: inherit; padding: 0.3em; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text); }
-.shop .row { grid-template-columns: 1fr auto; align-items: center; }
+.shop .row, .pack .row[data-item] { grid-template-columns: 1fr auto; align-items: center; }
 .panel .card { max-width: none; margin-top: var(--gutter); }
 .rows { list-style: none; margin: 0 0 var(--gutter); padding: 0; display: grid; gap: 0.5rem; }
 .row { padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); display: grid; gap: 0.25rem; }
@@ -229,3 +229,6 @@ select, .inline input {
 .check { display: inline-flex; gap: 0.35rem; align-items: center; }
 .field textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 0.5em; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text); }
 .bio { white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat-lines { max-height: 18rem; overflow-y: auto; }
+.chat-line[data-mine="yes"] { border-color: var(--accent); }
+.inline input { flex: 1 1 8rem; }

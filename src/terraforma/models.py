@@ -177,5 +177,9 @@ from .challenge import models as _challenge  # noqa: E402,F401
 from .npcs import models as _npcs  # noqa: E402,F401
 from .maps import models as _maps  # noqa: E402,F401
 from .quests import models as _quests  # noqa: E402,F401
+from .chat import models as _chat  # noqa: E402,F401
+from .playtime import models as _playtime  # noqa: E402,F401
+from .social import models as _social  # noqa: E402,F401
 from .monsterplay import models as _monsterplay  # noqa: E402,F401
+from .voice import models as _voice  # noqa: E402,F401
 from .oidc import models as _oidc  # noqa: E402,F401

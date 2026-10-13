@@ -1,10 +1,15 @@
-"""Monster-party play, slice a: the queue and the seating.
+"""Monster-party play: the queue and the seating (slice a), and commanding the monsters (slice b).
 
 A player volunteers (``join``) and keeps saying they are still there (``check_in``). When the server creates a fight that
 allows it (``FightRecord.monster_play``: random encounters and the hub's Leave Town, never PvP or coliseum fights), it seats
 the longest-waiting volunteer the game's rules accept (``seat``) as controller of the monsters. Nobody queued, or nobody
 accepted: the AI plays them, as always. A volunteer is seated only when a fight is created, never into a running one, and the
-fight never waits for anyone. Commanding the monsters is the next slice; here the seat is only recorded.
+fight never waits for anyone.
+
+The seated player gets the heroes' view and command call for every fighter of the monster party (``fights.live``), and rounds wait for
+them like for any player. A round in which they gave none of their fighters a command is *missed*: their monsters repeat their last
+commands, the miss is counted, and ``Rules.monster_absent`` may hand the monsters to the AI until the player commands again or says they
+are back (``come_back``). Only an admin may sit in a running fight (``take_over``), and the round's end is pushed back for them.
 
 The game decides who may queue (``Rules.may_queue_monsters``) and who may take a seat (``Rules.may_play_monsters``). Both
 see a ``Volunteer`` whose ``account_id`` may be None.
@@ -12,17 +17,19 @@ see a ``Volunteer`` whose ``account_id`` may be None.
 
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import wallclock
-from ..fights.models import FightParticipant, FightRecord
+from ..challenge import service as challenge
+from ..fights.fight import Fight
+from ..fights.models import FightActionRecord, FightParticipant, FightRecord
 from ..fights.rules import Rules
 from ..heroes.models import Hero, Team, TeamMember
 from ..models import Account
 from ..relations import service as relationships
 from ..relations.hooks import Ref, Relations
-from .facts import Seating, Volunteer
+from .facts import Seating, SeatResult, Volunteer
 from .models import MonsterLockout, MonsterSeat, MonsterVolunteer
 
 #: The party the monsters are in a fight the engine starts (the heroes are party 0).
@@ -174,3 +181,91 @@ async def seat(session: AsyncSession, rules: Rules, relations: Relations, record
         await session.flush()
         return seated
     return None
+
+
+# --- commanding the monsters ----------------------------------------------------------------------------------------
+
+async def last_commands(session: AsyncSession, record: FightRecord, played: int) -> dict[tuple, dict]:
+    """The commands of the last round that was played ($played rounds so far), as they were stored, by fighter address."""
+    row = await session.get(FightActionRecord, (record.id, played)) if played else None
+    return {tuple(each["address"]): each for each in row.commands} if row is not None else {}
+
+
+def view_of(seat: MonsterSeat) -> dict:
+    return {"party": seat.party, "absent": seat.absent, "admin": seat.admin}
+
+
+async def come_back(session: AsyncSession, record: FightRecord, account_id: int) -> MonsterSeat:
+    """The player says they are back, so they command their monsters again from the next round. Raises MonsterError if they do not
+    hold the fight's seat."""
+    seat = await session.get(MonsterSeat, record.id)
+    if seat is None or seat.account_id != account_id:
+        raise MonsterError("you are not commanding the monsters of that fight")
+    seat.absent = False
+    await session.flush()
+    return seat
+
+
+async def take_over(session: AsyncSession, rules: Rules, record: FightRecord, account_id: int) -> MonsterSeat:
+    """An admin sits in a running fight as the controller of its monsters, and the round's end is pushed back by a whole round (never
+    earlier than it was) so they can take in what is happening and decide. They take an empty seat or one whose player is absent (the
+    AI is playing), never one a player is commanding. A fight must allow monster play (``FightRecord.monster_play``), and an admin with a
+    hero in it may not. Taking over earns nothing (``MonsterSeat.admin``). Raises MonsterError."""
+    account = await session.get(Account, account_id)
+    if account is None or not account.is_admin:
+        raise MonsterError("only an admin may sit in a running fight")
+    if record.finished:
+        raise MonsterError("that fight is over")
+    if not record.monster_play:
+        raise MonsterError("that fight has no monsters a player can command")
+    if (await _hero_accounts(session, record)) & {account_id}:
+        raise MonsterError("you have a hero in that fight")
+    seat = await session.get(MonsterSeat, record.id)
+    if seat is not None and seat.account_id != account_id and not seat.absent:
+        raise MonsterError("a player is commanding the monsters")
+    if seat is None:
+        seat = MonsterSeat(fight_id=record.id, party=MONSTER_PARTY, account_id=account_id, seated_at=wallclock.now(), admin=True)
+        session.add(seat)
+    else:
+        seat.account_id, seat.admin, seat.absent = account_id, True, False
+    pushed = wallclock.now() + timedelta(seconds=rules.round_length(record.time_multiplier))
+    if record.round_deadline is not None and _aware(record.round_deadline) < pushed:
+        record.round_deadline = pushed
+    await session.flush()
+    return seat
+
+
+async def _hero_accounts(session: AsyncSession, record: FightRecord) -> set[int]:
+    hero_ids = (await session.scalars(select(FightParticipant.hero_id).where(FightParticipant.fight_id == record.id, FightParticipant.hero_id.is_not(None)))).all()
+    return set((await session.scalars(select(Hero.account_id).where(Hero.id.in_(hero_ids)))).all())
+
+
+# --- when the fight ends ----------------------------------------------------------------------------------------------
+
+async def settle(session: AsyncSession, rules: Rules, record: FightRecord, fight: Fight) -> int:
+    """Settles the fight's seat once it has ended: the Challenge Tokens ``Rules.monster_challenge_earned`` says it earned (cut to
+    the daily and purse caps; none for a seat an admin took) and, for an account that is not an admin, the lockout
+    ``Rules.monster_lockout_seconds`` sets (never shorter than one already running). Safe to call again: a seat settles once. Returns
+    the tokens paid."""
+    seat = await session.get(MonsterSeat, record.id)
+    if seat is None or seat.settled:
+        return 0
+    claimed = await session.execute(update(MonsterSeat).where(MonsterSeat.fight_id == record.id, MonsterSeat.settled.is_(False)).values(settled=True))
+    if claimed.rowcount == 0:  # settled meanwhile
+        return 0
+    party = fight.parties.get(seat.party)
+    result = SeatResult(record.id, seat.account_id, seat.party, seat.missed == 0, party is not None and not party.dead(rules), seat.absent, seat.missed, seat.admin)
+    paid = 0
+    if not seat.admin:
+        if (amount := max(0, int(rules.monster_challenge_earned(result)))) > 0:
+            paid = await challenge.earn(session, rules, seat.account_id, amount, record.id)
+        account = await session.get(Account, seat.account_id)
+        if account is not None and not account.is_admin and (seconds := int(rules.monster_lockout_seconds(result))) > 0:
+            until = wallclock.now() + timedelta(seconds=seconds)
+            lockout = await session.get(MonsterLockout, seat.account_id)
+            if lockout is None:
+                session.add(MonsterLockout(account_id=seat.account_id, until=until))
+            elif _aware(lockout.until) < until:
+                lockout.until = until
+    await session.flush()
+    return paid

@@ -24,6 +24,8 @@ class PlayerProfile(Base):
     token: Mapped[str] = mapped_column(String(TOKEN_MAX), unique=True)
     bio: Mapped[str] = mapped_column(String(BIO_MAX), default="", server_default="")
     directory: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # Whether a search of the directory (``social.service.search``) shows the link to this page next to the handle. Off by default.
+    directory_link: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
 
 
 class TeamProfile(Base):

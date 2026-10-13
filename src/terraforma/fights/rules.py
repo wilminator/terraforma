@@ -72,6 +72,15 @@ class Rules:
     #: where $bonus is the share of extra max HP the monsters a player faces get (0.05 is 5%, and they are worth
     #: more experience for it). DragonStar offered 1, 1.5 and 2 for 0, 5 and 10 percent.
     time_multipliers: tuple[tuple[float, float], ...] = ((1.0, 0.0), (1.5, 0.05), (2.0, 0.10))
+    #: Play time (``terraforma.playtime``): each call a player's input drives credits the next this many seconds (or less, if the
+    #: next such call comes first), and a fight's playback, from the round played until the page says it has shown it,
+    #: counts at most this many seconds, so a closed tab does not earn.
+    play_credit_seconds: int = 10
+    playback_cap_seconds: int = 300
+    #: How many players one may follow (``terraforma.social``): this many to begin with and one more for every this many
+    #: seconds played (``terraforma.playtime``), so the list grows with the player.
+    follow_base: int = 10
+    follow_seconds_each: int = 3600
     #: A drop's chance is out of this (10000: one in ten thousand is the rarest, 10000 is a sure thing).
     drop_chance_scale: int = 10000
     #: Whether the area's drop tables (the map's) roll once for the fight (the default) or for every monster that dies.
@@ -92,6 +101,10 @@ class Rules:
     def time_bonus(self, multiplier: float) -> float:
         """The share of extra max HP monsters get against a player who chose $multiplier (0 for one that is not offered)."""
         return dict(self.time_multipliers).get(multiplier, 0.0)
+
+    def follow_cap(self, seconds_played: int) -> int:
+        """How many players one who has played $seconds_played seconds may follow."""
+        return self.follow_base + max(0, seconds_played) // self.follow_seconds_each
 
     @property
     def vital(self) -> str:
@@ -377,6 +390,52 @@ class Rules:
         if volunteer.in_fight:
             return "You are in another fight."
         return None
+
+    def monster_absent(self, missed: int) -> bool:
+        """Whether a player who commands a fight's monsters (``monsterplay``) has lost control of them to the AI, having missed $missed
+        rounds so far. A round is missed when they gave none of their fighters a command; that round their monsters repeat their
+        last commands (the AI chooses when there are none, or they no longer make sense). Called right after each missed round.
+        DragonStar's way by default: the first missed round hands the monsters to the AI until the player commands again or says they
+        are back (``POST /api/fights/{id}/monsters/back``). The count itself is kept, for the rewards."""
+        return missed >= 1
+
+    def monster_flee_allowed(self, fight, address: tuple) -> bool:
+        """Whether the fighter at $address, a monster commanded by a player, may try to flee (on top of ``flee_allowed``, which still
+        has to say yes). Never, by default: monsters a player commands fight to the end. If a game turns it on, the fleeing design
+        applies as for heroes."""
+        return False
+
+    def monster_challenge_earned(self, result) -> int:
+        """How many Challenge Tokens the player who commanded a fight's monsters earns when it ends ($result: a
+        ``monsterplay.facts.SeatResult``). None by default: a game opts in, e.g. DragonStar's way (a token for playing it through and
+        one for winning while still in control)::
+
+            return int(result.played_through) + int(result.won and not result.absent)
+
+        Paid through the daily and purse caps like any fight's tokens. An admin's seat is paid nothing whatever this says."""
+        return 0
+
+    #: How long, in seconds, a player who abandoned a fight their monsters lost can't volunteer again (DragonStar's hour).
+    monster_lockout_default: int = 3600
+
+    def monster_lockout_seconds(self, result) -> int:
+        """How long the player who commanded a fight's monsters is kept from volunteering again, now that it ended ($result: a
+        ``monsterplay.facts.SeatResult``). By default ``monster_lockout_default`` for one who missed rounds, was not back in control at
+        the end and whose monsters lost; otherwise none. A longer lockout already running is kept. Admins are never locked out."""
+        if result.rounds_missed > 0 and result.absent and not result.won:
+            return self.monster_lockout_default
+        return 0
+
+    #: The most extra experience the heroes of a winning party get for beating a player's monsters, as a share of what they earned.
+    monster_bonus_cap: float = 0.15
+
+    def monster_player_bonus(self, fight, party: int, overkill: int, monster_hp: int) -> float:
+        """The share of the experience they earned that the heroes of $party get on top, having beaten monsters a player commanded
+        (at any point in the fight): the $overkill they dealt those monsters (damage past their last hit points) as a share of the
+        monsters' total $monster_hp, up to ``monster_bonus_cap``. DragonStar's rule; none if either is zero."""
+        if overkill <= 0 or monster_hp <= 0:
+            return 0.0
+        return min(self.monster_bonus_cap, overkill / monster_hp)
 
     #: The longest route (steps) a party may be given in one go, however far the client asked it to go.
     route_limit: int = 100
