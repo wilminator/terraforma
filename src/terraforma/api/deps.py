@@ -13,7 +13,7 @@ from ..pvp.hooks import PvpZones
 from ..market.hooks import Market
 from ..guild.hooks import Guild
 from ..quests.hooks import WeeklyQuests
-from ..heroes.hooks import Roster
+from ..heroes.hooks import Roster, Start
 from ..npcs.hooks import Npcs
 from ..npcs.inn import Inn
 from ..reach.hooks import Reach
@@ -192,3 +192,12 @@ def get_roster(request: Request) -> Roster:
 
 
 GameRoster = Annotated[Roster, Depends(get_roster)]
+
+
+def get_start(request: Request) -> Start:
+    """The game's places for a new team to start at (none, so the hub, when the app runs without a game)."""
+    game = request.app.state.game
+    return game.start if game else Start()
+
+
+GameStart = Annotated[Start, Depends(get_start)]

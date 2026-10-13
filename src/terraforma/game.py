@@ -20,7 +20,7 @@ from .pvp.hooks import PvpZones
 from .market.hooks import Market
 from .guild.hooks import Guild
 from .quests.hooks import WeeklyQuests
-from .heroes.hooks import Roster
+from .heroes.hooks import Roster, Start
 from .npcs.hooks import Npcs
 from .npcs.inn import Inn
 from .reach.hooks import Reach
@@ -65,3 +65,5 @@ class Game:
     weekly_quests: WeeklyQuests = field(default_factory=WeeklyQuests)
     # What may change about the heroes of a saved team: removing, replacing and moving them (refused by default; a game may sell it).
     roster: Roster = field(default_factory=Roster)
+    # Where a new team starts: the engine's hub, unless the game offers places to pick from (the capitals).
+    start: Start = field(default_factory=Start)
