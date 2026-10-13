@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Path, status
 from pydantic import Field
 
 from ..accounts.routes import Strict
-from ..api.deps import ActingAccount, CurrentAccount, Db, GameAlliances, GameRoster, GameRules
+from ..api.deps import ActingAccount, CurrentAccount, Db, GameAlliances, GameRoster, GameRules, GameStart
 from . import service
 
 router = APIRouter(prefix="/api")
@@ -23,6 +23,11 @@ class NewHero(Strict):
     job: str = Field(min_length=1, max_length=64)
 
 
+class AddedHero(NewHero):
+    # Where the first hero of an empty team starts (a key of ``GET /api/start-places``); refused for a team that has heroes.
+    start: str | None = Field(default=None, min_length=1, max_length=64)
+
+
 class NameOnly(Strict):
     name: str = Field(min_length=1, max_length=24)
 
@@ -30,6 +35,8 @@ class NameOnly(Strict):
 class NewTeam(Strict):
     name: str = Field(min_length=1, max_length=24)
     heroes: list[NewHero] = Field(default=[], max_length=service.TEAM_LIMIT)
+    # Where the team's heroes start (a key of ``GET /api/start-places``); the first place offered if none is sent.
+    start: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class ToTeam(Strict):
@@ -95,17 +102,24 @@ async def swap_heroes(body: Swap, account: ActingAccount, db: Db, roster: GameRo
     return {"ok": True}
 
 
+@router.get("/start-places")
+async def start_places(account: CurrentAccount, db: Db, start: GameStart) -> list[dict]:
+    """Where a new team can start, in the game's order (empty when the game offers no choice: heroes start on the hub)."""
+    return [{"key": each.key, "title": each.title} for each in await start.places(db, account)]
+
+
 @router.get("/teams")
 async def teams(account: CurrentAccount, db: Db) -> list[dict]:
     return await service.list_teams(db, account)
 
 
 @router.post("/teams", status_code=status.HTTP_201_CREATED)
-async def create_team(body: NewTeam, account: ActingAccount, db: Db, rules: GameRules) -> dict:
+async def create_team(body: NewTeam, account: ActingAccount, db: Db, rules: GameRules, start: GameStart) -> dict:
     """Makes a team, with its heroes if the browser sends them (at most the game's ``team_max``). A team with fewer than ``team_min``
     heroes is incomplete and cannot play until the player has filled it."""
     try:
-        team = await service.save_team(db, account, body.name, [(each.name, each.job) for each in body.heroes], rules)
+        spot = await service.start_spot(db, account, start, body.start)
+        team = await service.save_team(db, account, body.name, [(each.name, each.job) for each in body.heroes], rules, spot)
     except service.HeroError as error:
         raise refuse(error) from error
     return next(entry for entry in await service.list_teams(db, account) if entry["id"] == team.id)
@@ -131,10 +145,10 @@ async def delete_team(team_id: Id, account: ActingAccount, db: Db, alliances: Ga
 
 
 @router.post("/teams/{team_id}/heroes", status_code=status.HTTP_201_CREATED)
-async def add_hero(team_id: Id, body: NewHero, account: ActingAccount, db: Db, rules: GameRules) -> dict:
+async def add_hero(team_id: Id, body: AddedHero, account: ActingAccount, db: Db, rules: GameRules, start: GameStart) -> dict:
     """A new level 1 hero in the team's first free place, while the team has room (``team_max``)."""
     try:
-        hero = await service.add_new_hero(db, account, team_id, body.name, body.job, rules)
+        hero = await service.add_new_hero(db, account, team_id, body.name, body.job, rules, start, body.start)
     except service.HeroError as error:
         raise refuse(error) from error
     return next(entry for entry in await service.list_heroes(db, account) if entry["id"] == hero.id)

@@ -37,6 +37,16 @@ class Party:
     """Mike's Vanguard (Aria) and Rearguard (Bram), and Zed's Scouts (Cleo), in one party in that order: Mike leads."""
 
 
+class Cheaper(Inn):
+    """A price by team name: a rate times the tag's price."""
+
+    def __init__(self, rates):
+        self.rates = rates
+
+    async def price(self, session, hero, team_id, price):
+        return round(price * self.rates[(await session.get(Team, team_id)).name])
+
+
 async def a_party(db):
     await load_content(db, SEED)
     mike = await create_account(db, "Mike", PASSWORD, email="mike@example.com", confirmed=True)
@@ -148,3 +158,37 @@ async def test_a_game_that_handles_the_yes_itself_is_left_alone(db):
     await service.talk(db, Closed(), REACH, p.heroes[0], npc.id, rest)
     frame = await service.answer(db, Closed(), REACH, p.heroes[0], 0, rest)
     assert frame["events"][-1]["text"] == "Another time." and not rested(p.heroes[0])
+
+
+async def test_the_game_can_price_the_inn_by_team(db):
+    p = await a_party(db)
+    await give_gold(db, p.teams[1], 3)
+    with pytest.raises(service.NpcError, match="costs 5 gold"):
+        await say_yes(db, p.heroes[1], Cheaper({"Vanguard": 1, "Rearguard": 0.5, "Scouts": 2}))
+    assert not rested(p.heroes[1]), "the tag says 10 and Rearguard's price is 5: the message names what the team was asked"
+
+
+async def test_a_team_pays_the_games_price_not_the_tags(db):
+    p = await a_party(db)
+    await give_gold(db, p.teams[1], 8)
+    await say_yes(db, p.heroes[1], Cheaper({"Vanguard": 1, "Rearguard": 0.5, "Scouts": 2}))
+    assert rested(p.heroes[1]) and await gold(db, p.teams[1]) == 3
+
+
+async def test_a_leader_who_treats_the_party_pays_each_teams_own_price(db):
+    p = await a_party(db)
+    await give_gold(db, p.teams[0], 35)
+
+    class Both(Cheaper):
+        async def leader_pays(self, session, hero, price):
+            return True
+
+    await say_yes(db, p.heroes[0], Both({"Vanguard": 1, "Rearguard": 0.5, "Scouts": 2}))
+    assert all(rested(hero) for hero in p.heroes)
+    assert await gold(db, p.teams[0]) == 0, "10 + 5 + 20"
+
+
+async def test_a_price_below_zero_is_free(db):
+    p = await a_party(db)
+    await say_yes(db, p.heroes[0], Cheaper({"Vanguard": -1, "Rearguard": 1, "Scouts": 1}))
+    assert rested(p.heroes[0]) and await gold(db, p.teams[0]) == 0
