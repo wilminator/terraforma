@@ -31,6 +31,17 @@ key_dir = "keys"
 # ballot_retention_days = 0
 # rating_prompt_retention_days = 0
 
+# Chat messages (and settled flags) older than this many days are removed; a flagged message nobody has settled is kept.
+# 0 keeps them for good.
+# chat_retention_days = 7
+
+# Voice through Discord (optional): a bot in your Discord server makes a voice channel for a party or alliance when a member asks, and the
+# player gets a single-use invite link. The bot needs Manage Channels and Create Instant Invite. Set both, or voice is off.
+# discord_bot_token = ""
+# discord_guild_id = ""
+# Voice channels the bot made are removed this many hours after they were made.
+# voice_room_hours = 24
+
 # A game that sells Challenge Tokens sets this (at least 32 characters). Its own backend then credits purchases with
 # POST /api/server/challenge/purchase, sending "Authorization: Bearer <this secret>". Empty or absent: the call is off.
 # challenge_purchase_secret = ""

@@ -1,7 +1,7 @@
 """store grants: the store's grant records and the parcels its items wait in
 
-Revision ID: 0043
-Revises: 0042
+Revision ID: 0049
+Revises: 0048
 Created: 2026-10-12
 """
 from collections.abc import Sequence
@@ -11,8 +11,8 @@ from alembic import op
 
 from terraforma.db.dialect import ExactJSON
 
-revision: str = '0043'
-down_revision: str | None = '0042'
+revision: str = '0049'
+down_revision: str | None = '0048'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
