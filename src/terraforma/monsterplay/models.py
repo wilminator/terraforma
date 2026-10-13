@@ -49,3 +49,5 @@ class MonsterSeat(Base):
     absent: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # An admin sat in a running fight (``service.take_over``): earns nothing, whatever the rules pay.
     admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Whether the seat was settled when the fight ended (tokens paid, a lockout set): once.
+    settled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())

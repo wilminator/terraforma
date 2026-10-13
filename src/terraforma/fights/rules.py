@@ -417,6 +417,38 @@ class Rules:
         applies as for heroes."""
         return False
 
+    def monster_challenge_earned(self, result) -> int:
+        """How many Challenge Tokens the player who commanded a fight's monsters earns when it ends ($result: a
+        ``monsterplay.facts.SeatResult``). None by default: a game opts in, e.g. DragonStar's way (a token for playing it through and
+        one for winning while still in control)::
+
+            return int(result.played_through) + int(result.won and not result.absent)
+
+        Paid through the daily and purse caps like any fight's tokens. An admin's seat is paid nothing whatever this says."""
+        return 0
+
+    #: How long, in seconds, a player who abandoned a fight their monsters lost can't volunteer again (DragonStar's hour).
+    monster_lockout_default: int = 3600
+
+    def monster_lockout_seconds(self, result) -> int:
+        """How long the player who commanded a fight's monsters is kept from volunteering again, now that it ended ($result: a
+        ``monsterplay.facts.SeatResult``). By default ``monster_lockout_default`` for one who missed rounds, was not back in control at
+        the end and whose monsters lost; otherwise none. A longer lockout already running is kept. Admins are never locked out."""
+        if result.rounds_missed > 0 and result.absent and not result.won:
+            return self.monster_lockout_default
+        return 0
+
+    #: The most extra experience the heroes of a winning party get for beating a player's monsters, as a share of what they earned.
+    monster_bonus_cap: float = 0.15
+
+    def monster_player_bonus(self, fight, party: int, overkill: int, monster_hp: int) -> float:
+        """The share of the experience they earned that the heroes of $party get on top, having beaten monsters a player commanded
+        (at any point in the fight): the $overkill they dealt those monsters (damage past their last hit points) as a share of the
+        monsters' total $monster_hp, up to ``monster_bonus_cap``. DragonStar's rule; none if either is zero."""
+        if overkill <= 0 or monster_hp <= 0:
+            return 0.0
+        return min(self.monster_bonus_cap, overkill / monster_hp)
+
     #: The longest route (steps) a party may be given in one go, however far the client asked it to go.
     route_limit: int = 100
 
