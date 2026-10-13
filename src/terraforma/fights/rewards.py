@@ -16,7 +16,7 @@ import random
 
 from .combatant import Address
 from .events import Event, EventType, event
-from .experience import Debt, Fighter, Party, gold_per_team, process_experience
+from .experience import Debt, Fighter, Party, bonus_experience, gold_per_team, process_experience
 from .fight import Fight
 from .replay import apply_events
 from .rules import Rules
@@ -38,6 +38,25 @@ def experience_parties(rules: Rules, fight: Fight) -> list[Party]:
     return parties
 
 
+def _player_monster_bonus(rules: Rules, fight: Fight, earned: dict[Address, int]) -> list[Event]:
+    """Extra experience, as events, for the heroes of each party still standing that beat monsters a player commanded
+    (``Fight.player_parties``): ``Rules.monster_player_bonus`` gives the share of what each earned."""
+    events = []
+    for index, party in fight.parties.items():
+        if not party.teams or party.dead(rules):
+            continue
+        _, enemies = rules.alignment(fight, index)
+        beaten = [each for each in sorted(enemies) if each in fight.player_parties and each in fight.parties and fight.parties[each].dead(rules)]
+        overkill = sum(fight.parties[each].overkill for each in beaten)
+        hit_points = sum(fighter.get_base(rules, rules.vital) for each in beaten for fighter in fight.parties[each].members())
+        if (share := rules.monster_player_bonus(fight, index, overkill, hit_points)) <= 0:
+            continue
+        for address in fight.addresses():
+            if address[0] == index and (extra := bonus_experience(earned.get(address, 0), share)):
+                events.append(event(EventType.XP_EARNED, *address, extra))
+    return events
+
+
 def settle(rules: Rules, fight: Fight, rng: random.Random) -> list[Event]:
     """Pays out a finished fight. Returns its events, already applied to ``fight``."""
     result = process_experience(experience_parties(rules, fight))
@@ -49,6 +68,8 @@ def settle(rules: Rules, fight: Fight, rng: random.Random) -> list[Event]:
         if amount:
             events.append(event(EventType.XP_EARNED, *address, amount))
             earned.append(address)
+
+    events.extend(_player_monster_bonus(rules, fight, result.earned))
 
     for index, party in fight.parties.items():
         if not party.teams:
