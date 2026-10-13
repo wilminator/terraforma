@@ -60,11 +60,6 @@ def downgrade() -> None:
     with op.batch_alter_table('accounts', schema=None) as batch_op:
         batch_op.drop_column('webauthn_count')
 
-    with op.batch_alter_table('remembered_browsers', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_remembered_browsers_account_id'))
-
+    # Dropping a table takes its indexes with it; MySQL refuses to drop an index a foreign key needs.
     op.drop_table('remembered_browsers')
-    with op.batch_alter_table('webauthn_keys', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_webauthn_keys_account_id'))
-
     op.drop_table('webauthn_keys')
