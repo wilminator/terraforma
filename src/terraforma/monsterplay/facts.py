@@ -31,3 +31,20 @@ class Seating:
     fight_id: int
     has_hero: bool = False
     allied: bool = False
+
+
+@dataclass(frozen=True)
+class SeatResult:
+    """How a seat went, told to ``Rules.monster_challenge_earned`` and ``Rules.monster_lockout_seconds`` when the fight ends:
+    ``played_through`` (no round was missed), ``won`` (the monster party was still standing), ``absent`` (the AI was playing the
+    monsters when the fight ended, the player not having come back), ``rounds_missed`` and ``admin`` (an admin took the seat: the
+    engine pays such a seat nothing and never locks it out, whatever the rules say)."""
+
+    fight_id: int
+    account_id: int
+    party: int
+    played_through: bool
+    won: bool
+    absent: bool
+    rounds_missed: int
+    admin: bool = False

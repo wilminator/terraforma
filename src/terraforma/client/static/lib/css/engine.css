@@ -229,3 +229,6 @@ select, .inline input {
 .check { display: inline-flex; gap: 0.35rem; align-items: center; }
 .field textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 0.5em; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text); }
 .bio { white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat-lines { max-height: 18rem; overflow-y: auto; }
+.chat-line[data-mine="yes"] { border-color: var(--accent); }
+.inline input { flex: 1 1 8rem; }
