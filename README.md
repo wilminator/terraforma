@@ -151,15 +151,13 @@ The server won't start without a current key. Back the keys up apart from the da
 
 ## Changing the tables
 
-Change the models, then make a migration and read it over, since autogenerate misses renames:
+Until the first release there are no migration files: nothing is live, so the tables are built straight from the models (`terraforma/db/schema.py`). Change a model and that is the whole change.
 
-```sh
-alembic revision --autogenerate -m "what changed"
-```
-
-A test fails whenever the models and the migrations disagree.
-
-Migrations are numbered `0001`, `0002`, ... in the file name and the revision id, and each points (`down_revision`) at the one with the number before. Take the next free number when you cut your branch. When another branch merges first, re-point yours at the new head and rename it: a test fails on a repeated or missing number, a second head, or a revision that doesn't follow the one before it.
+- An empty database gets every table when the server starts (`python -m terraforma serve`, or `python -m terraforma create-tables`), plus a one-row `schema_stamp` that remembers a fingerprint of the models.
+- A database made by other models is refused at start with a message instead of failing later on a missing column. Reset it, which **deletes everything in it**: `python -m terraforma reset-database --yes` (or recreate the database or its Docker volume).
+- Because there is no history, there are no migration numbers, no `down_revision` and no merge order to keep for the tables.
+- Alembic stays installed. `tests/test_baseline_migration.py` generates the baseline Alembic would write for an empty database, runs it on each database, and checks it builds exactly the tables the models describe and undoes cleanly, so the release path keeps working.
+- At the first release (Mike cuts it) the baseline is written as migration `0001` (`alembic revision --autogenerate -m baseline`), `serve` runs `upgrade` again, and from then on every change is a numbered migration with its own tests.
 
 ## Seed data
 
@@ -459,7 +457,7 @@ Challenge Tokens are a special currency: one balance per account (`ChallengeBala
 - **Spending.** A game spends through `challenge.service.change(session, account_id, -amount, reason)`, which refuses to take the balance below zero (`NotEnoughTokens`).
 - **Buying.** A game that sells tokens sets `challenge_purchase_secret` in `settings.toml` (at least 32 characters; empty, the default, turns the call off and it answers 404). Its own backend (a shop or payment service, never a browser) then credits a purchase with `POST /api/server/challenge/purchase`, sending `Authorization: Bearer <secret>` and `{"account_id": 7, "amount": 50, "key": "order-1234"}`. There is no login, cookie or CSRF token for this call; the secret takes their place. `key` is the caller's idempotency key (8 to 64 letters, digits and `_.:-`): sending the same key again with the same account and amount (a retry) credits once and answers the same with `"duplicate": true`. The answer is `{"credited": 50, "balance": 120, "duplicate": false}`. 401: wrong or missing secret. 404: the call is off, or no such account. 409: the key was used for a different purchase, or the purse cap would be passed (nothing is credited). Every attempt counts against the caller's address (600 per 15 minutes), the secret is compared in constant time and logs scrub the header. The game's backend does the charging and credits only what was paid; the engine takes no payment.
 
-`Rules.challenge_earned`, `challenge_daily_cap`, `challenge_purse_cap`, the `challenge.service` functions and the purchase call are public interfaces (the license exception covers them). They replace `Rules.tokens_earned` and `terraforma.tokens` of the admin tokens: a game that overrode `tokens_earned` renames it to `challenge_earned`, and migration 0030 moves the balances and ledger over.
+`Rules.challenge_earned`, `challenge_daily_cap`, `challenge_purse_cap`, the `challenge.service` functions and the purchase call are public interfaces (the license exception covers them). They replace `Rules.tokens_earned` and `terraforma.tokens` of the admin tokens: a game that overrode `tokens_earned` renames it to `challenge_earned`, and the balances and ledger are in the new tables from the start (no data had to move).
 
 A game's own rules set the limits and rates. Example for Vanguard Tavern, which adopts DragonStar's numbers (from DragonStar's `MonsterToken`: in DragonStar tokens are earned by playing the monsters in a fight, 1 for playing it through and 1 more for winning it, with at most 3 earned in any 24 hours and no limit on how many are held):
 
@@ -523,11 +521,11 @@ A fight waits for its round (`terraforma.fights.live`). **Starting** one is the 
 
 The engine is database-agnostic. Postgres is the primary database, MySQL is supported, and SQLite serves tests and development. To keep it that way:
 
-1. Tables are SQLAlchemy models only, and Alembic writes the schema changes.
+1. Tables are SQLAlchemy models only. Until the first release they are built from the models; after it, Alembic writes the schema changes.
 2. Only generic column types are used, never database-specific ones.
 3. Structured data goes in JSON columns, never serialized language objects.
 4. Anything that really differs between databases lives in `terraforma/db/dialect.py`, and nowhere else.
-5. There is no raw SQL outside that module and the migrations.
+5. There is no raw SQL outside that module and the migrations (once there are any).
 6. Every database test runs on all three databases.
 
 ## Map-ready from the start

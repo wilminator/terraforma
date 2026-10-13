@@ -24,7 +24,7 @@ USER terraforma
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD ["python", "-c", "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4).status == 200 else 1)"]
-# Checks settings, migrates, then serves (python -m terraforma serve).
+# Checks settings, makes the tables, then serves (python -m terraforma serve).
 CMD ["python", "-m", "terraforma", "serve"]
 
 # --- the tests ------------------------------------------------------------
