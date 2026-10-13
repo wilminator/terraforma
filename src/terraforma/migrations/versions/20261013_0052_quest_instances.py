@@ -1,7 +1,7 @@
 """quest instances
 
-Revision ID: 0051
-Revises: 0050
+Revision ID: 0052
+Revises: 0051
 Created: 2026-10-12
 """
 from collections.abc import Sequence
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from alembic import op
 
 
-revision: str = '0051'
-down_revision: str | None = '0050'
+revision: str = '0052'
+down_revision: str | None = '0051'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

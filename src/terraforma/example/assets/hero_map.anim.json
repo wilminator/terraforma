@@ -1,0 +1,63 @@
+{
+ "animations": {
+  "stand_down": {
+   "frames": [
+    0
+   ]
+  },
+  "move_down": {
+   "frames": [
+    1,
+    0,
+    2,
+    0
+   ],
+   "ms": 130
+  },
+  "stand_up": {
+   "frames": [
+    3
+   ]
+  },
+  "move_up": {
+   "frames": [
+    4,
+    3,
+    5,
+    3
+   ],
+   "ms": 130
+  },
+  "stand_right": {
+   "frames": [
+    6
+   ]
+  },
+  "move_right": {
+   "frames": [
+    7,
+    6,
+    8,
+    6
+   ],
+   "ms": 130
+  }
+ },
+ "aliases": {
+  "stand_left": {
+   "of": "stand_right",
+   "flip_x": true
+  },
+  "move_left": {
+   "of": "move_right",
+   "flip_x": true
+  },
+  "cast": {
+   "of": "stand_down",
+   "scale": 1.1
+  },
+  "equip": {
+   "of": "stand_down"
+  }
+ }
+}
