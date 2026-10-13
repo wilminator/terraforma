@@ -31,10 +31,16 @@ class Purchase(Strict):
 
 
 async def authorised(request: Request, authorization: str | None) -> None:
-    secret = request.app.state.settings.challenge_purchase_secret
+    await server_call_allowed(request, authorization, request.app.state.settings.challenge_purchase_secret, ratelimit.CHALLENGE_PURCHASE_BY_ADDRESS)
+
+
+async def server_call_allowed(request: Request, authorization: str | None, secret: str, limit: ratelimit.Limit) -> None:
+    """The gate of every server-to-server call (no login, no cookie, no CSRF token): 404 when the game set no $secret, then
+    $limit counts the attempt against the caller's address, then 401 unless the bearer token is the secret (compared in
+    constant time)."""
     if not secret:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
-    await limited(request, ratelimit.CHALLENGE_PURCHASE_BY_ADDRESS, client_address(request))
+    await limited(request, limit, client_address(request))
     scheme, _, given = (authorization or "").partition(" ")
     if scheme.lower() != "bearer" or not hmac.compare_digest(given.encode(), secret.encode()):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "not allowed", headers={"WWW-Authenticate": "Bearer"})
