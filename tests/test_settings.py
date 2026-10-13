@@ -49,14 +49,14 @@ def test_the_migrate_command_builds_the_tables(tmp_path, monkeypatch, capsys):
     assert main(["terraforma", "keys", "new"]) == 0
     assert (tmp_path / "keys" / "current.key").exists(), "key_dir is relative to where the server runs"
     assert main(["terraforma", "check-settings"]) == 0
-    assert main(["terraforma", "migrate"]) == 0
-    assert main(["terraforma", "migrate"]) == 0, "running it again changes nothing"
+    assert main(["terraforma", "create-tables"]) == 0
+    assert main(["terraforma", "create-tables"]) == 0, "running it again changes nothing"
     connection = sqlite3.connect(database)
     try:
         tables = {row[0] for row in connection.execute("select name from sqlite_master where type = 'table'")}
     finally:
         connection.close()
-    assert {"accounts", "worlds", "maps", "fighters", "alembic_version"} <= tables
+    assert {"accounts", "worlds", "maps", "fighters", "schema_stamp"} <= tables
     assert main(["terraforma", "nonsense"]) == 2
 
 

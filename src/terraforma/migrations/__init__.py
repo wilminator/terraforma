@@ -1,1 +1,1 @@
-"""The engine's database migrations (Alembic). See terraforma.db.migrate."""
+"""Alembic's home, empty until the first release. See terraforma.db.migrate and terraforma.db.schema."""
