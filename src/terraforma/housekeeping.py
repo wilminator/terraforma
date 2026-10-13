@@ -15,6 +15,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from . import wallclock
 from .accounts.ratelimit import ALL_LIMITS
 from .alliances.models import Ballot, BallotVote, BallotVoter
+from .chat.models import OPEN as FLAG_OPEN
+from .chat.models import ChatFlag, ChatMessage
+from .voice.discord import VoiceError, provider_for
+from .voice.models import VoiceRoom
 from .fights.models import PendingDrop
 from .fights.pending import OPEN, expire
 from .fights.rules import Rules
@@ -88,6 +92,38 @@ async def old_settled_rating_prompts(session: AsyncSession, now: int, settings: 
     before = wallclock.now() - timedelta(days=settings.rating_prompt_retention_days)
     settled = RatingPrompt.state.in_([ANSWERED, DISMISSED]) & (RatingPrompt.updated_at <= before)
     return (await session.execute(delete(RatingPrompt).where(settled))).rowcount
+
+
+@job
+async def old_chat_messages(session: AsyncSession, now: int, settings: Settings, rules: Rules | None = None) -> int:
+    """Chat messages older than ``chat_retention_days`` (0 days: kept for good). A message an admin has yet to settle a flag on is
+    kept, and so are the settled flags of a message until it too is old enough; the flags go first so their messages can follow."""
+    if not settings.chat_retention_days:
+        return 0
+    before = wallclock.now() - timedelta(days=settings.chat_retention_days)
+    await session.execute(delete(ChatFlag).where(ChatFlag.state != FLAG_OPEN, ChatFlag.updated_at <= before))
+    flagged = select(ChatFlag.message_id)
+    return (await session.execute(delete(ChatMessage).where(ChatMessage.created_at <= before, ChatMessage.id.not_in(flagged)))).rowcount
+
+
+@job
+async def old_voice_rooms(session: AsyncSession, now: int, settings: Settings, rules: Rules | None = None) -> int:
+    """Voice rooms made more than ``voice_room_hours`` ago: closed at the provider, then forgotten. A room the provider would not close
+    is kept for the next pass (so nothing is left behind there). With voice off, nothing is done."""
+    provider = provider_for(settings)
+    if provider is None:
+        return 0
+    before = wallclock.now() - timedelta(hours=settings.voice_room_hours)
+    removed = 0
+    for room in (await session.scalars(select(VoiceRoom).where(VoiceRoom.created_at <= before).order_by(VoiceRoom.id).limit(BATCH))).all():
+        try:
+            await provider.close_room(room.provider_id)
+        except VoiceError:
+            log.warning("a voice room could not be closed; it will be tried again")
+            continue
+        await session.delete(room)
+        removed += 1
+    return removed
 
 
 @job

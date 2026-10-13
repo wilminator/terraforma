@@ -1,7 +1,7 @@
 """public fights: the finished fights a game marked public
 
-Revision ID: 0046
-Revises: 0045
+Revision ID: 0050
+Revises: 0049
 Created: 2026-10-12
 """
 from collections.abc import Sequence
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from alembic import op
 
 
-revision: str = '0046'
-down_revision: str | None = '0045'
+revision: str = '0050'
+down_revision: str | None = '0049'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
