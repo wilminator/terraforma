@@ -1,7 +1,7 @@
 """external_identities: accounts at external sign-in providers, and accounts that may have no password
 
-Revision ID: 0041
-Revises: 0040
+Revision ID: 0049
+Revises: 0048
 Created: 2026-10-12
 """
 from collections.abc import Sequence
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from alembic import op
 
 
-revision: str = '0041'
-down_revision: str | None = '0040'
+revision: str = '0050'
+down_revision: str | None = '0049'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
