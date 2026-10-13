@@ -114,6 +114,11 @@ class Rules:
         by default (the coliseum judges throws; a game that has no coliseum may override this)."""
         return False
 
+    def public_fight(self, fight) -> bool:
+        """Whether a finished $fight is public: anyone may watch it and the coliseum page lists it. Nothing is by default (a coliseum
+        or tournament game marks its own)."""
+        return False
+
     def follow_cap(self, seconds_played: int) -> int:
         """How many players one who has played $seconds_played seconds may follow."""
         return self.follow_base + max(0, seconds_played) // self.follow_seconds_each
