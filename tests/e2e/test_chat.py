@@ -102,3 +102,26 @@ def test_an_admin_bars_a_flagged_player_for_a_day_and_lifts_the_ban(page, live_s
     expect(page.locator("#chat-admin-bans [data-ban='Zed the Fast']")).to_contain_text("Zed the Fast until")
     page.get_by_role("button", name="Lift Zed the Fast's ban").click()
     expect(page.locator("#chat-admin-bans")).to_contain_text("Nobody is barred.")
+
+
+def test_a_party_channel_offers_a_voice_link_when_voice_is_on(page, live_server, monkeypatch):
+    from terraforma.parties import service as parties
+    from terraforma.voice import discord
+
+    from ..test_voice import FakeDiscord
+
+    monkeypatch.setattr(discord, "send", FakeDiscord())
+    live_server.app.state.settings = live_server.app.state.settings.model_copy(update={"discord_bot_token": "t" * 40, "discord_guild_id": "42"})
+    start(page, live_server)
+
+    async def party(db):
+        await parties.create_party(db, 1, 20)
+
+    live_server.in_db(party)
+    tab(page, "Nearby")
+    tab(page, "Chat")
+    expect(page.locator("#chat-voice")).to_be_hidden()  # the Everyone channel has no room
+    page.locator("#chat-channel").select_option(label="Party")
+    page.locator("#chat-voice").click()
+    expect(page.locator("#chat-voice-link a")).to_have_attribute("href", "https://discord.gg/code2")
+    expect(page.locator("#chat-voice-link")).to_contain_text("works once")
