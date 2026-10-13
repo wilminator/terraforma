@@ -26,6 +26,7 @@ dependencies = [
     "aiosmtplib>=3.0",
     "cryptography>=43",
     "httpx2>=2.13",
+    "webauthn>=3.0",
 ]
 
 [project.optional-dependencies]
