@@ -62,15 +62,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    with op.batch_alter_table('oidc_tokens', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_oidc_tokens_expires_at'))
-        batch_op.drop_index(batch_op.f('ix_oidc_tokens_code_hash'))
-        batch_op.drop_index(batch_op.f('ix_oidc_tokens_account_id'))
-
+    # The tables go whole, indexes with them: MySQL refuses to drop an index a foreign key still needs.
     op.drop_table('oidc_tokens')
     op.drop_table('oidc_subjects')
-    with op.batch_alter_table('oidc_codes', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_oidc_codes_expires_at'))
-        batch_op.drop_index(batch_op.f('ix_oidc_codes_account_id'))
-
     op.drop_table('oidc_codes')
