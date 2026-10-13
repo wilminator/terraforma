@@ -203,5 +203,7 @@ def test_every_housekeeping_job_is_registered_and_so_runs():
         "stale_pending_drops",
         "old_closed_ballots",
         "old_settled_rating_prompts",
+        "old_chat_messages",
+        "old_voice_rooms",
         "ended_standing_statuses",
     ]
