@@ -3,22 +3,292 @@
   "key": "herb",
   "name": "Herb",
   "price": 12,
-  "one_use": true,
   "description": "A bitter leaf that mends a little.",
+  "one_use": true,
   "use_effect": {
    "effect": "heal",
-   "base": 10
+   "targets": "individual",
+   "base": 10,
+   "added": 0
   }
  },
  {
   "key": "potion",
   "name": "Potion",
   "price": 40,
-  "one_use": true,
   "description": "A bottle that mends a lot.",
+  "one_use": true,
   "use_effect": {
    "effect": "heal",
-   "base": 30
+   "targets": "individual",
+   "base": 30,
+   "added": 0
+  }
+ },
+ {
+  "key": "ether",
+  "name": "Ether",
+  "price": 60,
+  "description": "A fizzing draught that restores magic.",
+  "one_use": true,
+  "use_effect": {
+   "effect": "restore_mp",
+   "targets": "individual",
+   "base": 12,
+   "added": 6
+  }
+ },
+ {
+  "key": "antidote",
+  "name": "Antidote",
+  "price": 20,
+  "description": "Clears poison, and every other ailment.",
+  "one_use": true,
+  "use_effect": {
+   "effect": "remove_bad_status",
+   "targets": "individual",
+   "base": 0,
+   "added": 0,
+   "status": "poison"
+  }
+ },
+ {
+  "key": "phoenix_feather",
+  "name": "Phoenix Feather",
+  "price": 300,
+  "description": "Brings a fallen friend back to their feet.",
+  "one_use": true,
+  "use_effect": {
+   "effect": "revive",
+   "targets": "individual",
+   "base": 100,
+   "added": 200
+  }
+ },
+ {
+  "key": "short_sword",
+  "name": "Short Sword",
+  "price": 60,
+  "description": "A plain blade for one hand.",
+  "equip_slots": [
+   "hand"
+  ],
+  "stat_bonus": {
+   "Strength": 3
+  },
+  "attack": {
+   "targets": "individual",
+   "count": 1
+  }
+ },
+ {
+  "key": "dagger",
+  "name": "Dagger",
+  "price": 40,
+  "description": "Quick and light.",
+  "equip_slots": [
+   "hand"
+  ],
+  "stat_bonus": {
+   "Speed": 2,
+   "Accuracy": 2
+  },
+  "attack": {
+   "targets": "individual",
+   "count": 1
+  }
+ },
+ {
+  "key": "mace",
+  "name": "Mace",
+  "price": 65,
+  "description": "A blunt weapon with a blessing on it.",
+  "equip_slots": [
+   "hand"
+  ],
+  "stat_bonus": {
+   "Strength": 2,
+   "Power": 2
+  },
+  "attack": {
+   "targets": "individual",
+   "count": 1
+  }
+ },
+ {
+  "key": "spear",
+  "name": "Spear",
+  "price": 90,
+  "description": "Held in both hands; it reaches the foe's neighbours too.",
+  "equip_slots": [
+   "lhand",
+   "rhand"
+  ],
+  "stat_bonus": {
+   "Strength": 5
+  },
+  "attack": {
+   "targets": 1,
+   "count": 1
+  }
+ },
+ {
+  "key": "staff",
+  "name": "Staff",
+  "price": 70,
+  "description": "Held in both hands; it sharpens spells.",
+  "equip_slots": [
+   "lhand",
+   "rhand"
+  ],
+  "stat_bonus": {
+   "Power": 4,
+   "Focus": 2
+  },
+  "attack": {
+   "targets": "individual",
+   "count": 1
+  }
+ },
+ {
+  "key": "bow",
+  "name": "Bow",
+  "price": 80,
+  "description": "Shoots arrows from a hand.",
+  "equip_slots": [
+   "hand"
+  ],
+  "stat_bonus": {
+   "Accuracy": 3
+  },
+  "attack": {
+   "targets": "individual",
+   "count": 1,
+   "ammo_type": "arrow"
+  }
+ },
+ {
+  "key": "arrow",
+  "name": "Arrow",
+  "price": 3,
+  "description": "Ammunition for a bow.",
+  "equip_slots": [
+   "ammo"
+  ],
+  "stat_bonus": {
+   "Strength": 2
+  },
+  "attack": {
+   "targets": "individual",
+   "count": 1,
+   "ammo_type": "arrow"
+  }
+ },
+ {
+  "key": "wooden_shield",
+  "name": "Wooden Shield",
+  "price": 35,
+  "description": "Held on an arm.",
+  "equip_slots": [
+   "arm"
+  ],
+  "stat_bonus": {
+   "Block": 3
+  }
+ },
+ {
+  "key": "leather_cap",
+  "name": "Leather Cap",
+  "price": 25,
+  "description": "Worn on the head.",
+  "equip_slots": [
+   "head"
+  ],
+  "stat_bonus": {
+   "Block": 1
+  }
+ },
+ {
+  "key": "leather_armor",
+  "name": "Leather Armor",
+  "price": 70,
+  "description": "Worn on the body.",
+  "equip_slots": [
+   "body"
+  ],
+  "stat_bonus": {
+   "Block": 3,
+   "Dodge": 1
+  }
+ },
+ {
+  "key": "cloth_robe",
+  "name": "Cloth Robe",
+  "price": 55,
+  "description": "Worn on the body; it turns aside spells.",
+  "equip_slots": [
+   "body"
+  ],
+  "stat_bonus": {
+   "Resistance": 3,
+   "Power": 1
+  }
+ },
+ {
+  "key": "cloak",
+  "name": "Cloak",
+  "price": 45,
+  "description": "Worn on the back.",
+  "equip_slots": [
+   "back"
+  ],
+  "stat_bonus": {
+   "Dodge": 2
+  }
+ },
+ {
+  "key": "leather_boots",
+  "name": "Leather Boots",
+  "price": 30,
+  "description": "Worn on the feet.",
+  "equip_slots": [
+   "feet"
+  ],
+  "stat_bonus": {
+   "Speed": 1,
+   "Dodge": 1
+  }
+ },
+ {
+  "key": "club",
+  "name": "Club",
+  "price": 0,
+  "description": "A knotted branch. Goblins carry them.",
+  "equip_slots": [
+   "hand"
+  ],
+  "stat_bonus": {
+   "Strength": 2
+  },
+  "attack": {
+   "targets": "individual",
+   "count": 1
+  }
+ },
+ {
+  "key": "rusty_blade",
+  "name": "Rusty Blade",
+  "price": 0,
+  "description": "Pitted and chipped, and still sharp enough.",
+  "equip_slots": [
+   "hand"
+  ],
+  "stat_bonus": {
+   "Strength": 3
+  },
+  "attack": {
+   "targets": "individual",
+   "count": 1
   }
  }
 ]
