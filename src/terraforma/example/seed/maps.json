@@ -328,6 +328,50 @@
       "weight": 1
      }
     ]
+   },
+   {
+    "name": "deep marsh",
+    "encounters": [
+     {
+      "monsters": [
+       "bat",
+       "bat"
+      ],
+      "weight": 3
+     },
+     {
+      "monsters": [
+       "goblin"
+      ],
+      "weight": 3
+     },
+     {
+      "monsters": [
+       "goblin",
+       "goblin"
+      ],
+      "weight": 1
+     },
+     {
+      "monsters": [
+       "wolf"
+      ],
+      "weight": 2
+     },
+     {
+      "monsters": [
+       "skeleton"
+      ],
+      "weight": 1
+     },
+     {
+      "monsters": [
+       "imp",
+       "bat"
+      ],
+      "weight": 1
+     }
+    ]
    }
   ],
   "zone_tiles": [
@@ -477,8 +521,8 @@
    ],
    [
     0,
-    1,
-    1,
+    2,
+    2,
     1,
     1,
     0,
