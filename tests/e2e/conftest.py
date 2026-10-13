@@ -1,7 +1,7 @@
 """Browser tests: the real server on a real port, driven by Chromium through Playwright.
 
 ``live_server`` serves the example game on the database under test (SQLite by default; every database listed in
-TERRAFORMA_TEST_DATABASES runs the same tests), freshly migrated for each test. ``page`` is a browser page on it.
+TERRAFORMA_TEST_DATABASES runs the same tests), freshly built for each test. ``page`` is a browser page on it.
 A test fails on anything the browser would show a player as a problem: a console error or warning, an uncaught error,
 a failed request. A test that expects one says so with ``console.allow("text")``.
 """

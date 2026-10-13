@@ -1,17 +1,14 @@
-"""Bringing a database's tables up to date (Alembic, run by the engine itself).
+"""Alembic, held ready for the first release.
 
-    python -m terraforma migrate          # uses settings.toml
-
-Making a new migration after changing the models (developers):
-
-    alembic revision --autogenerate -m "what changed"
-
-then read it over: autogenerate misses renames and some type changes.
+Until then there are no migration files: the tables are built from the models (terraforma.db.schema)
+and a development database is reset when the models change. At the first release the baseline
+migration ``0001`` is generated from the models (``alembic revision --autogenerate -m baseline``),
+``serve`` goes back to running ``upgrade``, and every change after that is a numbered migration.
+tests/test_baseline_migration.py keeps this path working in the meantime.
 """
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import MetaData
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 
@@ -35,15 +32,3 @@ async def upgrade(engine: AsyncEngine, revision: str = "head") -> None:
 async def downgrade(engine: AsyncEngine, revision: str = "base") -> None:
     async with engine.begin() as connection:
         await connection.run_sync(_run, "downgrade", revision)
-
-
-async def drop_everything(engine: AsyncEngine) -> None:
-    """Every table in the database, whoever made it (tests only: start from nothing)."""
-
-    def drop(connection) -> None:
-        metadata = MetaData()
-        metadata.reflect(connection)
-        metadata.drop_all(connection)
-
-    async with engine.begin() as connection:
-        await connection.run_sync(drop)

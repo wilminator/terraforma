@@ -31,7 +31,7 @@ import pytest
 from sqlalchemy.engine import make_url
 
 from terraforma.db.dialect import empty_tables, ensure_database
-from terraforma.db.migrate import drop_everything, upgrade
+from terraforma.db.schema import drop_everything, ensure_schema
 from terraforma.db.session import make_engine, make_sessionmaker
 
 DEFAULT_DATABASES = "sqlite+aiosqlite:///{tmp}/test.db"
@@ -70,32 +70,32 @@ def database_url(request, tmp_path) -> str:
     return url
 
 
-_migrated: set[str] = set()
+_built: set[str] = set()
 
 
 async def fresh_database(engine, url: str) -> None:
-    """Leaves $engine's database with every migration applied and no rows.
+    """Leaves $engine's database with every table made from the models and no rows.
 
     Building the tables is the slow part on Postgres and MySQL, so each shared database is built once per
     run and then only emptied. A test that changes the tables must call forget_schema(url) when it is done.
     """
-    if url in _migrated:
+    if url in _built:
         await empty_tables(engine)
         return
     await drop_everything(engine)
-    await upgrade(engine)
+    await ensure_schema(engine)
     if make_url(url).get_backend_name() != "sqlite":  # a SQLite file is made new for every test
-        _migrated.add(url)
+        _built.add(url)
 
 
 def forget_schema(url: str) -> None:
-    """Says the database's tables are no longer the migrated ones, so the next test rebuilds them."""
-    _migrated.discard(url)
+    """Says the database's tables are no longer the built ones, so the next test rebuilds them."""
+    _built.discard(url)
 
 
 @pytest.fixture
 async def engine(database_url):
-    """A database with every migration applied (and nothing else: it starts empty)."""
+    """A database with every table made from the models (and nothing else: it starts empty)."""
     engine = make_engine(database_url)
     await fresh_database(engine, database_url)
     yield engine
@@ -134,7 +134,7 @@ def game():
 
 @pytest.fixture
 def app_client(database_url, mailbox, game, tmp_path):
-    """A TestClient for the engine app on a freshly migrated database (each database under test), with its own key."""
+    """A TestClient for the engine app on a freshly built database (each database under test), with its own key."""
     from starlette.testclient import TestClient
 
     from terraforma.app import create_app

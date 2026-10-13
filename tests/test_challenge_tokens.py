@@ -2,14 +2,13 @@
 caps, and the server-to-server purchase call, on every database."""
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import select
 
 from terraforma.accounts.service import create_account
-from terraforma.db.migrate import downgrade, upgrade
 from terraforma.fights import store
 from terraforma.fights.rules import Rules
 from terraforma.models import Account
-from terraforma.testing import forget_schema, in_app_db
+from terraforma.testing import in_app_db
 from terraforma.challenge import service as tokens
 from terraforma.challenge.models import ChallengeEntry as TokenEntry
 
@@ -317,23 +316,3 @@ def test_a_secret_must_be_long_or_empty():
     assert Settings(session_secret="x" * 32, challenge_purchase_secret=SECRET).challenge_purchase_secret == SECRET
     with pytest.raises(ValidationError):
         Settings(session_secret="x" * 32, challenge_purchase_secret="too short")
-
-
-# --- the migration ------------------------------------------------------------------------------------------------------------------
-
-async def test_the_migration_carries_balances_and_the_ledger_both_ways(db, engine, database_url):
-    account = await create_account(db, "Mike", PASSWORD, email="mike@example.com", confirmed=True)
-    await tokens.change(db, account.id, 10, "gift")
-    await tokens.change(db, account.id, -4, "shop")
-    await db.commit()
-    forget_schema(database_url)  # the tables are about to change: the next test rebuilds them
-    await downgrade(engine, "0029")
-    async with engine.connect() as connection:
-        old = (await connection.execute(text("SELECT balance FROM token_balances WHERE account_id = :a"), {"a": account.id})).scalar()
-        old_rows = (await connection.execute(text("SELECT amount, reason FROM token_ledger ORDER BY id"))).all()
-    assert old == 6 and [tuple(row) for row in old_rows] == [(10, "gift"), (-4, "shop")]
-    await upgrade(engine)
-    async with engine.connect() as connection:
-        new = (await connection.execute(text("SELECT balance FROM challenge_balances WHERE account_id = :a"), {"a": account.id})).scalar()
-        new_rows = (await connection.execute(text("SELECT amount, reason FROM challenge_ledger ORDER BY id"))).all()
-    assert new == 6 and [tuple(row) for row in new_rows] == [(10, "gift"), (-4, "shop")]
