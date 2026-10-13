@@ -14,7 +14,7 @@ PATTERNS = [
     # email addresses
     (re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+"), REDACTED),
     # key=value pairs for anything secret, in query strings, forms or text
-    (re.compile(r"(?i)\b(password|passwd|token|secret|csrf[_-]?token|code|otp|session)=([^&\s\"']+)"), r"\1=" + REDACTED),
+    (re.compile(r"(?i)\b(password|passwd|token|secret|csrf[_-]?token|code|otp|session|state)=([^&\s\"']+)"), r"\1=" + REDACTED),
     # "key": "value" in JSON
     (re.compile(r'(?i)("(?:password|token|secret|csrf_token|code|otp)"\s*:\s*)"[^"]*"'), r'\1"' + REDACTED + '"'),
     # headers carrying credentials

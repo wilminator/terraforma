@@ -106,7 +106,8 @@ async def current_account(request: Request, db: Db) -> Account:
     account_id = request.session.get(SESSION_ACCOUNT)
     account = await db.get(Account, account_id) if account_id is not None else None
     if account is None or request.session.get(SESSION_VERSION) != account.session_version:
-        request.session.clear()
+        if account_id is not None:  # a stale login ends; a visitor mid-way through an external sign-in keeps theirs
+            request.session.clear()
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "not logged in")
     return account
 
