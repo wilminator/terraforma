@@ -1,0 +1,95 @@
+{
+ "animations": {
+  "base": {
+   "frames": [
+    0,
+    1
+   ],
+   "ms": 450
+  },
+  "hit": {
+   "frames": [
+    3,
+    3,
+    0
+   ],
+   "ms": 120,
+   "loop": false
+  },
+  "die": {
+   "frames": [
+    3,
+    {
+     "frame": 3,
+     "rotate": 60
+    },
+    4
+   ],
+   "ms": 180,
+   "loop": false
+  },
+  "attack_close": {
+   "frames": [
+    {
+     "frame": 2,
+     "ms": 260
+    },
+    0
+   ],
+   "loop": false
+  },
+  "run": {
+   "frames": [
+    0,
+    1
+   ],
+   "ms": 90
+  },
+  "spell": {
+   "frames": [
+    {
+     "frame": 5,
+     "ms": 400
+    },
+    0
+   ],
+   "loop": false
+  },
+  "item": {
+   "frames": [
+    {
+     "frame": 6,
+     "ms": 400
+    },
+    0
+   ],
+   "loop": false
+  },
+  "attack_shoot": {
+   "frames": [
+    {
+     "frame": 7,
+     "ms": 300
+    },
+    0
+   ],
+   "loop": false
+  }
+ },
+ "aliases": {
+  "flee": {
+   "of": "run",
+   "flip_x": true
+  },
+  "skill": {
+   "of": "attack_close",
+   "scale": 1.15
+  },
+  "attack_throw": {
+   "of": "attack_shoot"
+  },
+  "equip": {
+   "of": "item"
+  }
+ }
+}

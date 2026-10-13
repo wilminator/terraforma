@@ -25,7 +25,7 @@
 - Work goes on branches with pull requests, one slice per pull request; Mike creates the release tags (v0.x.y) that games depend on.
 - Tests that depend on dice must not depend on luck: a world's seed is random per test, so fix it (`World.seed`) or script the rolls.
 - Anything stored whose exact text matters (the fight log's hash chain) uses `ExactJSON`, not `JSON`: MySQL re-formats floats in JSON columns.
-- Migrations are linked only by `down_revision`. Take the next free number when your branch is cut; when another branch merges first, re-point yours at the new head and rename it.
+- No migration files until the first release (Mike, 2026-10-13): tables are built from the models (`terraforma/db/schema.py`); never add a file under `migrations/versions`. A model change is the whole change; a dev database made by older models is reset (`python -m terraforma reset-database --yes`). At release Mike has the baseline `0001` generated and the numbered chain (linked only by `down_revision`) starts from it.
 
 # Planning and how to work
 
@@ -34,4 +34,4 @@ The work plan lives in the shared Claude doc "TerraForma work plan" (https://cla
 - Read the doc before starting a slice, and don't start a piece another thread has in flight.
 - When you start, finish or change a slice, edit the doc directly (no pull request): update its row, add one line to the log (newest first), and record any decision Mike makes under Decisions. Put questions for Mike under Open questions and remove them once he answers.
 - Mike pays for cloud sessions out of a pool of credits. Confirm with him how deep to go before starting a slice, keep a session to one slice, and don't poll CI (he reports results). Don't spend credits on Ultrareview for routine pull requests; keep it for a release.
-- Slices that touch the same files (accounts routes and service, the models module, the migration chain) run one after another. Run at most two threads at a time.
+- Slices that touch the same files (accounts routes and service, the models module) run one after another. Run at most two threads at a time.
