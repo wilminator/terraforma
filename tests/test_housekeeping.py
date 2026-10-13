@@ -206,6 +206,6 @@ def test_every_housekeeping_job_is_registered_and_so_runs():
         "old_chat_messages",
         "old_voice_rooms",
         "ended_standing_statuses",
-        "old_unkept_fights",
         "expired_oidc_codes_and_tokens",
+        "old_unkept_fights",
     ]
