@@ -10,12 +10,14 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 
+import httpx2 as httpx
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from . import __doc__ as ENGINE
 from . import logscrub
+from .accounts.external_routes import router as external_router
 from .accounts.routes import router as account_router
 from .accounts.twofa_routes import router as twofa_router
 from .accounts.tokens import Tokens
@@ -106,11 +108,14 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
                 with suppress(asyncio.CancelledError):
                     await task
         await engine.dispose()
+        await http_client.aclose()
 
+    http_client = httpx.AsyncClient()  # for the calls to sign-in providers (tests replace app.state.http_client)
     app = FastAPI(title=game.name if game else "TerraForma", lifespan=lifespan)
     app.state.settings = settings
     app.state.game = game
     app.state.fights = FightChannels()
+    app.state.http_client = http_client
     app.state.tokens = Tokens(settings.session_secret)
     app.state.mailer = mailer or default_mailer(settings)
     app.add_middleware(
@@ -123,6 +128,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     )
     app.include_router(account_router)
     app.include_router(twofa_router)
+    app.include_router(external_router)
     app.include_router(heroes_router)
     app.include_router(inventory_router)
     app.include_router(trading_router)
