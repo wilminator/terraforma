@@ -2,9 +2,12 @@
  {
   "key": "slime",
   "name": "Slime",
-  "personality": "plain",
+  "personality": "slime",
   "xp_reward": 5,
   "gold_reward": 3,
+  "drops": [
+   "slime_drops"
+  ],
   "stats": {
    "HP": 14,
    "MP": 0,
@@ -13,6 +16,155 @@
    "Strength": 3,
    "Dodge": 1,
    "Block": 0
+  },
+  "ai": {
+   "action": 0,
+   "goal": 0,
+   "target": 0,
+   "experience": 50
+  }
+ },
+ {
+  "key": "bat",
+  "name": "Cave Bat",
+  "personality": "bat",
+  "xp_reward": 6,
+  "gold_reward": 2,
+  "drops": [
+   "bat_drops"
+  ],
+  "abilities": [
+   "screech"
+  ],
+  "stats": {
+   "HP": 12,
+   "Speed": 9,
+   "Accuracy": 7,
+   "Strength": 3,
+   "Dodge": 6,
+   "Resistance": 1
+  },
+  "ai": {
+   "action": 5,
+   "goal": 1,
+   "target": 2,
+   "experience": 40
+  }
+ },
+ {
+  "key": "goblin",
+  "name": "Goblin",
+  "personality": "goblin",
+  "xp_reward": 8,
+  "gold_reward": 6,
+  "drops": [
+   "goblin_drops"
+  ],
+  "equipment": [
+   "club"
+  ],
+  "stats": {
+   "HP": 22,
+   "Speed": 5,
+   "Accuracy": 6,
+   "Strength": 5,
+   "Dodge": 3,
+   "Block": 2
+  },
+  "ai": {
+   "action": 1,
+   "goal": 1,
+   "target": 2,
+   "experience": 40
+  }
+ },
+ {
+  "key": "wolf",
+  "name": "Marsh Wolf",
+  "personality": "wolf",
+  "xp_reward": 10,
+  "gold_reward": 4,
+  "drops": [
+   "wolf_drops"
+  ],
+  "abilities": [
+   "bite"
+  ],
+  "stats": {
+   "HP": 26,
+   "Speed": 8,
+   "Accuracy": 8,
+   "Strength": 6,
+   "Dodge": 5,
+   "Block": 1
+  },
+  "ai": {
+   "action": 4,
+   "goal": 1,
+   "target": 1,
+   "experience": 30
+  }
+ },
+ {
+  "key": "skeleton",
+  "name": "Skeleton",
+  "personality": "skeleton",
+  "xp_reward": 12,
+  "gold_reward": 5,
+  "drops": [
+   "skeleton_drops"
+  ],
+  "equipment": [
+   "rusty_blade"
+  ],
+  "stats": {
+   "HP": 30,
+   "Speed": 3,
+   "Accuracy": 6,
+   "Strength": 6,
+   "Dodge": 1,
+   "Block": 5,
+   "Resistance": 3
+  },
+  "ai": {
+   "action": 1,
+   "goal": 1,
+   "target": 2,
+   "experience": 30
+  }
+ },
+ {
+  "key": "imp",
+  "name": "Imp",
+  "personality": "imp",
+  "xp_reward": 14,
+  "gold_reward": 10,
+  "drops": [
+   "imp_drops"
+  ],
+  "abilities": [
+   "ember"
+  ],
+  "items": [
+   "potion"
+  ],
+  "stats": {
+   "HP": 24,
+   "MP": 20,
+   "Speed": 6,
+   "Accuracy": 6,
+   "Strength": 2,
+   "Dodge": 4,
+   "Block": 1,
+   "Power": 7,
+   "Resistance": 5,
+   "Focus": 4
+  },
+  "ai": {
+   "action": 7,
+   "goal": 2,
+   "target": 2,
+   "experience": 20
   }
  }
 ]

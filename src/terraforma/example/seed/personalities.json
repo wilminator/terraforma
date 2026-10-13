@@ -1,6 +1,106 @@
 [
  {
-  "key": "plain",
-  "name": "Plain"
+  "key": "fighter",
+  "name": "Fighter",
+  "fight_art": {
+   "sheet": "hero_fight",
+   "colors": "hero_fighter",
+   "animations": "hero_fight"
+  },
+  "map_art": {
+   "sheet": "hero_map",
+   "colors": "hero_fighter",
+   "animations": "hero_map"
+  }
+ },
+ {
+  "key": "scout",
+  "name": "Scout",
+  "fight_art": {
+   "sheet": "hero_fight",
+   "colors": "hero_scout",
+   "animations": "hero_fight"
+  },
+  "map_art": {
+   "sheet": "hero_map",
+   "colors": "hero_scout",
+   "animations": "hero_map"
+  }
+ },
+ {
+  "key": "mage",
+  "name": "Mage",
+  "fight_art": {
+   "sheet": "hero_fight",
+   "colors": "hero_mage",
+   "animations": "hero_fight"
+  },
+  "map_art": {
+   "sheet": "hero_map",
+   "colors": "hero_mage",
+   "animations": "hero_map"
+  }
+ },
+ {
+  "key": "cleric",
+  "name": "Cleric",
+  "fight_art": {
+   "sheet": "hero_fight",
+   "colors": "hero_cleric",
+   "animations": "hero_fight"
+  },
+  "map_art": {
+   "sheet": "hero_map",
+   "colors": "hero_cleric",
+   "animations": "hero_map"
+  }
+ },
+ {
+  "key": "slime",
+  "name": "Slime",
+  "fight_art": {
+   "sheet": "slime",
+   "animations": "slime"
+  }
+ },
+ {
+  "key": "bat",
+  "name": "Bat",
+  "fight_art": {
+   "sheet": "bat",
+   "animations": "bat"
+  }
+ },
+ {
+  "key": "goblin",
+  "name": "Goblin",
+  "fight_art": {
+   "sheet": "goblin",
+   "animations": "goblin"
+  }
+ },
+ {
+  "key": "wolf",
+  "name": "Wolf",
+  "fight_art": {
+   "sheet": "wolf",
+   "animations": "wolf"
+  }
+ },
+ {
+  "key": "skeleton",
+  "name": "Skeleton",
+  "fight_art": {
+   "sheet": "skeleton",
+   "animations": "skeleton"
+  }
+ },
+ {
+  "key": "imp",
+  "name": "Imp",
+  "fight_art": {
+   "sheet": "imp",
+   "animations": "imp"
+  }
  }
 ]

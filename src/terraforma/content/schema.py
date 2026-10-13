@@ -183,6 +183,22 @@ class Job(Strict):
     abilities: Annotated[list[JobAbility], BeforeValidator(_job_abilities)] = []
 
 
+class ArtRef(Strict):
+    """A picture drawn from a sheet: ``sheet`` names the tilesheet (``name.png``, ``name.alpha.png`` and ``name.sheet.json`` under the
+    game's assets folder, written without the extension), ``frame`` which picture of it (0 is the first, then left to right and down; a tile
+    kind picks its own), ``colors`` an optional color map (``name.colors.json``) that recolors it and
+    ``animations`` an optional animation file (``name.anim.json``, see ``terraforma.animations``; the client plays it)."""
+
+    sheet: Asset
+    frame: int = Field(default=0, ge=0, le=10000)
+    colors: Asset | None = None
+    animations: Asset | None = None
+
+
+#: Art is a plain file name (one image, drawn as it is) or a sheet reference.
+Art = Asset | ArtRef
+
+
 class Facing(Strict):
     images: list[Asset] = []
     times: list[int] = []
@@ -201,8 +217,14 @@ class Overworld(Strict):
 
 
 class Personality(Strict):
+    """How a fighter looks. ``fight_art`` is the picture in a fight and ``map_art`` the one on the map (each a sheet reference or a
+    file, both optional): they are separate sheets, each with an animation file of its own. The animations below are the older
+    way, a list of pictures; a game with sheets leaves them out."""
+
     key: Key
     name: str = Field(min_length=1, max_length=64)
+    fight_art: Art | None = None
+    map_art: Art | None = None
     base: Presentation = Presentation()
     equip: Presentation = Presentation()
     flee: Presentation = Presentation()
@@ -303,20 +325,6 @@ def _check_script(text: str, what: str = "script") -> None:
         raise ValueError(f"{what}: {error}") from error
 
 
-class ArtRef(Strict):
-    """A picture drawn from a sheet: ``sheet`` names the tilesheet (``name.png``, ``name.alpha.png`` and ``name.sheet.json`` under the
-    game's assets folder, written without the extension), ``frame`` which picture of it (0 is the first, then left to right and down; a tile
-    kind picks its own), ``colors`` an optional color map (``name.colors.json``) that recolors it and
-    ``animations`` an optional animation file (``name.anim.json``, see ``terraforma.animations``; the client plays it)."""
-
-    sheet: Asset
-    frame: int = Field(default=0, ge=0, le=10000)
-    colors: Asset | None = None
-    animations: Asset | None = None
-
-
-#: Art is a plain file name (one image, drawn as it is) or a sheet reference.
-Art = Asset | ArtRef
 
 
 class Tile(Strict):

@@ -1,0 +1,80 @@
+[
+ {
+  "key": "poison",
+  "name": "Poison",
+  "kind": "bad",
+  "description": "Loses a little life at the end of every round.",
+  "duration": 4,
+  "ticks": [
+   {
+    "when": "round_end",
+    "action": "damage",
+    "amount": 2,
+    "percent": 3
+   }
+  ],
+  "xp_share": 0.05
+ },
+ {
+  "key": "dazed",
+  "name": "Dazed",
+  "kind": "bad",
+  "description": "Often loses its turn.",
+  "duration": 2,
+  "ticks": [
+   {
+    "when": "turn_start",
+    "action": "skip_turn",
+    "chance": 60
+   }
+  ]
+ },
+ {
+  "key": "slowed",
+  "name": "Slowed",
+  "kind": "bad",
+  "description": "Acts later in the round.",
+  "duration": 3,
+  "modifiers": [
+   {
+    "kind": "stat",
+    "stat": "Speed",
+    "amount": -3
+   }
+  ]
+ },
+ {
+  "key": "regen",
+  "name": "Renewal",
+  "kind": "good",
+  "description": "Recovers life at the end of every round.",
+  "duration": 4,
+  "ticks": [
+   {
+    "when": "round_end",
+    "action": "heal",
+    "amount": 4,
+    "percent": 2
+   }
+  ]
+ },
+ {
+  "key": "shield",
+  "name": "Shield",
+  "kind": "good",
+  "description": "Takes less damage.",
+  "duration": 3,
+  "intensity": {
+   "shape": "falling",
+   "high": 1.0,
+   "low": 0.5
+  },
+  "modifiers": [
+   {
+    "kind": "damage_taken",
+    "attribute": "all",
+    "factor": 0.6
+   }
+  ]
+ }
+]
