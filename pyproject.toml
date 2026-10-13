@@ -34,12 +34,14 @@ sqlite = ["aiosqlite>=0.20"]
 postgres = ["asyncpg>=0.30"]
 mysql = ["aiomysql>=0.2"]
 all-databases = ["terraforma[sqlite,postgres,mysql]"]
+# The game development tools (terraforma.tools.tilesheet, and the preview of terraforma.tools.colormap).
+tools = ["pillow>=10"]
 # For tests, the engine's and a game's (terraforma.testing).
 testing = ["pytest>=8.3", "pytest-xdist>=3.6", "httpx2"]
 # The browser tests (tests/e2e). The browser itself comes with `playwright install chromium`.
 browser = ["playwright>=1.56"]
 dev = [
-    "terraforma[all-databases,testing,browser]",
+    "terraforma[all-databases,testing,browser,tools]",
 ]
 
 [tool.hatch.build.targets.wheel]

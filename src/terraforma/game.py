@@ -14,6 +14,8 @@ from .economy import Economy, TeamGold
 from .fights.rules import Rules
 from .alliances.hooks import Alliances
 from .relations.hooks import Relations
+from .chat.hooks import Chat
+from .voice.hooks import Voice
 from .pvp.hooks import PvpZones
 from .market.hooks import Market
 from .guild.hooks import Guild
@@ -41,6 +43,10 @@ class Game:
     economy: Economy = field(default_factory=TeamGold)
     # How teams feel about each other: the scale's bands, who may form a relationship, and every change to one.
     relations: Relations = field(default_factory=Relations)
+    # Who may chat where, what may be said, and the reasons for flagging a message; a game adds its own kinds of channel here.
+    chat: Chat = field(default_factory=Chat)
+    # Which chat channels get a voice room, when the settings turn voice on (Discord), and what the rooms are called.
+    voice: Voice = field(default_factory=Voice)
     # What roles an alliance of teams has, what each may do, and who may found or join one.
     alliances: Alliances = field(default_factory=Alliances)
     # Which places are towns (where a party comes apart into its teams and is put back together), and how its teams group.
