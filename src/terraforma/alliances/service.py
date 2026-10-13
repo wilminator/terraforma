@@ -11,6 +11,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..fighttags.models import AllianceKept, AllianceTop
 from ..heroes.models import Team
 from ..models import Account
 from ..profiles.models import AllianceProfile
@@ -179,6 +180,8 @@ async def _delete_alliance(session: AsyncSession, alliance: Alliance) -> None:
     await session.execute(delete(AllianceMember).where(AllianceMember.alliance_id == alliance.id))
     await session.execute(delete(AllianceInvite).where(AllianceInvite.alliance_id == alliance.id))
     await session.execute(delete(AllianceProfile).where(AllianceProfile.alliance_id == alliance.id))
+    await session.execute(delete(AllianceTop).where(AllianceTop.alliance_id == alliance.id))
+    await session.execute(delete(AllianceKept).where(AllianceKept.alliance_id == alliance.id))
     await relations.forget(session, Ref("alliance", alliance.id))
     await session.delete(alliance)
     await session.flush()
