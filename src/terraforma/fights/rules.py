@@ -81,6 +81,13 @@ class Rules:
     #: seconds played (``terraforma.playtime``), so the list grows with the player.
     follow_base: int = 10
     follow_seconds_each: int = 3600
+    #: Fight tags (``terraforma.fighttags``): how many fights a team may keep by hand (DragonStar's was 10), how many an alliance
+    #: lists as the best of each of the four kinds, how many it keeps by hand, and how many days a finished fight that no
+    #: team or alliance holds is kept before housekeeping deletes it.
+    team_retention_slots: int = 10
+    alliance_top_size: int = 10
+    alliance_retention_slots: int = 50
+    fight_keep_days: int = 30
     #: A drop's chance is out of this (10000: one in ten thousand is the rarest, 10000 is a sure thing).
     drop_chance_scale: int = 10000
     #: Whether the area's drop tables (the map's) roll once for the fight (the default) or for every monster that dies.
@@ -101,6 +108,11 @@ class Rules:
     def time_bonus(self, multiplier: float) -> float:
         """The share of extra max HP monsters get against a player who chose $multiplier (0 for one that is not offered)."""
         return dict(self.time_multipliers).get(multiplier, 0.0)
+
+    def thrown_fight(self, fight) -> bool:
+        """Whether a finished PvP $fight was thrown: a party gave it away. A thrown fight never takes or moves a PvP tag. Nothing is
+        by default (the coliseum judges throws; a game that has no coliseum may override this)."""
+        return False
 
     def follow_cap(self, seconds_played: int) -> int:
         """How many players one who has played $seconds_played seconds may follow."""
