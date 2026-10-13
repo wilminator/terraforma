@@ -21,7 +21,7 @@ def upgrade() -> None:
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('account_id', sa.Integer(), nullable=False),
     sa.Column('credential_id', sa.String(length=255), nullable=False),
-    sa.Column('public_key', sa.LargeBinary(), nullable=False),
+    sa.Column('public_key', sa.String(length=1024), nullable=False),
     sa.Column('sign_count', sa.BigInteger(), nullable=False),
     sa.Column('name', sa.String(length=40), nullable=False),
     sa.Column('confirmed_at', sa.DateTime(timezone=True), nullable=True),

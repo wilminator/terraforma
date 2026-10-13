@@ -3,7 +3,7 @@
 import secrets
 from datetime import datetime
 
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, UniqueConstraint, false, update
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, false, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -176,7 +176,8 @@ class WebauthnKey(Timestamps, Base):
     # The authenticator's id for the key, base64url (up to 1023 bytes by the standard; real ones are 16 to 128).
     credential_id: Mapped[str] = mapped_column(String(255), unique=True)
     # The COSE public key, as the authenticator gave it.
-    public_key: Mapped[bytes] = mapped_column(LargeBinary)
+    # The COSE public key as base64url text (a bytes parameter does not go through every driver).
+    public_key: Mapped[str] = mapped_column(String(1024))
     # The authenticator's counter at its last use: a counter that does not go up is a cloned key (0 means it keeps none).
     sign_count: Mapped[int] = mapped_column(BigInteger, default=0)
     # What the player calls it ("Phone", "YubiKey").

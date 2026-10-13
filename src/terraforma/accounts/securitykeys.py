@@ -87,7 +87,7 @@ def registration_options(party: RelyingParty, game_name: str, account: Account, 
 @dataclass(frozen=True)
 class NewKey:
     credential_id: str
-    public_key: bytes
+    public_key: str
     sign_count: int
 
 
@@ -99,7 +99,7 @@ def verify_registration(party: RelyingParty, credential: str, challenge: bytes) 
         )
     except (WebAuthnException, ValueError, KeyError, TypeError) as error:
         raise SecurityKeyError("the security key could not be added") from error
-    return NewKey(bytes_to_base64url(verified.credential_id), verified.credential_public_key, verified.sign_count)
+    return NewKey(bytes_to_base64url(verified.credential_id), bytes_to_base64url(verified.credential_public_key), verified.sign_count)
 
 
 def authentication_options(party: RelyingParty, keys: list[WebauthnKey]) -> tuple[str, bytes]:
@@ -130,7 +130,7 @@ def verify_authentication(party: RelyingParty, credential: str, challenge: bytes
             expected_challenge=challenge,
             expected_rp_id=party.id,
             expected_origin=party.origin,
-            credential_public_key=key.public_key,
+            credential_public_key=base64url_to_bytes(key.public_key),
             credential_current_sign_count=key.sign_count,
         )
     except (WebAuthnException, ValueError, KeyError, TypeError) as error:
