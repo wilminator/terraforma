@@ -133,13 +133,13 @@ async def ended_standing_statuses(session: AsyncSession, now: int, settings: Set
 
 
 @job
-async def expired_remembered_browsers(session: AsyncSession, now: int, settings: Settings) -> int:
+async def expired_remembered_browsers(session: AsyncSession, now: int, settings: Settings, rules: Rules | None = None) -> int:
     """Remembered browsers whose time is up: they no longer skip anything, so nothing reads them."""
     return (await session.execute(delete(RememberedBrowser).where(RememberedBrowser.expires_at <= wallclock.now()))).rowcount
 
 
 @job
-async def unconfirmed_security_keys(session: AsyncSession, now: int, settings: Settings) -> int:
+async def unconfirmed_security_keys(session: AsyncSession, now: int, settings: Settings, rules: Rules | None = None) -> int:
     """Security keys whose emailed link was never followed (the link works for an hour; a day is plenty)."""
     cutoff = wallclock.now() - timedelta(days=1)
     return (
@@ -147,6 +147,7 @@ async def unconfirmed_security_keys(session: AsyncSession, now: int, settings: S
     ).rowcount
 
 
+@job
 async def old_unkept_fights(session: AsyncSession, now: int, settings: Settings, rules: Rules | None = None) -> int:
     """Finished fights that ended more than ``Rules.fight_keep_days`` days ago and that no team or alliance holds (a tag, a top list or a
     slot), with their rounds and what belongs to them (0 days: kept for good)."""

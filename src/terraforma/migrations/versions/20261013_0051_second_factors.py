@@ -1,7 +1,7 @@
 """webauthn_keys and remembered_browsers: security keys as a second factor, and browsers that may skip it
 
-Revision ID: 0042
-Revises: 0041
+Revision ID: 0051
+Revises: 0050
 Created: 2026-10-12
 """
 from collections.abc import Sequence
