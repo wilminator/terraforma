@@ -32,6 +32,12 @@ RESET_BY_EMAIL = Limit("reset-email", 3, 60 * 60)
 TWOFA_CODE_BY_ACCOUNT = Limit("2fa-code", 10, 15 * 60)
 TWOFA_CHANGE_BY_ACCOUNT = Limit("2fa-change", 5, 60 * 60)
 EMAIL_CHANGE_BY_ACCOUNT = Limit("email-change", 5, 60 * 60)
+# Signing in with an external provider: sending the browser there, getting it back, and choosing a name afterwards.
+EXTERNAL_START_BY_ADDRESS = Limit("external-start", 30, 15 * 60)
+EXTERNAL_CALLBACK_BY_ADDRESS = Limit("external-callback", 30, 15 * 60)
+EXTERNAL_FINISH_BY_ADDRESS = Limit("external-finish", 10, 60 * 60)
+# Linking, unlinking and setting a first password all change the ways into an account.
+SIGN_IN_METHOD_BY_ACCOUNT = Limit("sign-in-method", 20, 60 * 60)
 TRADE_BY_ACCOUNT = Limit("trade", 120, 60 * 60)
 DROP_BY_ACCOUNT = Limit("drop", 120, 60 * 60)
 RELATION_BY_ACCOUNT = Limit("relation", 120, 60 * 60)
