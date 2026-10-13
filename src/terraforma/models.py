@@ -113,7 +113,8 @@ class Account(Timestamps, Base):
     # Kept as typed; unique ignoring case (see accounts.service).
     username: Mapped[str] = mapped_column(String(32))
     username_key: Mapped[str] = mapped_column(String(32), unique=True)
-    password_hash: Mapped[str] = mapped_column(String(255))
+    # NULL for an account made by signing in with an external provider that has no local password (yet).
+    password_hash: Mapped[str | None] = mapped_column(String(255))
     # Required for new accounts; NULL only for rows made before email existed.
     email: Mapped[str | None] = mapped_column(String(254))
     email_key: Mapped[str | None] = mapped_column(String(254), unique=True)
@@ -140,6 +141,22 @@ class Account(Timestamps, Base):
 
 
 encrypted_column(Account.__table__.c.totp_secret, "accounts.totp_secret")
+
+
+class ExternalIdentity(Timestamps, Base):
+    """An account at an external sign-in provider (see accounts.external_routes) that signs in to one local account."""
+
+    __tablename__ = "external_identities"
+    __table_args__ = (UniqueConstraint("provider", "subject"), UniqueConstraint("account_id", "provider"))
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
+    # The provider's name in settings.toml.
+    provider: Mapped[str] = mapped_column(String(32))
+    # The provider's stable id for the person (the "sub" claim); the email may change, this does not.
+    subject: Mapped[str] = mapped_column(String(255))
+    # The address the provider gave when this was linked, for showing which account it is.
+    email: Mapped[str | None] = mapped_column(String(254))
 
 
 class RateLimitHit(Base):
@@ -181,4 +198,6 @@ from .chat import models as _chat  # noqa: E402,F401
 from .playtime import models as _playtime  # noqa: E402,F401
 from .social import models as _social  # noqa: E402,F401
 from .monsterplay import models as _monsterplay  # noqa: E402,F401
+from .fighttags import models as _fighttags  # noqa: E402,F401
+from .fightpages import models as _fightpages  # noqa: E402,F401
 from .voice import models as _voice  # noqa: E402,F401

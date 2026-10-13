@@ -56,3 +56,13 @@ key_dir = "keys"
 # username = "your API key"
 # password = "your API key"
 # from_address = "Vanguard Tavern <noreply@example.com>"
+
+# Sign in with an OpenID Connect provider (Google, Microsoft, ...). One section per provider; leave them out for no external
+# sign-in. Register <public_url>/api/external/<name>/callback as the redirect address at the provider.
+# [[external_providers]]
+# name = "google"                           # lowercase letters, digits, _ and -
+# label = "Google"                          # what the button says
+# issuer = "https://accounts.google.com"    # its settings are read from <issuer>/.well-known/openid-configuration
+# client_id = "..."
+# client_secret = "..."
+# scopes = ["openid", "email"]              # the default; both are required

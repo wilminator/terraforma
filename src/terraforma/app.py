@@ -10,12 +10,14 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 
+import httpx2 as httpx
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from . import __doc__ as ENGINE
 from . import logscrub
+from .accounts.external_routes import router as external_router
 from .accounts.routes import router as account_router
 from .accounts.twofa_routes import router as twofa_router
 from .accounts.tokens import Tokens
@@ -44,6 +46,8 @@ from .npcs.routes import router as npcs_router
 from .reach.routes import router as reach_router
 from .parties.routes import router as parties_router
 from .playtime.routes import router as playtime_router
+from .fighttags.routes import router as fighttags_router
+from .fightpages.routes import router as fightpages_router
 from .profiles.routes import router as profiles_router
 from .social.routes import router as social_router
 from .relations.rating_routes import router as ratings_router
@@ -80,7 +84,7 @@ async def housekeeping_timer(app: FastAPI, seconds: float) -> None:
     """Runs the housekeeping jobs every $seconds, for as long as the app runs."""
     while True:
         await asyncio.sleep(seconds)
-        await housekeeping.run(app.state.sessionmaker, app.state.settings)
+        await housekeeping.run(app.state.sessionmaker, app.state.settings, app.state.game.rules if app.state.game else None)
 
 
 def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer | None = None) -> FastAPI:
@@ -105,11 +109,14 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
                 with suppress(asyncio.CancelledError):
                     await task
         await engine.dispose()
+        await http_client.aclose()
 
+    http_client = httpx.AsyncClient()  # for the calls to sign-in providers (tests replace app.state.http_client)
     app = FastAPI(title=game.name if game else "TerraForma", lifespan=lifespan)
     app.state.settings = settings
     app.state.game = game
     app.state.fights = FightChannels()
+    app.state.http_client = http_client
     app.state.tokens = Tokens(settings.session_secret)
     app.state.mailer = mailer or default_mailer(settings)
     app.add_middleware(
@@ -122,6 +129,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     )
     app.include_router(account_router)
     app.include_router(twofa_router)
+    app.include_router(external_router)
     app.include_router(heroes_router)
     app.include_router(inventory_router)
     app.include_router(trading_router)
@@ -138,6 +146,8 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(profiles_router)
     app.include_router(playtime_router)
     app.include_router(social_router)
+    app.include_router(fighttags_router)
+    app.include_router(fightpages_router)
     app.include_router(challenge_router)
     app.include_router(npcs_router)
     app.include_router(reach_router)

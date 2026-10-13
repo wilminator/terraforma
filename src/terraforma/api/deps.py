@@ -12,7 +12,7 @@ from ..relations.hooks import Relations
 from ..pvp.hooks import PvpZones
 from ..market.hooks import Market
 from ..guild.hooks import Guild
-from ..heroes.hooks import Roster
+from ..heroes.hooks import Roster, Start
 from ..npcs.hooks import Npcs
 from ..npcs.inn import Inn
 from ..reach.hooks import Reach
@@ -94,7 +94,8 @@ async def current_account(request: Request, db: Db) -> Account:
     account_id = request.session.get(SESSION_ACCOUNT)
     account = await db.get(Account, account_id) if account_id is not None else None
     if account is None or request.session.get(SESSION_VERSION) != account.session_version:
-        request.session.clear()
+        if account_id is not None:  # a stale login ends; a visitor mid-way through an external sign-in keeps theirs
+            request.session.clear()
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "not logged in")
     return account
 
@@ -180,3 +181,12 @@ def get_roster(request: Request) -> Roster:
 
 
 GameRoster = Annotated[Roster, Depends(get_roster)]
+
+
+def get_start(request: Request) -> Start:
+    """The game's places for a new team to start at (none, so the hub, when the app runs without a game)."""
+    game = request.app.state.game
+    return game.start if game else Start()
+
+
+GameStart = Annotated[Start, Depends(get_start)]

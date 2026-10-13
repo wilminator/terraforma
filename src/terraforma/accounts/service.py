@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import wallclock
-from ..models import Account
+from ..models import Account, ExternalIdentity
 
 USERNAME = re.compile(r"^[A-Za-z0-9_.-]{3,32}$")
 # Deliberately simple: one @, something on each side, a dot in the domain.
@@ -138,10 +138,11 @@ async def authenticate(session: AsyncSession, username: str, password: str) -> A
     """The account, if $password is right for $username; else None (either way, the same work is done)."""
     account = await session.scalar(select(Account).where(Account.username_key == username_key(username)))
     try:
-        _hasher.verify(account.password_hash if account else _DUMMY_HASH, password)
+        # An account that signs in only through an external provider has no password: same work, never a match.
+        _hasher.verify(account.password_hash if account and account.password_hash else _DUMMY_HASH, password)
     except (VerificationError, InvalidHashError):
         return None
-    if account is None:
+    if account is None or not account.password_hash:
         return None
     if _hasher.check_needs_rehash(account.password_hash):
         account.password_hash = _hasher.hash(password)
@@ -199,3 +200,85 @@ async def change_email(session: AsyncSession, account_id: int, old_key: str, new
     account.session_version += 1
     await session.flush()
     return account
+
+
+# --- external sign-in -------------------------------------------------------------------------------------------------
+
+async def find_identity(session: AsyncSession, provider: str, subject: str) -> ExternalIdentity | None:
+    return await session.scalar(
+        select(ExternalIdentity).where(ExternalIdentity.provider == provider, ExternalIdentity.subject == subject)
+    )
+
+
+async def identities_of(session: AsyncSession, account: Account) -> list[ExternalIdentity]:
+    result = await session.scalars(select(ExternalIdentity).where(ExternalIdentity.account_id == account.id).order_by(ExternalIdentity.id))
+    return list(result)
+
+
+def link_identity(session: AsyncSession, account: Account, provider: str, subject: str, email: str) -> ExternalIdentity:
+    identity = ExternalIdentity(account_id=account.id, provider=provider, subject=subject, email=email[:254] or None)
+    session.add(identity)
+    return identity
+
+
+async def create_external_account(
+    session: AsyncSession,
+    *,
+    provider: str,
+    subject: str,
+    email: str,
+    username: str,
+    handle: str,
+    password: str | None = None,
+) -> Account:
+    """A new account for someone who signed in with a provider, once they have chosen a username and a handle.
+
+    The provider vouched for $email, so it counts as confirmed. A password is optional (None: they sign in only through
+    the provider, and may set one later). EmailTaken, UsernameTaken, HandleTaken or AccountError say what to fix.
+    """
+    if not USERNAME.fullmatch(username):
+        raise AccountError("a username is 3-32 letters, digits, _, . or -")
+    email = check_email(email)
+    handle = handle.strip()
+    check_handle(handle, username=username, email=email)
+    password_hash = None
+    if password is not None:
+        check_password(password)
+        password_hash = _hasher.hash(password)
+    if await session.scalar(select(Account.id).where(Account.username_key == username_key(username))):
+        raise UsernameTaken("that username is taken")
+    if await session.scalar(select(Account.id).where(Account.email_key == email_key(email))):
+        raise EmailTaken("that email address already has an account")
+    if await session.scalar(select(Account.id).where(Account.handle_key == handle_key(handle))):
+        raise HandleTaken("another player has that handle")
+    if await find_identity(session, provider, subject):
+        raise AccountError("that account is already linked to a player")
+    account = Account(
+        username=username,
+        username_key=username_key(username),
+        password_hash=password_hash,
+        email=email,
+        email_key=email_key(email),
+        email_confirmed_at=wallclock.now(),
+        handle=handle,
+        handle_key=handle_key(handle),
+    )
+    session.add(account)
+    await session.flush()
+    link_identity(session, account, provider, subject, email)
+    await session.flush()
+    return account
+
+
+async def ways_in(session: AsyncSession, account: Account) -> int:
+    """How many ways the player can log in: the password (if any) and each linked provider."""
+    return (1 if account.password_hash else 0) + len(await identities_of(session, account))
+
+
+async def set_first_password(session: AsyncSession, account: Account, password: str) -> None:
+    """Gives an account that has none (it signs in through a provider) a local password."""
+    if account.password_hash:
+        raise AccountError("this account already has a password: use the reset link to change it")
+    check_password(password)
+    account.password_hash = _hasher.hash(password)
+    await session.flush()

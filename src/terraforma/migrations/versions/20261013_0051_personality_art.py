@@ -1,8 +1,8 @@
 """personality art: the picture of a personality in a fight and on the map
 
-Revision ID: 0041
-Revises: 0040
-Created: 2026-10-12
+Revision ID: 0051
+Revises: 0050
+Created: 2026-10-13
 """
 from collections.abc import Sequence
 
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from alembic import op
 
 
-revision: str = '0041'
-down_revision: str | None = '0040'
+revision: str = '0051'
+down_revision: str | None = '0050'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
