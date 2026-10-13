@@ -49,6 +49,9 @@ function show(titleKey, ...children) {
   replace(main, h("div", { class: "stack" }, ...children));
 }
 
+/** What the game says to a player who has only one second factor (it comes with the login), or nothing. */
+const noteOf = (login) => (login.note ? h("p", { class: "note", role: "status", id: "login-note" }, login.note) : null);
+
 /** Logging in, with the ways to a new account and a new password beside it. */
 async function showLogin(message = null) {
   show(
@@ -57,7 +60,7 @@ async function showLogin(message = null) {
     loginForm(shell, async (login) => {
       shell.signedIn(login);
       if (backTo) return location.assign(WAYS_BACK[backTo]);
-      await showAccount();
+      await showAccount(noteOf(login));
     }),
     await providerButtons(shell, backTo),
     h("p", { class: "links" }, link("#register", "login.register", "to-register"), " · ", link("#reset", "login.forgot", "to-reset")),
@@ -83,7 +86,7 @@ async function showExternal() {
     shell.signedIn(login);
     const target = Object.hasOwn(WAYS_BACK, login.next) ? login.next : backTo;
     if (target) return location.assign(WAYS_BACK[target]);
-    await showAccount();
+    await showAccount(noteOf(login));
   };
   switch (external) {
     case "done":

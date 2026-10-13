@@ -54,6 +54,10 @@ key_dir = "keys"
 # redirect_uris = ["https://store.example.com/callback"]
 # name = "The store"
 
+# A game whose store grants Challenge Tokens and items sets this (at least 32 characters). The store's backend then calls
+# POST /api/server/store/grant, sending "Authorization: Bearer <this secret>". Empty or absent: the call is off.
+# store_grant_secret = ""
+
 # Outgoing mail. Leave this section out for development: messages are then
 # written as .eml files to outbox_dir (default "outbox") instead of sent.
 # Cloudflare: port 465 with implicit TLS; the API key is both username and password.

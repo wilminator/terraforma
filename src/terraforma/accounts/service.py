@@ -124,6 +124,10 @@ async def find_by_email(session: AsyncSession, email: str) -> Account | None:
     return await session.scalar(select(Account).where(Account.email_key == email_key(email)))
 
 
+async def find_by_username(session: AsyncSession, username: str) -> Account | None:
+    return await session.scalar(select(Account).where(Account.username_key == username_key(username)))
+
+
 async def confirm_email(session: AsyncSession, account_id: int, email: str) -> Account | None:
     """Marks the address confirmed, if it's still the account's address. The account, or None."""
     account = await session.get(Account, account_id)

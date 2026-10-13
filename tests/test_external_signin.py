@@ -693,3 +693,58 @@ def test_logs_do_not_carry_the_state_or_the_code():
     line = 'GET /api/external/google/callback?state=abc123&code=4%2F0AfJohXn&scope=email HTTP/1.1" 303'
     scrubbed = logscrub.scrub(line)
     assert "abc123" not in scrubbed and "4%2F0AfJohXn" not in scrubbed
+
+
+# --- security keys and remembered browsers with the provider sign-in ------------------------------------------------------------
+
+def keyed_player(client, idp, mailbox):
+    """A player who signed up through the provider and whose only second factor is a key, logged out: the key."""
+    from .authenticator import SoftKey
+
+    headers = new_player(client, idp)
+    key = SoftKey()
+    options = expect(client.post("/api/2fa/webauthn/options", json={}, headers=headers), 200).json()["options"]
+    expect(client.post("/api/2fa/webauthn/register", json={"credential": key.create(options)}, headers=headers), 202)
+    token = re.search(r"token=([A-Za-z0-9_.-]+)", mailbox.last_to(EMAIL).body).group(1)
+    expect(client.post("/api/2fa/confirm", json={"token": token}, headers=headers), 200)
+    client.cookies.clear()
+    return key
+
+
+def test_a_security_key_finishes_a_provider_sign_in(client, idp, mailbox, later):
+    key = keyed_player(client, idp, mailbox)
+    later(60)
+    assert outcome(sign_in(client, idp)) == {"external": "twofa"}
+    asked = expect(client.get("/api/external/2fa"), 200).json()
+    assert asked["methods"] == ["key"] and asked["webauthn"]["rpId"] == "game.test"
+    assert client.get("/api/session").json()["account"] is None
+    answer = expect(client.post("/api/external/2fa", json={"assertion": key.get(asked["webauthn"])}), 200).json()
+    assert answer["username"] == "Kim" and answer["csrf_token"] and "only one" in answer["note"]
+    assert client.get("/api/session").json()["account"]["username"] == "Kim"
+
+
+def test_a_provider_sign_in_second_step_refuses_a_wrong_or_replayed_answer(client, idp, mailbox, later):
+    key = keyed_player(client, idp, mailbox)
+    later(60)
+    assert outcome(sign_in(client, idp)) == {"external": "twofa"}
+    asked = expect(client.get("/api/external/2fa"), 200).json()
+    answer = key.get(asked["webauthn"])
+    assert client.post("/api/external/2fa", json={"assertion": answer, "code": "000000"}).status_code == 422, "one way or the other"
+    expect(client.post("/api/external/2fa", json={"assertion": answer}), 200)
+    client.cookies.clear()
+    assert client.get("/api/external/2fa").status_code == 409, "no sign-in waiting"
+    assert client.post("/api/external/2fa", json={"assertion": answer}).status_code == 409
+
+
+def test_a_remembered_browser_skips_the_second_factor_of_a_provider_sign_in(client, idp, mailbox, later):
+    key = keyed_player(client, idp, mailbox)
+    later(60)
+    assert outcome(sign_in(client, idp)) == {"external": "twofa"}
+    asked = expect(client.get("/api/external/2fa"), 200).json()
+    expect(client.post("/api/external/2fa", json={"assertion": key.get(asked["webauthn"]), "remember": True}), 200)
+    cookies = {cookie.name: cookie for cookie in client.cookies.jar if cookie.name.startswith("tf_remember_")}
+    assert len(cookies) == 1
+    client.post("/api/logout", headers={"X-CSRF-Token": client.get("/api/session").json()["csrf_token"]})
+    later(3600)
+    assert outcome(sign_in(client, idp)) == {"external": "done"}
+    assert client.get("/api/session").json()["account"]["username"] == "Kim"

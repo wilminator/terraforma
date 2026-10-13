@@ -23,7 +23,7 @@ from .fights.models import PendingDrop
 from .fights.pending import OPEN, expire
 from .fights.rules import Rules
 from .fighttags import service as fighttags
-from .models import RateLimitHit
+from .models import RateLimitHit, RememberedBrowser, WebauthnKey
 from .oidc import service as oidc
 from .relations.models import ANSWERED, DISMISSED, RatingPrompt
 from .settings import Settings
@@ -134,7 +134,22 @@ async def ended_standing_statuses(session: AsyncSession, now: int, settings: Set
 
 
 @job
-async def expired_oidc_codes_and_tokens(session: AsyncSession, now: int, settings: Settings) -> int:
+async def expired_remembered_browsers(session: AsyncSession, now: int, settings: Settings, rules: Rules | None = None) -> int:
+    """Remembered browsers whose time is up: they no longer skip anything, so nothing reads them."""
+    return (await session.execute(delete(RememberedBrowser).where(RememberedBrowser.expires_at <= wallclock.now()))).rowcount
+
+
+@job
+async def unconfirmed_security_keys(session: AsyncSession, now: int, settings: Settings, rules: Rules | None = None) -> int:
+    """Security keys whose emailed link was never followed (the link works for an hour; a day is plenty)."""
+    cutoff = wallclock.now() - timedelta(days=1)
+    return (
+        await session.execute(delete(WebauthnKey).where(WebauthnKey.confirmed_at.is_(None), WebauthnKey.created_at <= cutoff))
+    ).rowcount
+
+
+@job
+async def expired_oidc_codes_and_tokens(session: AsyncSession, now: int, settings: Settings, rules: Rules | None = None) -> int:
     """Sign-in provider codes and access tokens that have run out. Nothing accepts them any more; this only tidies the rows."""
     return await oidc.remove_expired(session, now)
 
