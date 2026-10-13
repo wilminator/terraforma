@@ -17,6 +17,9 @@ from sqlalchemy.types import TypeDecorator
 
 from .base import canonical_json
 
+# Tables that survive emptying: Alembic's (for the first release) and the schema stamp.
+KEPT_TABLES = {"alembic_version", "schema_stamp"}
+
 
 async def upsert(
     session: AsyncSession,
@@ -104,12 +107,12 @@ async def ensure_database(url: str) -> None:
 
 
 async def empty_tables(engine: AsyncEngine) -> None:
-    """Deletes every row of every table but Alembic's, and restarts the id counters (tests: much faster than rebuilding the tables)."""
+    """Deletes every row of every table but the schema stamp's, and restarts the id counters (tests: much faster than rebuilding the tables)."""
 
     def empty(connection) -> None:
         metadata = MetaData()
         metadata.reflect(connection)
-        names = [table.name for table in metadata.sorted_tables if table.name != "alembic_version"]
+        names = [table.name for table in metadata.sorted_tables if table.name not in KEPT_TABLES]
         if not names:
             return
         name = connection.dialect.name
@@ -123,7 +126,7 @@ async def empty_tables(engine: AsyncEngine) -> None:
             connection.execute(text("SET FOREIGN_KEY_CHECKS = 1"))
         elif name == "sqlite":
             for table in reversed(metadata.sorted_tables):
-                if table.name != "alembic_version":
+                if table.name not in KEPT_TABLES:
                     connection.execute(table.delete())
         else:
             raise NotImplementedError(f"empty_tables() doesn't know the {name} database yet")
