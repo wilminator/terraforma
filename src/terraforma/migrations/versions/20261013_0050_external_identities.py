@@ -1,7 +1,7 @@
 """external_identities: accounts at external sign-in providers, and accounts that may have no password
 
-Revision ID: 0049
-Revises: 0048
+Revision ID: 0050
+Revises: 0049
 Created: 2026-10-12
 """
 from collections.abc import Sequence
