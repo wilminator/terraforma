@@ -1,6 +1,6 @@
 """Housekeeping: small jobs that tidy up what has gone stale, run on a timer (``Settings.housekeeping_seconds``).
 
-A job is an async function ``(session, now, settings)`` registered with ``@job``; ``run`` gives each its own transaction, so
+A job is an async function ``(session, now, settings, rules)`` registered with ``@job``; ``run`` gives each its own transaction, so
 one failing job is logged and does not stop the others. ``now`` is the wall clock's timestamp (``wallclock``). A job deletes
 only what nothing reads any more, so running one twice, or concurrently on two servers, is harmless.
 """
@@ -15,8 +15,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from . import wallclock
 from .accounts.ratelimit import ALL_LIMITS
 from .alliances.models import Ballot, BallotVote, BallotVoter
+from .chat.models import OPEN as FLAG_OPEN
+from .chat.models import ChatFlag, ChatMessage
+from .voice.discord import VoiceError, provider_for
+from .voice.models import VoiceRoom
 from .fights.models import PendingDrop
 from .fights.pending import OPEN, expire
+from .fights.rules import Rules
+from .fighttags import service as fighttags
 from .models import RateLimitHit, RememberedBrowser, WebauthnKey
 from .relations.models import ANSWERED, DISMISSED, RatingPrompt
 from .settings import Settings
@@ -27,7 +33,7 @@ log = logging.getLogger(__name__)
 DAY = 24 * 60 * 60
 BATCH = 500
 
-Job = Callable[[AsyncSession, int, Settings], Awaitable[int]]
+Job = Callable[..., Awaitable[int]]
 
 #: Every job, by name, in the order they run. A job returns how many rows it removed.
 JOBS: dict[str, Job] = {}
@@ -39,7 +45,7 @@ def job(function: Job) -> Job:
 
 
 @job
-async def finished_rate_limit_windows(session: AsyncSession, now: int, settings: Settings) -> int:
+async def finished_rate_limit_windows(session: AsyncSession, now: int, settings: Settings, rules: Rules | None = None) -> int:
     """Rate-limit counters whose window is over. A subject's old rows also go when it hits the limit again, but a
     one-off address never does, so they would pile up."""
     finished = or_(*(and_(RateLimitHit.bucket == limit.name, RateLimitHit.window_start <= now - limit.window) for limit in ALL_LIMITS))
@@ -47,7 +53,7 @@ async def finished_rate_limit_windows(session: AsyncSession, now: int, settings:
 
 
 @job
-async def stale_pending_drops(session: AsyncSession, now: int, settings: Settings) -> int:
+async def stale_pending_drops(session: AsyncSession, now: int, settings: Settings, rules: Rules | None = None) -> int:
     """Pending drops that have waited longer than ``Settings.pending_drop_timeout_seconds`` (0: never): a need/want drop is
     settled with the answers so far, one nobody answered (or a hand-out) is left unclaimed. Returns how many it settled."""
     if not settings.pending_drop_timeout_seconds:
@@ -62,7 +68,7 @@ async def stale_pending_drops(session: AsyncSession, now: int, settings: Setting
 
 
 @job
-async def old_closed_ballots(session: AsyncSession, now: int, settings: Settings) -> int:
+async def old_closed_ballots(session: AsyncSession, now: int, settings: Settings, rules: Rules | None = None) -> int:
     """Ballots closed longer ago than ``ballot_retention_days``, with their votes (0 days: kept for good)."""
     if not settings.ballot_retention_days:
         return 0
@@ -78,7 +84,7 @@ async def old_closed_ballots(session: AsyncSession, now: int, settings: Settings
 
 
 @job
-async def old_settled_rating_prompts(session: AsyncSession, now: int, settings: Settings) -> int:
+async def old_settled_rating_prompts(session: AsyncSession, now: int, settings: Settings, rules: Rules | None = None) -> int:
     """Rating prompts answered or dismissed longer ago than ``rating_prompt_retention_days``; a pending one waits for its
     player however old it is (0 days: kept for good)."""
     if not settings.rating_prompt_retention_days:
@@ -89,7 +95,39 @@ async def old_settled_rating_prompts(session: AsyncSession, now: int, settings: 
 
 
 @job
-async def ended_standing_statuses(session: AsyncSession, now: int, settings: Settings) -> int:
+async def old_chat_messages(session: AsyncSession, now: int, settings: Settings, rules: Rules | None = None) -> int:
+    """Chat messages older than ``chat_retention_days`` (0 days: kept for good). A message an admin has yet to settle a flag on is
+    kept, and so are the settled flags of a message until it too is old enough; the flags go first so their messages can follow."""
+    if not settings.chat_retention_days:
+        return 0
+    before = wallclock.now() - timedelta(days=settings.chat_retention_days)
+    await session.execute(delete(ChatFlag).where(ChatFlag.state != FLAG_OPEN, ChatFlag.updated_at <= before))
+    flagged = select(ChatFlag.message_id)
+    return (await session.execute(delete(ChatMessage).where(ChatMessage.created_at <= before, ChatMessage.id.not_in(flagged)))).rowcount
+
+
+@job
+async def old_voice_rooms(session: AsyncSession, now: int, settings: Settings, rules: Rules | None = None) -> int:
+    """Voice rooms made more than ``voice_room_hours`` ago: closed at the provider, then forgotten. A room the provider would not close
+    is kept for the next pass (so nothing is left behind there). With voice off, nothing is done."""
+    provider = provider_for(settings)
+    if provider is None:
+        return 0
+    before = wallclock.now() - timedelta(hours=settings.voice_room_hours)
+    removed = 0
+    for room in (await session.scalars(select(VoiceRoom).where(VoiceRoom.created_at <= before).order_by(VoiceRoom.id).limit(BATCH))).all():
+        try:
+            await provider.close_room(room.provider_id)
+        except VoiceError:
+            log.warning("a voice room could not be closed; it will be tried again")
+            continue
+        await session.delete(room)
+        removed += 1
+    return removed
+
+
+@job
+async def ended_standing_statuses(session: AsyncSession, now: int, settings: Settings, rules: Rules | None = None) -> int:
     """Standing statuses whose end time has passed. Every read already leaves them out, so this only tidies the rows."""
     return len(await standing.sweep(session))
 
@@ -109,14 +147,20 @@ async def unconfirmed_security_keys(session: AsyncSession, now: int, settings: S
     ).rowcount
 
 
-async def run(sessionmaker: async_sessionmaker[AsyncSession], settings: Settings) -> dict[str, int]:
+async def old_unkept_fights(session: AsyncSession, now: int, settings: Settings, rules: Rules | None = None) -> int:
+    """Finished fights that ended more than ``Rules.fight_keep_days`` days ago and that no team or alliance holds (a tag, a top list or a
+    slot), with their rounds and what belongs to them (0 days: kept for good)."""
+    return await fighttags.sweep(session, rules or Rules(), now)
+
+
+async def run(sessionmaker: async_sessionmaker[AsyncSession], settings: Settings, rules: Rules | None = None) -> dict[str, int]:
     """One pass: every job in its own transaction. Returns how many rows each removed (a job that failed is left out)."""
     now = wallclock.timestamp()
     removed: dict[str, int] = {}
     for name, work in JOBS.items():
         try:
             async with sessionmaker() as session, session.begin():
-                removed[name] = await work(session, now, settings)
+                removed[name] = await work(session, now, settings, rules or Rules())
         except Exception:  # one bad job must not stop the others
             log.exception("housekeeping job %s failed", name)
     return removed

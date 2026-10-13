@@ -39,13 +39,20 @@ from .challenge.routes import router as challenge_router
 from .guild.routes import router as guild_router
 from .standing.routes import router as standing_router
 from .maps.routes import router as maps_router
+from .monsterplay.routes import fight_router as monster_fight_router
+from .monsterplay.routes import router as monsters_router
 from .market.routes import router as market_router
 from .npcs.routes import router as npcs_router
 from .reach.routes import router as reach_router
 from .parties.routes import router as parties_router
+from .playtime.routes import router as playtime_router
+from .fighttags.routes import router as fighttags_router
 from .profiles.routes import router as profiles_router
+from .social.routes import router as social_router
 from .relations.rating_routes import router as ratings_router
 from .relations.routes import router as relations_router
+from .chat.routes import router as chat_router
+from .voice.routes import router as voice_router
 from .pvp.routes import router as pvp_router
 from .towns.routes import router as towns_router
 from .trading.routes import router as trading_router
@@ -76,7 +83,7 @@ async def housekeeping_timer(app: FastAPI, seconds: float) -> None:
     """Runs the housekeeping jobs every $seconds, for as long as the app runs."""
     while True:
         await asyncio.sleep(seconds)
-        await housekeeping.run(app.state.sessionmaker, app.state.settings)
+        await housekeeping.run(app.state.sessionmaker, app.state.settings, app.state.game.rules if app.state.game else None)
 
 
 def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer | None = None) -> FastAPI:
@@ -128,6 +135,8 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(trading_router)
     app.include_router(pending_drops_router)
     app.include_router(relations_router)
+    app.include_router(chat_router)
+    app.include_router(voice_router)
     app.include_router(towns_router)
     app.include_router(pvp_router)
     app.include_router(alliances_router)
@@ -135,6 +144,9 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(ballots_router)
     app.include_router(timing_router)
     app.include_router(profiles_router)
+    app.include_router(playtime_router)
+    app.include_router(social_router)
+    app.include_router(fighttags_router)
     app.include_router(challenge_router)
     app.include_router(npcs_router)
     app.include_router(reach_router)
@@ -143,6 +155,8 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(standing_router)
     app.include_router(parties_router)
     app.include_router(maps_router)
+    app.include_router(monsters_router)
+    app.include_router(monster_fight_router)
 
     @app.get("/api/about")
     async def about(request: Request) -> dict:

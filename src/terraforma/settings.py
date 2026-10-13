@@ -128,6 +128,13 @@ class Settings(BaseModel):
     # Housekeeping removes closed ballots and settled rating prompts older than this many days (0: keep them for good).
     ballot_retention_days: int = Field(default=0, ge=0)
     rating_prompt_retention_days: int = Field(default=0, ge=0)
+    # Housekeeping removes chat messages older than this many days, except ones a player flagged that no admin has settled (0: keep them for good).
+    chat_retention_days: int = Field(default=7, ge=0)
+    # Voice through Discord: a bot token and the id of the Discord server (guild) whose voice channels the game may make. Both, or voice is off.
+    discord_bot_token: str = ""
+    discord_guild_id: str = Field(default="", pattern=r"^(\d{1,24})?$")
+    # Housekeeping closes a voice room this many hours after it was made (players ask for a new one when they next join).
+    voice_room_hours: int = Field(default=24, ge=1)
     # A game that sells Challenge Tokens sets this (at least 32 characters) and its backend credits purchases with
     # POST /api/server/challenge/purchase, sending it as "Authorization: Bearer <secret>". Empty: the call is off.
     challenge_purchase_secret: str = ""

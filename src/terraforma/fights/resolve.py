@@ -91,6 +91,10 @@ def do_combat(fight: Fight, rules: Rules, rng: random.Random) -> list[Event]:
     log = Log(fight, rules)
     for address in fight.addresses():
         fire(fight, rules, rng, address, status.ROUND_START, log)
+    # A fighter that defends takes no turn, so this is where it is told: a page can say so, and a game can react (``after_event``).
+    for address in fight.addresses():
+        if fight.get(address).present(rules) and fight.get(address).command == Command.DEFEND:
+            log.add(EventType.DEFEND, *address)
     queue = participants(fight, rules, rng)
     while queue and fight.live_parties(rules) > 1:
         address = queue.pop(0)
@@ -178,7 +182,7 @@ def act(fight: Fight, rules: Rules, rng: random.Random, address: Address, fighte
             return
         log.add(EventType.SKILL if command == Command.SKILL else EventType.SPELL, ability.key)
     elif command == Command.DEFEND:
-        log.add(EventType.DEFEND)
+        log.add(EventType.DEFEND, *address)
         return
     elif command == Command.RUN:
         flee(fight, rules, rng, address, log)
@@ -415,6 +419,7 @@ def inflict_damage(fight, rules, actor, target, target_address, damage, critical
     target.current[vital] -= damage
     if target.current[vital] <= 0:
         log.add(EventType.DIED, *target_address, damage, -target.current[vital])
+        fight.parties[target_address[0]].overkill += -target.current[vital]
         target.current[vital] = 0
     gauge_changed(fight, rules, actor, target_address, vital, before, target.current[vital], maximum, log)
     if damage != 0 and not log.ticking:
@@ -434,6 +439,7 @@ def restore_vital(fight, rules, actor, target, target_address, amount, log) -> N
             overkill = -target.current[vital]
             target.current[vital] = 0
             log.add(EventType.DIED, *target_address, -amount, overkill)
+            fight.parties[target_address[0]].overkill += overkill
     else:
         if target.current[vital] > 0 and before == 0:
             log.add(EventType.REVIVED, *target_address)

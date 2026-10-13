@@ -20,9 +20,9 @@ const t = (key, values) => shell.text.get(key, values);
 const token = new URLSearchParams(location.search).get("token");
 if (token !== null) history.replaceState(null, "", location.pathname + location.hash);
 
-// The game's page sends a logged-out player here with ?next=play (the profile page, ?next=profile); once they are in, they go
+// The game's page sends a logged-out player here with ?next=play (the profile page, ?next=profile; the alliance pages, ?next=alliances); once they are in, they go
 // back. Only those names are understood, never an address, so the link can't be used to send a player somewhere else.
-const WAYS_BACK = { play: "/play/", profile: "/profile/" };
+const WAYS_BACK = { play: "/play/", profile: "/profile/", alliances: "/alliances/" };
 const next = new URLSearchParams(location.search).get("next");
 const backTo = Object.hasOwn(WAYS_BACK, next) ? next : null;
 

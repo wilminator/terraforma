@@ -3,7 +3,9 @@
 A team's owner acts for the team (``team_id`` in the body says which of the account's teams). What a role may do is the
 game's rule (``Alliances.allowed``); an account with no team in an alliance cannot tell that it exists."""
 
-from fastapi import APIRouter, HTTPException, Request, status
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import Field
 
 from ..accounts import ratelimit
@@ -75,11 +77,17 @@ async def found(body: Found, request: Request, account: ActingAccount, db: Db, a
 
 
 @router.get("/alliances/{alliance_id}")
-async def look(alliance_id: Id, account: CurrentAccount, db: Db, alliances: GameAlliances) -> dict:
+async def look(alliance_id: Id, account: CurrentAccount, db: Db, alliances: GameAlliances, team_id: Annotated[int | None, Query(ge=1)] = None) -> dict:
+    """The alliance as one of the account's member teams sees it: the one asked for with ``?team_id=`` (it must be a member), else the first."""
     try:
         alliance = await service.get_alliance(db, alliance_id)
-        member = await service.reading_team(db, account, alliance)
-        return await service.view(db, alliances, alliance, member.team_id)
+        if team_id is None:
+            seen_as = (await service.reading_team(db, account, alliance)).team_id
+        else:
+            seen_as = (await heroes.own_team(db, account, team_id)).id
+            if await service.member_row(db, alliance.id, seen_as) is None:
+                raise service.NotFound("there's no such alliance")
+        return await service.view(db, alliances, alliance, seen_as)
     except FAILURES as error:
         raise refuse(error) from error
 

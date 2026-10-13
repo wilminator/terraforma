@@ -77,10 +77,10 @@ def test_every_limit_is_known_to_housekeeping_under_its_own_name():
 # --- the pass and the timer -------------------------------------------------------------------------------------------------------
 
 def test_a_failing_job_is_logged_and_the_others_still_run(app_client, later, monkeypatch, caplog):
-    async def broken(session, now, settings):
+    async def broken(session, now, settings, rules):
         raise RuntimeError("boom")
 
-    async def fine(session, now, settings):
+    async def fine(session, now, settings, rules):
         return 3
 
     monkeypatch.setattr(housekeeping, "JOBS", {"broken": broken, "fine": fine})
@@ -91,7 +91,7 @@ def test_a_failing_job_is_logged_and_the_others_still_run(app_client, later, mon
 def test_the_timer_runs_the_pass_again_and_again(app_client, later, monkeypatch):
     passes = []
 
-    async def counting(session, now, settings):
+    async def counting(session, now, settings, rules):
         passes.append(now)
         return 0
 
@@ -203,7 +203,10 @@ def test_every_housekeeping_job_is_registered_and_so_runs():
         "stale_pending_drops",
         "old_closed_ballots",
         "old_settled_rating_prompts",
+        "old_chat_messages",
+        "old_voice_rooms",
         "ended_standing_statuses",
         "expired_remembered_browsers",
         "unconfirmed_security_keys",
+        "old_unkept_fights",
     ]
