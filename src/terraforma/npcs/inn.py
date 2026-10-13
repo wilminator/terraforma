@@ -10,6 +10,9 @@ teams acting with it (the leader's own first, then in formation order), as many 
     class Generous(terraforma.npcs.inn.Inn):
         async def leader_pays(self, session, hero, price):
             return True
+
+        async def price(self, session, hero, team_id, price):
+            return price // 2 if await is_regular(session, team_id) else price
 """
 
 from sqlalchemy import select
@@ -29,6 +32,12 @@ class Inn:
         default: each team pays its own."""
         return False
 
+    async def price(self, session: AsyncSession, hero: Hero, team_id: int | None, price: int) -> int:
+        """What resting costs $team_id (None for a hero on no team) when the innkeeper's tag asks $price. Called for each team
+        that rests, so a game can charge teams differently (a guild member's discount, say); when the leader treats the party, each
+        team's price is still its own. The price is the tag's, unchanged, by default. Never below zero."""
+        return price
+
 
 async def _heroes(session: AsyncSession, team_id: int) -> list[Hero]:
     rows = await session.scalars(select(Hero).join(TeamMember, TeamMember.hero_id == Hero.id).where(TeamMember.team_id == team_id).order_by(TeamMember.slot))
@@ -41,24 +50,27 @@ async def rest(session: AsyncSession, inn: Inn, rules: Rules, economy: Economy, 
     state = DialogState(session, hero)
     team_id = await state.team_id()
     if team_id is None:
-        groups = [[hero]]
+        groups = [(None, [hero])]
     else:
         lead = await state.teams("lead")
         order = [team_id]
         if lead and lead[0] == team_id and await inn.leader_pays(session, hero, price):
             order += [other for other in await state.teams("any") if other != team_id]
-        groups = [members for members in [await _heroes(session, each) for each in order] if members]
+        groups = [(each, members) for each in order if (members := await _heroes(session, each))]
     rested = 0
-    for members in groups:
+    asked = None
+    for each, members in groups:
+        cost = max(0, await inn.price(session, hero, each, price))
+        asked = cost if asked is None else asked
         try:
             async with session.begin_nested():
-                await economy.debit(session, hero, price)  # the talking hero's purse, which is their team's under TeamGold
+                await economy.debit(session, hero, cost)  # the talking hero's purse, which is their team's under TeamGold
         except NotEnoughGold:
             continue
         for member in members:
             rest_hero(member, rules)
         rested += 1
     if not rested:
-        raise BadAnswer(f"that costs {price} gold, and there is not enough gold")
+        raise BadAnswer(f"that costs {asked} gold, and there is not enough gold")
     await session.flush()
     return ""

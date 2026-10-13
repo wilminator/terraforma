@@ -301,3 +301,10 @@ async def test_every_state_tag_goes_to_the_state_hook_with_its_parameters():
 async def test_a_dialog_that_reads_state_with_no_one_to_ask_is_refused():
     with pytest.raises(ScriptError, match="no one to ask"):
         await run("`have_item,a,1,any,end`")
+
+
+def test_add_team_takes_an_optional_token_price():
+    assert parse("`add_team``add_team,2`") is not None
+    for bad in ("`add_team,0`", "`add_team,x`", "`add_team,1,2`"):
+        with pytest.raises(ScriptError, match="add_team"):
+            parse(bad)

@@ -11,6 +11,7 @@ routes check who may call them.
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..challenge import service as challenge
 from ..heroes.models import Hero, Team, TeamMember
 from ..npcs.state import DialogState
 from ..parties import service as parties
@@ -67,10 +68,11 @@ async def teams_to_add(session: AsyncSession, hero: Hero) -> list[dict]:
     return out
 
 
-async def add_team(session: AsyncSession, hero: Hero, team_id: int, party_size: int, guild: Guild | None = None) -> dict:
+async def add_team(session: AsyncSession, hero: Hero, team_id: int, party_size: int, guild: Guild | None = None, tokens: int = 0) -> dict:
     """The hero's player adds one of their own teams to the hero's party, and its heroes stand where the hero does. A team in a
     party of just itself leaves it first. If the game gives the team a guest pass (``Guild.guest_pass``) it stays only that long.
-    All or nothing."""
+    If the dialog charges $tokens Challenge Tokens they are taken from the hero's account as part of the same change, so a team
+    that can't be added costs nothing. All or nothing."""
     party_id = await _party_id(session, hero)
     if team_id not in {team["id"] for team in await teams_to_add(session, hero)}:
         raise GuildError("that team can't be added to this party")
@@ -85,6 +87,11 @@ async def add_team(session: AsyncSession, hero: Hero, team_id: int, party_size: 
                 await standing.place(session, "team", team_id, guest.status, guest.seconds, ends_party=True)
             except standing.StandingError as error:
                 raise GuildError(str(error)) from error
+        if tokens:
+            try:
+                await challenge.change(session, hero.account_id, -tokens, challenge.SPEND)
+            except challenge.NotEnoughTokens as error:
+                raise GuildError(f"that costs {tokens} Challenge Tokens, and you have fewer") from error
     return {"party": party_id, "team": team_id}
 
 
