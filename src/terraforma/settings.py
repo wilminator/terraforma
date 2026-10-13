@@ -149,11 +149,15 @@ class Settings(BaseModel):
             raise ValueError("two external_providers share a name")
         return value
 
-    @field_validator("challenge_purchase_secret")
+    # A game whose store grants Challenge Tokens and items sets this (at least 32 characters) and the store's backend calls
+    # POST /api/server/store/grant, sending it as "Authorization: Bearer <secret>". Empty: the call is off.
+    store_grant_secret: str = ""
+
+    @field_validator("challenge_purchase_secret", "store_grant_secret")
     @classmethod
-    def _secret_is_long_enough(cls, value: str) -> str:
+    def _secret_is_long_enough(cls, value: str, info) -> str:
         if value and len(value) < 32:
-            raise ValueError("challenge_purchase_secret must be at least 32 characters (or empty, to turn the call off)")
+            raise ValueError(f"{info.field_name} must be at least 32 characters (or empty, to turn the call off)")
         return value
 
 
