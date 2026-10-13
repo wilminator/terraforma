@@ -1,0 +1,100 @@
+[
+ {
+  "key": "slime_drops",
+  "name": "Slime drops",
+  "entries": [
+   {
+    "item": "herb",
+    "chance": 3000
+   }
+  ]
+ },
+ {
+  "key": "bat_drops",
+  "name": "Bat drops",
+  "entries": [
+   {
+    "item": "antidote",
+    "chance": 2000
+   }
+  ]
+ },
+ {
+  "key": "goblin_drops",
+  "name": "Goblin drops",
+  "entries": [
+   {
+    "item": "ether",
+    "chance": 1500
+   },
+   {
+    "item": "dagger",
+    "chance": 500
+   },
+   {
+    "item": "club",
+    "chance": 300
+   }
+  ]
+ },
+ {
+  "key": "wolf_drops",
+  "name": "Wolf drops",
+  "entries": [
+   {
+    "item": "herb",
+    "chance": 2500
+   },
+   {
+    "item": "leather_cap",
+    "chance": 800
+   },
+   {
+    "item": "leather_boots",
+    "chance": 500
+   }
+  ]
+ },
+ {
+  "key": "skeleton_drops",
+  "name": "Skeleton drops",
+  "entries": [
+   {
+    "item": "arrow",
+    "chance": 3000,
+    "min": 2,
+    "max": 6
+   },
+   {
+    "item": "short_sword",
+    "chance": 500
+   },
+   {
+    "item": "rusty_blade",
+    "chance": 300
+   },
+   {
+    "item": "spear",
+    "chance": 200
+   }
+  ]
+ },
+ {
+  "key": "imp_drops",
+  "name": "Imp drops",
+  "entries": [
+   {
+    "item": "ether",
+    "chance": 2500
+   },
+   {
+    "item": "cloak",
+    "chance": 500
+   },
+   {
+    "item": "phoenix_feather",
+    "chance": 200
+   }
+  ]
+ }
+]

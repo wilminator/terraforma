@@ -1,7 +1,8 @@
 """Engine commands, run in the container:
 
-    python -m terraforma serve [GAME_APP]   check settings, migrate, then serve (default: the development app)
-    python -m terraforma migrate            bring the database's tables up to date
+    python -m terraforma serve [GAME_APP]   check settings, make the tables, then serve (default: the development app)
+    python -m terraforma create-tables      make the tables in an empty database (serve does this too)
+    python -m terraforma reset-database --yes   DELETE every table and make them again (development: the models changed)
     python -m terraforma check-settings     read settings.toml and the keys and say what's wrong, if anything
     python -m terraforma keys new           make the first encryption key
     python -m terraforma keys rotate        replace the key, re-encrypting everything stored with it
@@ -13,17 +14,17 @@ import asyncio
 import sys
 
 from . import keys, models  # noqa: F401  (models: every encrypted column is registered)
-from .db.migrate import upgrade
+from .db.schema import SchemaOutdated, ensure_schema, reset_schema
 from .db.session import make_engine, make_sessionmaker
 from .settings import load_settings
 
 DEFAULT_APP = "terraforma.devserver:app"
 
 
-async def migrate() -> None:
+async def create_tables(reset: bool = False) -> None:
     engine = make_engine(load_settings().database_url)
     try:
-        await upgrade(engine)
+        await (reset_schema if reset else ensure_schema)(engine)
     finally:
         await engine.dispose()
 
@@ -70,7 +71,7 @@ def _manage_keys(action: str, key_dir) -> int:
     if action == "rotate":
         # Anything still on the previous key moves to the current one first, so dropping it loses nothing;
         # then the slots shift and everything moves to the new key. Stopped halfway, both slots still read it all.
-        asyncio.run(migrate())
+        asyncio.run(create_tables())
         asyncio.run(reencrypt(keys.KeyRing.load(key_dir)))
         keys.shift_slots(key_dir)
         changed = asyncio.run(reencrypt(keys.KeyRing.load(key_dir)))
@@ -85,17 +86,32 @@ def serve(factory: str) -> None:
 
     if not check_settings():
         sys.exit(1)
-    asyncio.run(migrate())
-    print("Database is up to date.")
+    try:
+        asyncio.run(create_tables())
+    except SchemaOutdated as error:
+        print(error)
+        sys.exit(1)
+    print("Database is ready.")
     # Behind the NAS's HTTPS proxy: trust its X-Forwarded-For / -Proto.
     uvicorn.run(factory, factory=True, host="0.0.0.0", port=8000, proxy_headers=True, forwarded_allow_ips="*")
 
 
 def main(argv: list[str]) -> int:
     command = argv[1] if len(argv) > 1 else ""
-    if command == "migrate":
-        asyncio.run(migrate())
-        print("Database is up to date.")
+    if command == "create-tables":
+        try:
+            asyncio.run(create_tables())
+        except SchemaOutdated as error:
+            print(error)
+            return 1
+        print("Database is ready.")
+        return 0
+    if command == "reset-database":
+        if "--yes" not in argv[2:]:
+            print("This deletes every table in the database. Run it again with --yes to go ahead.")
+            return 2
+        asyncio.run(create_tables(reset=True))
+        print("Database reset.")
         return 0
     if command == "check-settings":
         return 0 if check_settings() else 1
