@@ -9,6 +9,7 @@ from terraforma.fights.models import FightRecord
 
 from .test_fight import SLOW, command, into_the_marsh, settled, view_of
 from .test_menu import menu
+from ..test_monster_rewards import set_hp
 
 
 def queued(guest):
@@ -103,12 +104,19 @@ def test_a_guest_who_missed_a_round_comes_back_and_commands_again(page, new_page
 
 def test_a_guest_leaves_the_finished_fight_and_can_join_again(page, new_page, live_server):
     guest, fight_id = seated(page, live_server, new_page)
-    for _ in range(40):  # (the hero fights alone against monsters that defend: it wins in the end)
+    live_server.in_db(lambda db: set_hp(db, fight_id, 1, 1))  # (frail monsters and a strong hero: a hit ends it, if it lands)
+    live_server.in_db(lambda db: set_hp(db, fight_id, 0, 500, strength=60))
+    guest.reload()
+    stage = guest.locator("#stage")
+    expect(stage).to_have_attribute("data-menu", "commands", timeout=SLOW)
+    for _ in range(30):
         if view_of(page, fight_id)["over"]:
             break
         command(page, fight_id)
-        menu(guest, "defend").click()
-        guest.wait_for_timeout(300)
-    expect(guest.locator("#fight-leave")).to_be_visible(timeout=60_000)
+        for _ in range(guest.locator(".fighter[data-yours='true'][data-alive='true']").count()):
+            menu(guest, "defend").click()
+        expect(stage).not_to_have_attribute("data-playing", "true", timeout=SLOW)
+        guest.wait_for_timeout(200)
+    expect(guest.locator("#fight-leave")).to_be_visible(timeout=SLOW)
     guest.locator("#fight-leave").click()
     expect(guest.locator("#monsters-join")).to_be_visible(timeout=SLOW)
