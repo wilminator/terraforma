@@ -24,6 +24,13 @@ class ExampleRules(Rules):
     team_max = 4
     max_teams = 3
 
+    def may_queue_monsters(self, volunteer):
+        """The example takes guests: someone who is not logged in may queue to command monsters (`/monsters/`), once they have no fight unfinished.
+        Everyone else is judged as the engine's rules do."""
+        if volunteer.guest_id is not None:
+            return "Finish your fight first." if volunteer.in_fight else None
+        return super().may_queue_monsters(volunteer)
+
 
 class ExampleRoster(Roster):
     """A hero may be removed from a team (or replaced), and the empty place filled later. Moving them to another team stays refused."""

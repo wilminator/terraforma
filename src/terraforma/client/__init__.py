@@ -11,6 +11,7 @@ The game's pictures and sounds (``Game(assets_dir=...)``) are served at ``/asset
     /account/       the account pages                   /assets/...   the game's assets_dir
     /team/{id}      a team's own page (its heroes)
     /alliances/     the player's alliances and invitations   /alliance/{id}   one alliance, as one of the player's teams sees it
+    /monsters/      command a fight's monsters with no login (a guest, if the game takes guests)
     /profile/       the player's own page settings           /p/{token}  /p/team/{token}  /p/alliance/{token}   the public pages
     /confirm-email  /change-email  /reset-password  /confirm-2fa     the pages the emailed links open (account pages too)
     GET /api/client what a page needs to know: the game's name, modules, styles and assets
@@ -118,6 +119,12 @@ async def profile() -> FileResponse:
 async def alliances() -> FileResponse:
     """The player's alliances, the invitations waiting and founding one (the browser asks the server, which answers only a logged-in player)."""
     return page("alliances.html")
+
+
+@router.get("/monsters/", include_in_schema=False)
+async def monsters() -> FileResponse:
+    """The page where someone who is not logged in queues to command monsters and commands them (the browser asks the guest calls, which the game's rules may refuse)."""
+    return page("monsters.html")
 
 
 @router.get("/alliance/{alliance_id}", include_in_schema=False)
