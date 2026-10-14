@@ -16,7 +16,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..content.models import Job
+from ..content.models import Job, Personality
 from ..models import Account, Map
 from ..npcs.models import NpcTalk
 from ..parties.models import PartyRequest, PartyTeam
@@ -289,14 +289,17 @@ async def remove_from_team(session: AsyncSession, account: Account, team_id: int
 async def list_teams(session: AsyncSession, account: Account) -> list[dict]:
     teams = (await session.scalars(select(Team).where(Team.account_id == account.id).order_by(Team.id))).all()
     rows = await session.execute(
-        select(TeamMember.team_id, TeamMember.slot, Hero.id, Hero.name)
+        select(TeamMember.team_id, TeamMember.slot, Hero.id, Hero.name, Personality.map_art)
         .join(Hero, Hero.id == TeamMember.hero_id)
+        .join(Job, Job.id == Hero.job_id)
+        .outerjoin(Personality, Personality.key == Job.key)  # (a hero has no personality of its own yet: its job's key names it)
         .where(TeamMember.team_id.in_([team.id for team in teams]))
         .order_by(TeamMember.team_id, TeamMember.slot)
     )
     members: dict[int, list[dict]] = {team.id: [] for team in teams}
-    for team_id, slot, hero_id, hero_name in rows.all():
-        members[team_id].append({"slot": slot, "hero_id": hero_id, "name": hero_name})
+    for team_id, slot, hero_id, hero_name, map_art in rows.all():
+        # (a personality with no map art keeps a JSON null, which is not an SQL one)
+        members[team_id].append({"slot": slot, "hero_id": hero_id, "name": hero_name, **({"map_art": map_art} if map_art else {})})
     in_party = dict((await session.execute(select(PartyTeam.team_id, PartyTeam.party_id).where(PartyTeam.team_id.in_([team.id for team in teams])))).all())
     return [{"id": team.id, "name": team.name, "members": members[team.id], "party": in_party.get(team.id)} for team in teams]
 

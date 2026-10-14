@@ -60,6 +60,20 @@ def test_a_team_that_plays_appears_on_the_hubs_map_where_heroes_start(page, live
     expect(page.locator("#stage")).to_have_attribute("aria-label", "The Meadow: the party is at (0, 0)")
 
 
+def test_the_party_is_drawn_as_its_first_hero_who_stands_and_faces_the_way_it_walked(page, live_server):
+    play(page, live_server)
+    at(page, 0, 0)
+    # (the example's fighter has map art: the stage says which pose it draws, and a marker only stands in for a hero with none)
+    expect(page.locator("#stage")).to_have_attribute("data-hero", "stand_down")
+    page.locator("#stage").focus()
+    page.keyboard.press("ArrowRight")
+    at(page, 1, 0)
+    expect(page.locator("#stage")).to_have_attribute("data-hero", "stand_right")
+    page.keyboard.press("s")
+    at(page, 1, 1)
+    expect(page.locator("#stage")).to_have_attribute("data-hero", "stand_down")
+
+
 def test_a_tap_walks_the_party_there_and_the_server_says_no_to_a_wall(page, live_server, console):
     console.allow("status of 409")  # the browser logs the refusal itself
     play(page, live_server)
