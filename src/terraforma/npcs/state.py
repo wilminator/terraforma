@@ -15,10 +15,11 @@ from ..economy import Economy, NotEnoughGold
 from ..fights.rules import Rules
 from ..guild import ranks
 from ..heroes import inventory
+from ..instances import service as instances
 from ..maps import travel
 from ..heroes.models import Hero, HeroItem, Team, TeamMember
 from ..parties import service as parties
-from ..models import Map
+from ..models import Account, Map
 from ..parties.models import Party
 from ..quests import service as quests
 from ..quests import weekly
@@ -226,6 +227,52 @@ class DialogState:
         await travel.relocate(self.session, party, target, *spot)
         return ""
 
+    # --- quest instances ----------------------------------------------------------------------------------------------------
+
+    async def enter_instance(self, quest: str, mode: str, map_key: str, x: str, y: str, capacity: str, join_seconds: str, label: str) -> str:
+        """The party the hero acts in takes the quest and appears at the tile of the quest's map (see ``instances.service.enter``).
+        The label if it cannot go now: apart in a town, in a fight, in an instance already, or no room in the shared one. A public
+        quest moves no one. A map or tile that is not there is a mistake in the text."""
+        here = await self.session.get(Map, self.hero.map_id)
+        target = await self.session.scalar(select(Map).where(Map.world_id == here.world_id, Map.name == map_key))
+        if target is None:
+            raise ScriptError(f"enter_instance tag: there is no map {map_key!r}")
+        spot = target.normalize(int(x), int(y))
+        if spot != (int(x), int(y)) or not target.tile(*spot)["passable"]:
+            raise ScriptError(f"enter_instance tag: ({x}, {y}) on {map_key} can't be stood on")
+        acting = await self.party()
+        if acting is None or acting.ethereal:
+            return label
+        if mode == instances.SHARED and self.rules is None:
+            raise ScriptError("this dialog joins a shared instance (enter_instance), which measures strength, and there are no rules to do it")
+        try:
+            await instances.enter(self.session, self.rules, acting.party_id, quest, mode, target, *spot, capacity=int(capacity), join_window_seconds=int(join_seconds))
+        except instances.InstanceError:
+            return label
+        return ""
+
+    async def complete_instance(self, label: str) -> str:
+        """The party wins the quest of its instance: the label if it is in none or another party won it first. (The game tells the
+        other parties with ``instances.service.complete``'s answer if it calls that itself; the tag leaves them be.)"""
+        acting = await self.party()
+        if acting is None:
+            return label
+        try:
+            await instances.complete(self.session, acting.party_id)
+        except instances.InstanceError:
+            return label
+        return ""
+
+    async def leave_instance(self, label: str) -> str:
+        """The party leaves its instance and stands where it came in: the label if it was in none, or cannot (in a fight)."""
+        acting = await self.party()
+        if acting is None:
+            return label
+        try:
+            return "" if await instances.leave(self.session, acting.party_id) else label
+        except instances.InstanceError:
+            return label
+
     # --- standing statuses ------------------------------------------------------------------------------------------------
 
     async def _target(self, target: str) -> int | None:
@@ -260,6 +307,27 @@ class DialogState:
         try:
             await challenge.change(self.session, self.hero.account_id, -int(amount), challenge.SPEND)
         except challenge.NotEnoughTokens:
+            return label
+        return ""
+
+    async def add_tokens(self, amount: str, label: str) -> str:
+        """Pays the tokens to the talking hero's account as a quest reward, cut to the room the game's purse cap leaves; an admin
+        earns none (they earn only fighting as a player). The label if nothing is paid. A dialog pays once because a quest marker
+        stops it asking again; the daily cap, which is for fights, does not apply."""
+        if self.rules is None:
+            raise ScriptError("this dialog pays Challenge Tokens (add_tokens), and there are no rules to say how many a purse holds")
+        account = await self.session.get(Account, self.hero.account_id)
+        if account.is_admin:
+            return label
+        room = amount = int(amount)
+        purse = self.rules.challenge_purse_cap(account.id)
+        if purse is not None:
+            room = min(amount, max(0, purse - await challenge.balance(self.session, account.id)))
+        if room < 1:
+            return label
+        try:
+            await challenge.change(self.session, account.id, room, challenge.QUEST, purse_cap=purse)
+        except challenge.PurseFull:
             return label
         return ""
 
