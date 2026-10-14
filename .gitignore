@@ -11,3 +11,4 @@ keys/
 secrets/
 outbox/
 *.ziptest-results/
+test-results/
