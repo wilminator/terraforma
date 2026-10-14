@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..accounts.hooks import SignIn
 from ..economy import Economy, TeamGold
+from ..storage.hooks import NoStorage, Storage
 from ..alliances.hooks import Alliances
 from ..relations.hooks import Relations
 from ..pvp.hooks import PvpZones
@@ -52,6 +53,15 @@ def get_economy(request: Request) -> Economy:
 
 
 GameEconomy = Annotated[Economy, Depends(get_economy)]
+
+
+def get_storage(request: Request) -> Storage:
+    """The game's storage rule (no storage, when the app runs without a game)."""
+    game = request.app.state.game
+    return game.storage if game else NoStorage()
+
+
+GameStorage = Annotated[Storage, Depends(get_storage)]
 
 
 def get_relations(request: Request) -> Relations:
