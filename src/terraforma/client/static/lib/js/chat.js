@@ -27,7 +27,15 @@ export function chatPanel(shell) {
   const voiceLink = h("p", { class: "note", role: "status", id: "chat-voice-link" });
   const voiceButton = h("button", { type: "button", id: "chat-voice", hidden: true, onclick: () => joinVoice() }, t("chat.voice"));
 
+  let epoch = 0; // counts the times the lines were thrown away, so an answer asked for before that is not added to the new ones
+
   const addressOf = (entry) => `${entry.kind}\n${entry.key}`;
+
+  function clearLines() {
+    epoch += 1;
+    last = 0;
+    replace(lines);
+  }
 
   function labelOf(entry) {
     return entry.kind === "whisper" ? t("chat.whisper_label", { name: entry.label }) : entry.kind === "party" || entry.kind === "global" || entry.kind === "nearby" || entry.kind === "town" ? t(`chat.kind.${entry.kind}`) : entry.label;
@@ -53,8 +61,7 @@ export function chatPanel(shell) {
     } else if (!keep || !channels.some((entry) => addressOf(entry) === keep)) {
       const [kind, key] = channelList.value.split("\n");
       current = { kind, key };
-      last = 0;
-      replace(lines);
+      clearLines();
     }
     showVoice();
   }
@@ -62,8 +69,7 @@ export function chatPanel(shell) {
   function choose() {
     const [kind, key] = channelList.value.split("\n");
     current = { kind, key };
-    last = 0;
-    replace(lines);
+    clearLines();
     showVoice();
     poll();
   }
@@ -83,14 +89,18 @@ export function chatPanel(shell) {
   async function poll() {
     if (!current) return;
     const asked = current;
+    const era = epoch;
     await attempt(shell, problem, async () => {
       const answer = await api.get(`/api/chat/messages?kind=${encodeURIComponent(asked.kind)}&key=${encodeURIComponent(asked.key)}&after=${last}`);
-      if (current !== asked) return; // the player moved on while it was answered
+      if (current !== asked || epoch !== era) return; // the player moved on, or the lines were cleared, while it was answered
+      let added = false;
       for (const each of answer.messages) {
+        if (each.id <= last) continue; // another poll, asked at the same time, already added it
         lines.append(lineElement(each));
-        last = Math.max(last, each.id);
+        last = each.id;
+        added = true;
       }
-      if (answer.messages.length) lines.lastElementChild.scrollIntoView?.({ block: "nearest" });
+      if (added) lines.lastElementChild.scrollIntoView?.({ block: "nearest" });
     });
   }
 
@@ -124,8 +134,7 @@ export function chatPanel(shell) {
     const entry = { kind: "whisper", key: handle, label: handle };
     if (!channels.some((each) => each.kind === "whisper" && each.key === handle)) channels.push(entry);
     current = entry;
-    last = 0;
-    replace(lines);
+    clearLines();
     whisper.value = "";
     drawChannels();
     channelList.value = addressOf(entry);
@@ -146,8 +155,7 @@ export function chatPanel(shell) {
     await attempt(shell, problem, async () => {
       await api.post("/api/chat/mute", { handle: name });
       await drawMuted();
-      replace(lines);
-      last = 0;
+      clearLines();
     });
     await poll();
   }
@@ -156,8 +164,7 @@ export function chatPanel(shell) {
     await attempt(shell, problem, async () => {
       await api.post("/api/chat/unmute", { handle: name });
       await drawMuted();
-      replace(lines);
-      last = 0;
+      clearLines();
     });
     await poll();
   }
