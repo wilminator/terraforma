@@ -12,6 +12,7 @@ Pictures and sounds are file names under the game's assets folder: plain
 names and folders, never absolute paths or "..".
 """
 
+import json
 import re
 from typing import Annotated, Literal
 
@@ -549,6 +550,27 @@ class Status(Strict):
         return self
 
 
+class QuestTemplateSeed(Strict):
+    """A weekly quest written by hand (see ``quests.weekly``). A team is offered it when the quest's level, the team's plus its relative
+    difficulty, is from ``min_level`` to ``max_level``; ``weight`` is its share among the templates that fit. ``spec`` is the game's own
+    description of the quest, kept and handed back by the engine, never read."""
+
+    key: Key
+    name: str = Field(min_length=1, max_length=64)
+    min_level: int = Field(default=1, ge=1, le=999)
+    max_level: int = Field(default=999, ge=1, le=999)
+    weight: int = Field(default=1, ge=1, le=1000)
+    spec: dict = {}
+
+    @model_validator(mode="after")
+    def _levels_run_up(self):
+        if self.min_level > self.max_level:
+            raise ValueError("min_level is above max_level")
+        if len(json.dumps(self.spec)) > 16_000:
+            raise ValueError("a quest's spec is at most 16000 characters of JSON")
+        return self
+
+
 # File name -> the format its rows follow.
 KINDS: dict[str, type[Strict]] = {
     "abilities": Ability,
@@ -560,6 +582,7 @@ KINDS: dict[str, type[Strict]] = {
     "statuses": Status,
     "maps": MapSeed,
     "npcs": NpcSeed,
+    "quest_templates": QuestTemplateSeed,
 }
 
 

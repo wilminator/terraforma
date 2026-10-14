@@ -14,6 +14,7 @@ from ..relations.hooks import Relations
 from ..pvp.hooks import PvpZones
 from ..market.hooks import Market
 from ..guild.hooks import Guild
+from ..quests.hooks import WeeklyQuests
 from ..heroes.hooks import Roster, Start
 from ..npcs.hooks import Npcs
 from ..npcs.inn import Inn
@@ -28,6 +29,8 @@ from .security import SESSION_ACCOUNT, SESSION_VERSION, csrf_matches
 async def get_db(request: Request) -> AsyncIterator[AsyncSession]:
     """A session in a transaction: committed when the call succeeds, rolled back when it fails."""
     async with request.app.state.sessionmaker() as session:
+        # What the dialog tags that reach a game's rules need (``npcs.state.DialogState``), without passing it through every call.
+        session.info["weekly_quests"] = get_weekly_quests(request)
         async with session.begin():
             yield session
 
@@ -98,6 +101,15 @@ def get_alliances(request: Request) -> Alliances:
 
 
 GameAlliances = Annotated[Alliances, Depends(get_alliances)]
+
+
+def get_weekly_quests(request: Request) -> WeeklyQuests:
+    """The game's weekly quest rules (the engine's defaults, which generate none, when the app runs without a game)."""
+    game = request.app.state.game
+    return game.weekly_quests if game else WeeklyQuests()
+
+
+GameWeeklyQuests = Annotated[WeeklyQuests, Depends(get_weekly_quests)]
 
 
 async def current_account(request: Request, db: Db) -> Account:
