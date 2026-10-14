@@ -34,7 +34,7 @@ def later(monkeypatch):
 CATEGORIES = {
     "accounts": ["accounts", "handles", "keys", "twofa", "mail", "logscrub", "settings", "external_signin", "second_factors", "oidc_provider"],
     "platform": ["app", "client", "categories", "content", "database", "housekeeping", "schema", "baseline_migration", "db_commit_order", "qbtiles", "tilesheet", "colormap", "animations", "maps", "walking", "map_events", "parallel", "seed", "world", "example_content"],
-    "heroes": ["heroes", "inventory", "field_use", "parties", "towns", "economy", "trading", "storage", "drops", "pending_drops", "challenge_tokens", "store_grant", "pvp", "npc_script", "npcs", "reach", "quests", "weekly_quests", "instances", "npc_state", "market", "inn", "guild", "guild_ranks", "standing", "token_tags", "start"],
+    "heroes": ["heroes", "inventory", "field_use", "parties", "towns", "economy", "trading", "storage", "drops", "pending_drops", "challenge_tokens", "store_grant", "pvp", "npc_script", "instance_tags", "npcs", "reach", "quests", "weekly_quests", "instances", "npc_state", "market", "inn", "guild", "guild_ranks", "standing", "token_tags", "start"],
     "fights": ["round_time", "fight_rules", "fleeing", "monster_play", "monster_control", "monster_rewards", "monster_guests", "fight_store", "live_fights", "fight_art", "joining", "experience", "rewards", "ai", "ai_statuses", "statuses"],
     "social": ["relations", "alliances", "ballots", "ratings", "profiles", "play_time", "follows", "fight_tags", "fight_pages", "chat", "voice"],
 }

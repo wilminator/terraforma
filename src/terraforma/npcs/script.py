@@ -36,8 +36,12 @@ its command, followed by comma separated parameters. Text outside tags is shown.
     add_status,target,status,seconds,locked|removable,label   puts a standing status on the hero, team or party for the seconds (0: until removed); the label if it cannot
     has_status,target,status,has|lacks,label   the label unless the target has (or lacks) the status
     have_tokens,amount,label            the label unless the hero's account holds that many Challenge Tokens
+    add_tokens,amount,label             pays that many Challenge Tokens to the hero's account as a quest reward, up to the game's purse cap (the label if an admin's account, or no room is left)
     spend_tokens,amount,label           takes that many Challenge Tokens from the hero's account (the label if it holds fewer)
     add_gold,amount,label               pays that much gold into the hero's purse, the game's economy decides where (the label if it cannot)
+    enter_instance,quest,mode,map,x,y,capacity,join_seconds,label  the party takes the quest and appears at that tile of the quest's map (mode: private, shared or public; a public quest moves no one); leaves the dialog (the label if it cannot: apart in a town, in a fight, in an instance already)
+    complete_instance,label             the party's instance quest is done and this party wins it (the label if it is not in one, or another party won it first)
+    leave_instance,label                the party leaves its instance and stands where it came in; leaves the dialog (the label if it was in none)
     warp,map,x,y,label                  moves the party to that tile of that map and leaves the dialog (the label if it cannot: a party apart in a town, a hero in a fight)
     open_party,on|off,label             the leader opens or closes the party to requests (the label if not the leader)
     add_team[,tokens], find_party, party_requests  the guild's activities (guild.service): add one of your teams (for that many Challenge
@@ -65,7 +69,7 @@ from dataclasses import dataclass
 SCOPES = ("any", "lead", "each")
 OPS = ("eq", "ne", "lt", "le", "gt", "ge")
 #: The tags that read or change the game's state, which the engine itself runs (through ``advance``'s $state).
-STATE_TAGS = ("have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker", "add_guild_points", "set_guild_rank", "guild_points", "guild_rank", "party_gate", "open_party", "add_status", "has_status", "have_tokens", "spend_tokens", "add_gold", "warp", "weekly_quest")
+STATE_TAGS = ("have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker", "add_guild_points", "set_guild_rank", "guild_points", "guild_rank", "party_gate", "open_party", "add_status", "has_status", "have_tokens", "spend_tokens", "add_tokens", "add_gold", "warp", "enter_instance", "complete_instance", "leave_instance", "weekly_quest")
 MAX_TEXT = 20000
 MAX_STEPS = 10000  # tags run in one call: a text that jumps in a circle with nothing to show or ask is cut off
 
@@ -177,7 +181,7 @@ def check_tag(parts: list[str]) -> list[str]:
         _name(command, args[1], "a status")
         _one_of(command, args[2], ("has", "lacks"), "the test")
         return [args[3]]
-    elif command in ("have_tokens", "spend_tokens", "add_gold"):
+    elif command in ("have_tokens", "spend_tokens", "add_tokens", "add_gold"):
         count(2)
         if _whole(command, args[0], "the amount") < 1:
             raise ScriptError(f"{command} tag: the amount is at least 1")
@@ -192,6 +196,20 @@ def check_tag(parts: list[str]) -> list[str]:
         count(2)
         _one_of(command, args[0], ("offer", "start", "finish_win", "finish_lose"), "the action")
         return [args[1]]
+    elif command == "enter_instance":
+        count(8)
+        _name(command, args[0], "a quest")
+        _one_of(command, args[1], ("private", "shared", "public"), "a mode")
+        _name(command, args[2], "a map key")
+        _whole(command, args[3], "x")
+        _whole(command, args[4], "y")
+        if _whole(command, args[5], "the capacity") < 1:
+            raise ScriptError("enter_instance tag: the capacity is at least 1")
+        _whole(command, args[6], "the joining time in seconds")
+        return [args[7]]
+    elif command in ("complete_instance", "leave_instance"):
+        count(1)
+        return [args[0]]
     elif command == "open_party":
         count(2)
         _one_of(command, args[0], ("on", "off"), "the setting")
@@ -421,7 +439,7 @@ async def advance(script: Script, pos: int, prompt: dict | None, choice: int | N
             failed = await state(command, args)
             if failed:
                 pos = go(failed)
-            elif command == "warp":  # the hero is somewhere else now: the dialog is over
+            elif command in ("warp", "enter_instance", "leave_instance") and not (command == "enter_instance" and args[1] == "public"):  # the hero is somewhere else now: the dialog is over
                 return {"events": events, "prompt": None, "pos": len(text)}
         elif command == "ack":
             return {"events": events, "prompt": {"type": "ack"}, "pos": pos}

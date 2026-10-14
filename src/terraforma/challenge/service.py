@@ -32,6 +32,7 @@ from .models import ChallengeBalance, ChallengeEntry
 FIGHT = "fight"
 PURCHASE = "purchase"
 SPEND = "spend"
+QUEST = "quest"
 
 
 class ChallengeError(ValueError):
