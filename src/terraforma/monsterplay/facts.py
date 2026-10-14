@@ -9,8 +9,9 @@ from datetime import datetime
 
 @dataclass(frozen=True)
 class Volunteer:
-    """Someone who wants to command monsters. ``account_id`` is None for a person who is not logged in (a guest: the engine's own
-    calls always have an account, so for now only a game's own code makes one). ``team_ids`` are the teams the account owns,
+    """Someone who wants to command monsters. ``account_id`` is None for a person who is not logged in (a guest, who then has a
+    ``guest_id`` instead: the engine's rules refuse guests, a game's rules may accept them; a guest has no teams, is never an admin and
+    is never locked out). ``team_ids`` are the teams the account owns,
     ``in_fight`` says whether it has a hero in a fight that has not ended (a hero that fled does not count) or sits in one as a
     monster player, and ``locked_until`` is when a lockout still running ends (None when there is none).
     Admins are told apart because the rules treat them differently (``is_admin``)."""
@@ -20,6 +21,7 @@ class Volunteer:
     team_ids: tuple[int, ...] = ()
     in_fight: bool = False
     locked_until: datetime | None = None
+    guest_id: int | None = None
 
 
 @dataclass(frozen=True)
