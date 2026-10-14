@@ -18,6 +18,10 @@ from terraforma import logscrub
         ("Authorization: Bearer s3cret-shop-key", "s3cret-shop-key"),
         ("password=hunter2&next=/", "hunter2"),
         ("issued A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8", "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"),
+        ("POST /oidc/token client_secret=hunter2hunter2&code_verifier=v3rifier HTTP/1.1", "hunter2hunter2"),
+        ("POST /oidc/token client_secret=hunter2hunter2&code_verifier=v3rifier HTTP/1.1", "v3rifier"),
+        ("GET /cb?access_token=abc&id_token=def", "abc"),
+        ("GET /oidc/authorize?code=thecode&state=x", "thecode"),
     ],
 )
 def test_secrets_are_scrubbed(line, secret):

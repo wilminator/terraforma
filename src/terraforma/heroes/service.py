@@ -22,7 +22,10 @@ from ..npcs.models import NpcTalk
 from ..parties.models import PartyRequest, PartyTeam
 from ..fighttags.models import FightTeam, TeamKept, TeamTag
 from ..profiles.models import TeamProfile
+from ..guild.ranks import forget_team as forget_ranks
 from ..quests.service import forget_team as forget_quests
+from ..quests.weekly import forget_team as forget_weekly_quests
+from ..storage.service import forget as forget_storage
 from ..standing import service as standing
 from ..world.start import ensure_start
 from ..fights import pending
@@ -244,6 +247,9 @@ async def delete_team(session: AsyncSession, account: Account, team_id: int, all
     for table in (TeamTag, TeamKept, FightTeam):  # its tags, its slots and its results in finished fights go with it
         await session.execute(delete(table).where(table.team_id == team.id))
     await forget_quests(session, team.id)
+    await forget_ranks(session, team.id)
+    await forget_weekly_quests(session, team.id)
+    await forget_storage(session, "team", team.id)
     await session.execute(delete(PartyRequest).where(PartyRequest.team_id == team.id))
     await standing.forget(session, "team", team.id)
     await session.delete(team)

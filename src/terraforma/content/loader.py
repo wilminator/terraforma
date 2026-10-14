@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..db.dialect import upsert
 from ..maps.service import apply_maps
 from ..npcs.service import apply_npcs
+from ..quests.weekly import apply_templates
 from ..world.start import ensure_start
 from . import models
 from .schema import DROP_SCALE, RESOURCES, STATS, Strict, check_seed
@@ -60,6 +61,8 @@ async def load_content(session: AsyncSession, seed: dict[str, list[dict]], stats
     if "npcs" in seed:
         hub = await ensure_start(session)
         counts["npcs"] = await apply_npcs(session, hub.world_id, checked["npcs"])
+    if "quest_templates" in seed:
+        counts["quest_templates"] = await apply_templates(session, checked["quest_templates"])
     # The rows were written with bulk SQL: content already loaded in this session is stale.
     session.expire_all()
     return counts
