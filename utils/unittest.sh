@@ -1,5 +1,5 @@
 #!/bin/env bash
-# Runs the full unit battery in Docker and keeps a log of the run in test-results/ (unittest-<timestamp>.log), so a
+# Builds the test image, runs the full unit battery in Docker and keeps a log of the run in test-results/ (unittest-<timestamp>.log), so a
 # person or a Claude thread can read the result without it being relayed. The last line is the verdict:
 #   RESULT: PASS|FAIL (exit code N), commit <sha>, <seconds>s
 # After a passing run only the newest 10 logs are kept; a failing run deletes nothing.
@@ -8,7 +8,10 @@ set -o pipefail
 mkdir -p test-results
 log="test-results/unittest-$(date +%Y%m%d-%H%M%S).log"
 started=$SECONDS
-docker compose run --remove-orphans --rm test -n auto "$@" 2>&1 | tee "$log"
+# Build the test image first: with nothing changed it is a quick cache hit, and when a dependency was added (a pull)
+# it keeps the run from failing on a package the old image does not have.
+docker compose build --quiet test 2>&1 | tee "$log" || exit 1
+docker compose run --remove-orphans --rm test -n auto "$@" 2>&1 | tee -a "$log"
 code=$?
 if [ "$code" -eq 0 ]; then verdict=PASS; else verdict=FAIL; fi
 echo "RESULT: $verdict (exit code $code), commit $(git rev-parse --short HEAD 2>/dev/null || echo unknown), $((SECONDS - started))s" | tee -a "$log"
