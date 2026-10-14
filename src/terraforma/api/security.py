@@ -14,9 +14,10 @@ instead: only pages from this site may open one.
 import hmac
 import secrets
 
-from fastapi import Request, WebSocket
+from fastapi import Request
 from itsdangerous import SignatureExpired, TimestampSigner
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.requests import HTTPConnection
 
 # How far ahead of the server's clock a signature may be dated and still count. A clock that
 # steps back (a virtual machine's, or one being corrected) makes a login made a moment ago look
@@ -65,9 +66,10 @@ def csrf_matches(request: Request) -> bool:
     return bool(expected) and hmac.compare_digest(expected, sent)
 
 
-def same_origin(socket: WebSocket) -> bool:
-    origin = socket.headers.get("origin")
+def same_origin(connection: HTTPConnection) -> bool:
+    """Whether the Origin header (which a WebSocket handshake and a browser's POST both carry) names this site. No header: no."""
+    origin = connection.headers.get("origin")
     if origin is None:
         return False
-    host = socket.headers.get("host", "")
+    host = connection.headers.get("host", "")
     return origin.split("://", 1)[-1] == host

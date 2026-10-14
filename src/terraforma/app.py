@@ -42,6 +42,7 @@ from .guild.routes import router as guild_router
 from .standing.routes import router as standing_router
 from .maps.routes import router as maps_router
 from .monsterplay.routes import fight_router as monster_fight_router
+from .monsterplay.routes import guest_router as monster_guest_router
 from .monsterplay.routes import router as monsters_router
 from .oidc.routes import router as oidc_router
 from .market.routes import router as market_router
@@ -165,6 +166,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(parties_router)
     app.include_router(maps_router)
     app.include_router(monsters_router)
+    app.include_router(monster_guest_router)
     app.include_router(oidc_router)
     app.include_router(monster_fight_router)
 
