@@ -21,6 +21,9 @@ from ..parties import service as parties
 from ..models import Map
 from ..parties.models import Party
 from ..quests import service as quests
+from ..quests import weekly
+from ..quests.hooks import WeeklyQuests
+from ..quests.weekly_models import OFFERED
 from ..standing import service as standing
 from ..towns import service as towns
 from .script import ScriptError
@@ -126,6 +129,28 @@ class DialogState:
         if team_id is None:
             raise ScriptError("a hero on no team has no quests: put them on a team")
         await quests.set_marker(self.session, team_id, quest, int(value))
+        return ""
+
+    async def weekly_quest(self, action: str, label: str) -> str:
+        """The talking hero's own team's weekly quest. ``offer``: this week's (made if need be); the label if the game makes none or the team
+        already finished it. ``start``: takes the quest that was offered; the label if there is none to start. ``finish_win`` and
+        ``finish_lose``: end the active quest (even one started last week); the label if none is active."""
+        team_id = await self.team_id()
+        if team_id is None:
+            raise ScriptError("a hero on no team has no weekly quest: put them on a team")
+        if action == "offer":
+            quest = await weekly.offer(self.session, self.session.info.get("weekly_quests") or WeeklyQuests(), team_id)
+            return label if quest is None or quest.status not in (OFFERED, weekly.ACTIVE) else ""
+        if action == "start":
+            quest = await weekly.current(self.session, team_id)
+            if quest is None or quest.status != OFFERED:
+                return label
+            await weekly.start(self.session, quest.id)
+            return ""
+        quest = await weekly.active(self.session, team_id)
+        if quest is None:
+            return label
+        await weekly.finish(self.session, quest.id, action == "finish_win")
         return ""
 
     # --- the guild --------------------------------------------------------------------------------------------------------

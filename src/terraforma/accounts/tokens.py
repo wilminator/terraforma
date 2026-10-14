@@ -22,6 +22,8 @@ LIFETIMES = {
     "password-reset": 60 * 60,
     "twofa-change": 60 * 60,
     "change-email": 60 * 60,
+    # A sign-in a site asked for, waiting while the player logs in (see oidc.routes).
+    "oidc-authorize": 10 * 60,
 }
 
 

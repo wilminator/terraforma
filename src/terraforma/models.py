@@ -235,11 +235,13 @@ from .alliances import models as _alliances  # noqa: E402,F401
 from .relations import models as _relations  # noqa: E402,F401
 from .towns import models as _towns  # noqa: E402,F401
 from .trading import models as _trading  # noqa: E402,F401
+from .storage import models as _storage  # noqa: E402,F401
 from .profiles import models as _profiles  # noqa: E402,F401
 from .challenge import models as _challenge  # noqa: E402,F401
 from .npcs import models as _npcs  # noqa: E402,F401
 from .maps import models as _maps  # noqa: E402,F401
 from .quests import models as _quests  # noqa: E402,F401
+from .quests import weekly_models as _weekly_quests  # noqa: E402,F401
 from .chat import models as _chat  # noqa: E402,F401
 from .guild import models as _guild  # noqa: E402,F401
 from .playtime import models as _playtime  # noqa: E402,F401
@@ -249,3 +251,4 @@ from .storegrant import models as _storegrant  # noqa: E402,F401
 from .fighttags import models as _fighttags  # noqa: E402,F401
 from .fightpages import models as _fightpages  # noqa: E402,F401
 from .voice import models as _voice  # noqa: E402,F401
+from .oidc import models as _oidc  # noqa: E402,F401

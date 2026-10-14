@@ -27,6 +27,7 @@ class Begin:
 class FakeSession:
     def __init__(self, events):
         self.events = events
+        self.info = {}
 
     async def __aenter__(self):
         return self
@@ -42,6 +43,7 @@ async def test_the_commit_happens_before_the_response_is_sent():
     events = []
     app = FastAPI()
     app.state.sessionmaker = lambda: FakeSession(events)
+    app.state.game = None
 
     @app.post("/write")
     async def write(db: Db) -> dict:

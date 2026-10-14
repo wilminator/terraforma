@@ -32,6 +32,7 @@ from .fights.timing_routes import router as timing_router
 from .content.loader import load_content
 from .game import Game
 from .heroes.inventory_routes import router as inventory_router
+from .storage.routes import router as storage_router
 from .heroes.routes import router as heroes_router
 from .alliances.ballot_routes import router as ballots_router
 from .alliances.routes import router as alliances_router
@@ -42,6 +43,7 @@ from .standing.routes import router as standing_router
 from .maps.routes import router as maps_router
 from .monsterplay.routes import fight_router as monster_fight_router
 from .monsterplay.routes import router as monsters_router
+from .oidc.routes import router as oidc_router
 from .market.routes import router as market_router
 from .npcs.routes import router as npcs_router
 from .reach.routes import router as reach_router
@@ -51,6 +53,7 @@ from .fighttags.routes import router as fighttags_router
 from .fightpages.routes import router as fightpages_router
 from .profiles.routes import router as profiles_router
 from .social.routes import router as social_router
+from .quests.weekly_routes import router as weekly_quests_router
 from .relations.rating_routes import router as ratings_router
 from .relations.routes import router as relations_router
 from .chat.routes import router as chat_router
@@ -134,6 +137,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(external_router)
     app.include_router(heroes_router)
     app.include_router(inventory_router)
+    app.include_router(storage_router)
     app.include_router(trading_router)
     app.include_router(pending_drops_router)
     app.include_router(relations_router)
@@ -148,6 +152,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(profiles_router)
     app.include_router(playtime_router)
     app.include_router(social_router)
+    app.include_router(weekly_quests_router)
     app.include_router(fighttags_router)
     app.include_router(fightpages_router)
     app.include_router(challenge_router)
@@ -160,6 +165,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(parties_router)
     app.include_router(maps_router)
     app.include_router(monsters_router)
+    app.include_router(oidc_router)
     app.include_router(monster_fight_router)
 
     @app.get("/api/about")
