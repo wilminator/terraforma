@@ -190,7 +190,7 @@ export class MapScene {
     set("partyY", this.map ? this.tile.y : null);
     set("walking", this.map ? this.walking : null);
     set("animated", this.map ? this.art.filter((art) => art?.player).length : null); // how many of them play an animation
-    set("hero", this.map ? (this.hero ? this.#poseName() : "marker") : null); // the hero's picture (and what it is doing), or the marker
+    set("pose", this.map ? (this.hero ? this.#poseName() : "marker") : null); // the hero's picture (and what it is doing), or the marker
     set("art", this.map ? this.art.filter(Boolean).length : null); // how many of the map's tile kinds have their picture
     this.stage.setAttribute("aria-label", this.map ? this.t("map.label", { map: this.map.title || this.map.map, x: this.tile.x, y: this.tile.y }) : this.t("play.stage"));
   }

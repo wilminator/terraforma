@@ -64,14 +64,14 @@ def test_the_party_is_drawn_as_its_first_hero_who_stands_and_faces_the_way_it_wa
     play(page, live_server)
     at(page, 0, 0)
     # (the example's fighter has map art: the stage says which pose it draws, and a marker only stands in for a hero with none)
-    expect(page.locator("#stage")).to_have_attribute("data-hero", "stand_down")
+    expect(page.locator("#stage")).to_have_attribute("data-pose", "stand_down")
     page.locator("#stage").focus()
     page.keyboard.press("ArrowRight")
     at(page, 1, 0)
-    expect(page.locator("#stage")).to_have_attribute("data-hero", "stand_right")
+    expect(page.locator("#stage")).to_have_attribute("data-pose", "stand_right")
     page.keyboard.press("s")
     at(page, 1, 1)
-    expect(page.locator("#stage")).to_have_attribute("data-hero", "stand_down")
+    expect(page.locator("#stage")).to_have_attribute("data-pose", "stand_down")
 
 
 def test_a_tap_walks_the_party_there_and_the_server_says_no_to_a_wall(page, live_server, console):
