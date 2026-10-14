@@ -321,3 +321,21 @@ def test_a_round_shown_to_the_end_counts_as_play_time(page, live_server):
     page.wait_for_timeout(500)
     assert seen == [(200, '{"round":1}')], "once, for the round shown"
     assert page.request.get("/api/play-time").json()["seconds"] >= 10
+
+
+def test_a_fighter_whose_personality_has_art_is_drawn_with_it(page, live_server):
+    """The example's heroes and monsters have personalities with fight art (sheets that play "base"), so each card shows its picture."""
+    fight = into_the_marsh(page, live_server)
+    stage = page.locator("#stage")
+    drawn = [each for each in view_of(page, fight)["fighters"] if each.get("art")]
+    assert len(drawn) == len(view_of(page, fight)["fighters"]) >= 2, "the example gives every fighter art"
+    expect(stage).to_have_attribute("data-sprites", str(len(drawn)), timeout=SLOW)
+    expect(stage).to_have_attribute("data-animated", str(len(drawn)))
+    expect(page.locator(".fighter-sprite")).to_have_count(len(drawn))
+    for sprite in page.locator(".fighter-sprite").all():
+        expect(sprite).to_be_visible()
+    painted = page.evaluate(
+        """() => [...document.querySelectorAll('.fighter-sprite')].map((canvas) =>
+            canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data.some((value, at) => at % 4 === 3 && value > 0))"""
+    )
+    assert all(painted), "every sprite's canvas has pixels on it"

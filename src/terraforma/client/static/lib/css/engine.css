@@ -127,6 +127,8 @@ body.play { height: 100dvh; min-height: 0; overflow: hidden; }
 .fighter[data-side="right"] .fighter-fill { background: #c4584c; }
 .fighter-hp { font-size: 8px; color: #aeb8c4; }
 .fighter-mark { font-size: 8px; text-align: right; }
+.fighter-sprite { grid-column: 1 / -1; justify-self: center; width: 48px; height: 48px; image-rendering: pixelated; }
+.join-offer { margin-top: 0.5rem; padding: 0.5rem; border: 1px solid #f2c94c; border-radius: 3px; }
 .fight-float { position: absolute; right: 4px; top: -2px; font-weight: 700; pointer-events: none; }
 .fight-float.damage { color: #ff7b6b; }
 .fight-float.heal { color: #7be08a; }
