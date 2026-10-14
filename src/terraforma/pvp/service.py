@@ -13,6 +13,7 @@ from ..fights.live import _groups
 from ..fights.models import FightParticipant, FightRecord
 from ..fights.rules import Rules
 from ..heroes import service as heroes
+from ..instances import service as instances
 from ..heroes.models import Hero, Team
 from ..models import Account, Map
 from ..parties import service as parties
@@ -25,9 +26,12 @@ def party_pxp(rules: Rules, fighters) -> int:
     return sum(rules.pxp(fighter) for fighter in fighters)
 
 
-async def refusal(session: AsyncSession, zones: PvpZones, rules: Rules, attacker, target, map_id: int, x: int, y: int) -> str | None:
-    """Why the party of fighters $attacker may not pick a fight with $target at this place, or None if it may."""
+async def refusal(session: AsyncSession, zones: PvpZones, rules: Rules, attacker, target, map_id: int, x: int, y: int, shared_instance: bool = False) -> str | None:
+    """Why the party of fighters $attacker may not pick a fight with $target at this place, or None if it may. Two parties of
+    one shared quest instance ($shared_instance) skip the range window: ``Rules.may_fight_in_shared_instance`` decides."""
     allowed = await zones.allows_pvp(session, map_id, x, y)
+    if shared_instance:
+        return rules.may_fight_in_shared_instance(allowed)
     return rules.may_start_pvp(party_pxp(rules, attacker), party_pxp(rules, target), allowed)
 
 
@@ -60,6 +64,8 @@ async def start_pvp_fight(session: AsyncSession, zones: PvpZones, rules: Rules, 
             raise PvpError("a party the hub has offered a fight to join must answer it first")
     if (mine.map_id, mine.x, mine.y) != (theirs.map_id, theirs.x, theirs.y):
         raise PvpError("that party is not here")
+    if not await instances.same_place(session, mine.id, theirs.id):
+        raise PvpError("that party is not here")
     sides, hero_ids, side_teams = [], [], []
     for party in (mine, theirs):
         fighters, teams = [], {}
@@ -77,7 +83,7 @@ async def start_pvp_fight(session: AsyncSession, zones: PvpZones, rules: Rules, 
         .where(FightParticipant.hero_id.in_(hero_ids), FightRecord.finished.is_(False), FightParticipant.fled.is_(False)).limit(1)
     ) is not None:
         raise PvpError("a hero of one of those parties is already in a fight")
-    if reason := await refusal(session, zones, rules, sides[0], sides[1], mine.map_id, mine.x, mine.y):
+    if reason := await refusal(session, zones, rules, sides[0], sides[1], mine.map_id, mine.x, mine.y, await instances.in_same_shared_instance(session, mine.id, theirs.id)):
         raise PvpError(reason)
     accounts = (await session.scalars(select(Hero.account_id).where(Hero.id.in_(hero_ids)).distinct())).all()
     multiplier = timing.fight_multiplier([await timing.multiplier_for(session, owner) for owner in accounts])
