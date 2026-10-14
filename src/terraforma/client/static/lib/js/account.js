@@ -30,12 +30,13 @@ const next = asked.get("next");
 const oidcRequest = asked.get("request");
 if (next === "oidc" && oidcRequest) WAYS_BACK.oidc = `/oidc/resume?request=${encodeURIComponent(oidcRequest)}`;
 const backTo = Object.hasOwn(WAYS_BACK, next) ? next : null;
-const loginAddress = backTo === "oidc" ? `/account/?next=oidc&request=${encodeURIComponent(oidcRequest)}` : backTo ? `/account/?next=${backTo}` : "/account/";
+const backQuery = backTo === "oidc" ? `?next=oidc&request=${encodeURIComponent(oidcRequest)}` : backTo ? `?next=${backTo}` : "";
+const loginAddress = `/account/${backQuery}`;
 
 // A trip to an external sign-in provider ends here with ?external=<outcome> (and ?reason=<word> for an error); read once, then taken out.
 const external = new URLSearchParams(location.search).get("external");
 const externalReason = new URLSearchParams(location.search).get("reason");
-if (external !== null) history.replaceState(null, "", location.pathname + (backTo ? `?next=${backTo}` : "") + location.hash);
+if (external !== null) history.replaceState(null, "", location.pathname + backQuery + location.hash);
 
 const link = (href, textKey, id) => h("a", { href, id }, t(textKey));
 const toLogin = () => h("p", {}, link(loginAddress, "account.log_in", "to-login"));
@@ -62,7 +63,7 @@ async function showLogin(message = null) {
       if (backTo) return location.assign(WAYS_BACK[backTo]);
       await showAccount(noteOf(login));
     }),
-    await providerButtons(shell, backTo),
+    await providerButtons(shell, backTo, backTo === "oidc" ? oidcRequest : null),
     h("p", { class: "links" }, link("#register", "login.register", "to-register"), " · ", link("#reset", "login.forgot", "to-reset")),
   );
 }

@@ -7,11 +7,11 @@ import { h, replace } from "./dom.js";
 import { field, formCard, problemText } from "./forms.js";
 import { proofField, secondFactorRows } from "./second-factor.js";
 
-/** The "Continue with ..." links under the login form; nothing when the game sets up no provider. $next is a page name (play, profile) or null. */
-export async function providerButtons(shell, next = null) {
+/** The "Continue with ..." links under the login form; nothing when the game sets up no provider. $next is a page name (play, profile, oidc) or null; with oidc, $request is the sign-in provider's signed request. */
+export async function providerButtons(shell, next = null, request = null) {
   const { providers } = await get("/api/external/providers");
   if (!providers.length) return null;
-  const query = next ? `?next=${encodeURIComponent(next)}` : "";
+  const query = next ? `?next=${encodeURIComponent(next)}${request ? `&request=${encodeURIComponent(request)}` : ""}` : "";
   return h(
     "div",
     { class: "card providers", id: "providers" },

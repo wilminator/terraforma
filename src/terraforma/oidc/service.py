@@ -12,7 +12,7 @@ import secrets
 from dataclasses import dataclass
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from sqlalchemy import delete, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -84,6 +84,11 @@ async def subject_for(session: AsyncSession, account_id: int, client_id: str) ->
     except IntegrityError:  # another call made it a moment ago
         pass
     return (await session.get(OidcSubject, (account_id, client_id), populate_existing=True)).subject
+
+
+async def account_for_subject(session: AsyncSession, subject: str) -> int | None:
+    """The account a subject id belongs to (from any site), or None. A subject is unique, so the site need not be named."""
+    return await session.scalar(select(OidcSubject.account_id).where(OidcSubject.subject == subject))
 
 
 # --- codes --------------------------------------------------------------------------------------------------------------

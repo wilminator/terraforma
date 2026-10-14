@@ -345,6 +345,51 @@ def test_the_next_page_survives_the_trip(client, idp):
     assert outcome(come_back(client, sent, idp)) == {"external": "done", "next": "profile"}
 
 
+def waiting_request(client, **changes) -> str:
+    """The signed request the sign-in provider leaves in the login page's address when a site's player must log in first."""
+    return client.app.state.tokens.make("oidc-authorize", 0, client_id="store", redirect_uri="https://store.example/back", **changes)
+
+
+def start_for_site(client, idp, request):
+    return browse(client.get("/api/external/fake/start", params={"next": "oidc", "request": request}, follow_redirects=False), idp)
+
+
+def test_a_sign_in_for_a_site_comes_back_with_the_sites_request(client, idp):
+    new_player(client, idp)
+    client.cookies.clear()
+    request = waiting_request(client)
+    answer = outcome(come_back(client, start_for_site(client, idp, request), idp))
+    assert answer == {"external": "done", "next": "oidc", "request": request}
+
+
+def test_a_first_sign_in_for_a_site_keeps_the_request_through_the_finish_step(client, idp):
+    request = waiting_request(client)
+    answer = outcome(come_back(client, start_for_site(client, idp, request), idp))
+    assert answer == {"external": "finish", "next": "oidc", "request": request}
+    assert expect(finish(client), 200).json()["next"] == "oidc"
+
+
+def test_a_two_factor_sign_in_for_a_site_keeps_the_request_through_the_second_step(client, idp, protected):
+    request = waiting_request(client)
+    answer = outcome(come_back(client, start_for_site(client, idp, request), idp))
+    assert answer == {"external": "twofa", "next": "oidc", "request": request}
+    assert expect(client.post("/api/external/2fa", json={"code": code_now(protected)}), 200).json()["next"] == "oidc"
+
+
+def test_the_sites_request_goes_with_next_oidc_and_must_be_ours(client, idp, later):
+    request = waiting_request(client)
+    start = "/api/external/fake/start"
+    assert client.get(start, params={"next": "oidc"}, follow_redirects=False).status_code == 422, "nothing to come back to"
+    assert client.get(start, params={"next": "play", "request": request}, follow_redirects=False).status_code == 422
+    assert client.get(start, params={"request": request}, follow_redirects=False).status_code == 422
+    assert client.get(start, params={"next": "oidc", "request": "r" * 2049}, follow_redirects=False).status_code == 422
+    # Not signed by us, or too old: the trip does not start, and the account page says it expired.
+    forged = client.get(start, params={"next": "oidc", "request": "not-a-token"}, follow_redirects=False)
+    assert outcome(forged) == {"external": "error", "reason": "expired"}
+    later(11 * 60)  # the request waits ten minutes at most
+    assert outcome(client.get(start, params={"next": "oidc", "request": request}, follow_redirects=False)) == {"external": "error", "reason": "expired"}
+
+
 # --- an email that already has an account ----------------------------------------------------------------------------------
 
 def test_an_email_with_an_account_creates_and_links_nothing_and_does_not_say_how_that_account_signs_in(client, idp):

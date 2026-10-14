@@ -18,6 +18,7 @@ from ..challenge.routes import server_call_allowed
 from ..challenge.service import ChallengeError
 from ..mail import Mail
 from ..models import Account
+from ..oidc.service import account_for_subject
 from . import service
 
 router = APIRouter(prefix="/api/server/store")
@@ -27,7 +28,8 @@ MAX_TOKENS = 1_000_000_000
 
 
 class Grant(Strict):
-    account_id: int = Field(ge=1)
+    # The player's opaque sign-in subject id: the ``sub`` the closed sign-in provider (X2) gave the store, never an account number.
+    subject: str = Field(min_length=1, max_length=64)
     # Challenge Tokens to add; negative to take them back (a spend).
     tokens: int = Field(default=0, ge=-MAX_TOKENS, le=MAX_TOKENS)
     # Content key -> quantity (at least 1).
@@ -48,13 +50,16 @@ async def grant(
     rules: GameRules,
     authorization: Annotated[str | None, Header()] = None,
 ) -> dict:
-    """Grants tokens and items to an account. Repeating a call with the same key and the same grant changes nothing and answers
+    """Grants tokens and items to the player the ``subject`` names. Repeating a call with the same key and the same grant changes nothing and answers
     the same, with ``duplicate`` true (and mails nothing again). 404: no such account or item (or the call is off). 409: the key
     was used for a different grant, the balance would go below zero, the purse cap would be passed, or the parcel is full
     (nothing changes). 422: the game's rule refused, with its reason in ``detail``."""
     await server_call_allowed(request, authorization, request.app.state.settings.store_grant_secret, ratelimit.STORE_GRANT_BY_ADDRESS)
+    account_id = await account_for_subject(db, body.subject)
+    if account_id is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such account")
     try:
-        done = await service.grant(db, rules, body.account_id, body.tokens, body.items, body.message, body.key)
+        done = await service.grant(db, rules, account_id, body.tokens, body.items, body.message, body.key)
     except (service.UnknownAccount, service.UnknownItem) as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
     except (service.KeyReused, service.ParcelFull, ChallengeError) as error:
@@ -63,7 +68,7 @@ async def grant(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
     emailed = False
     if body.email and not done.duplicate:
-        emailed = await _tell(request, await db.get(Account, body.account_id), body)
+        emailed = await _tell(request, await db.get(Account, account_id), body)
     return {"balance": done.balance, "duplicate": done.duplicate, "emailed": emailed}
 
 
