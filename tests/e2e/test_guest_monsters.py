@@ -2,6 +2,7 @@
 monsters with the fight scene the game uses, fed by the guest's calls and socket. The example game takes guests (its rules say so). The player
 is Mike, whose hero fights a slime in the marsh of the hub (see test_fight); the guest has a browser of its own."""
 
+from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from playwright.sync_api import expect
 
 from terraforma.fights import live
@@ -30,6 +31,15 @@ def seated(page, live_server, new_page):
     expect(stage).to_have_attribute("data-link", "open", timeout=SLOW)
     expect(stage).to_have_attribute("data-menu", "commands", timeout=SLOW)
     return guest, fight_id
+
+
+def defend_all(guest):
+    """Commands every monster that has not chosen to defend: the menu offers them one at a time, and its buttons are off while one is being sent."""
+    for _ in range(8):
+        try:
+            menu(guest, "defend").click(timeout=2000)  # (waits for the button to be enabled; gone or off: nobody is left to ask)
+        except PlaywrightTimeout:
+            return
 
 
 def test_a_guest_waits_in_the_queue_and_leaves_it(page, new_page, live_server):
@@ -113,8 +123,7 @@ def test_a_guest_leaves_the_finished_fight_and_can_join_again(page, new_page, li
         if view_of(page, fight_id)["over"]:
             break
         command(page, fight_id)
-        for _ in range(guest.locator(".fighter[data-yours='true'][data-alive='true']").count()):
-            menu(guest, "defend").click()
+        defend_all(guest)
         expect(stage).not_to_have_attribute("data-playing", "true", timeout=SLOW)
         guest.wait_for_timeout(200)
     expect(guest.locator("#fight-leave")).to_be_visible(timeout=SLOW)
