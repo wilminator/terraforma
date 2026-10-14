@@ -263,6 +263,18 @@ class DialogState:
             return label
         return ""
 
+    async def instance_won(self, who: str, label: str) -> str:
+        """The label unless the party's instance was won by another party (``other``) or by this party (``self``): a shared dungeon tells
+        the losers this way, whenever they talk to something in it. The label too for a party in no instance."""
+        acting = await self.party()
+        if acting is None:
+            return label
+        instance = await instances.instance_of(self.session, acting.party_id)
+        if instance is None or instance.status != instances.WON:
+            return label
+        mine = instance.winner_party_id == acting.party_id
+        return "" if mine == (who == "self") else label
+
     async def leave_instance(self, label: str) -> str:
         """The party leaves its instance and stands where it came in: the label if it was in none, or cannot (in a fight)."""
         acting = await self.party()

@@ -25,11 +25,14 @@ async def crypt(db, hero):
 def test_the_instance_tags_are_checked_when_the_text_is_placed():
     parse("`enter_instance,rats,private,crypt,1,1,1,0,no``label,no`")
     parse("`complete_instance,no``leave_instance,no``label,no`")
+    parse("`instance_won,other,no``instance_won,self,no``label,no`")
     for bad in (
         "`enter_instance,rats,solo,crypt,1,1,1,0,end`",  # not a mode
         "`enter_instance,rats,shared,crypt,1,1,0,0,end`",  # no room for anyone
         "`enter_instance,rats,shared,crypt,1,1,2,end`",  # too few parameters
         "`complete_instance,nowhere`",  # label never defined
+        "`instance_won,both,end`",  # not a winner
+        "`instance_won,other`",  # too few parameters
     ):
         with pytest.raises(ScriptError):
             parse(bad)
@@ -100,3 +103,24 @@ async def test_a_dialog_pays_tokens_up_to_the_purse_and_never_to_an_admin(db):
     await challenge.set_admin(db, p.zed.id)
     assert await says(db, p.heroes[2], pay, Small()) == "No room.", "an admin earns none this way"
     assert await challenge.balance(db, p.zed.id) == 0
+
+
+async def test_a_dialog_tells_the_losers_of_a_shared_instance_and_the_winner_apart(db):
+    p = await a_party(db)
+    hero = p.heroes[0]
+    await crypt(db, hero)
+    other = "`instance_won,other,no`A party beat you to it.`end``label,no`Nobody has."
+    mine = "`instance_won,self,no`You won it.`end``label,no`Not you."
+    assert await says(db, hero, other) == "Nobody has.", "in no instance"
+    assert await says(db, hero, "`enter_instance,rats,shared,crypt,2,3,2,60,no``end``label,no`x") == ""
+    assert await says(db, hero, other) == "Nobody has.", "not won yet"
+    assert await says(db, hero, mine) == "Not you."
+    instance = await instances.instance_of(db, p.party.id)
+    instance.status, instance.winner_party_id = instances.WON, p.party.id + 1000
+    await db.flush()
+    assert await says(db, hero, other) == "A party beat you to it."
+    assert await says(db, hero, mine) == "Not you."
+    instance.winner_party_id = p.party.id
+    await db.flush()
+    assert await says(db, hero, other) == "Nobody has."
+    assert await says(db, hero, mine) == "You won it."

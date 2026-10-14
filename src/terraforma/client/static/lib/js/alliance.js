@@ -138,12 +138,18 @@ function actingAs() {
   return h("div", { class: "field" }, h("label", { for: "act-as" }, t("alliance.act_as")), select);
 }
 
+let drawings = 0;
+
 async function redraw() {
-  [view, people] = await Promise.all([api.get(calls(`?team_id=${ctx.teamId}`)), api.get(calls("/roster"))]);
+  const mine = (drawings += 1);
+  const [asked, roster] = await Promise.all([api.get(calls(`?team_id=${ctx.teamId}`)), api.get(calls("/roster"))]);
+  if (mine !== drawings) return; // a newer drawing was started while this one asked: it shows the later state
+  [view, people] = [asked, roster];
   ctx.can = new Set(view.can);
   const cards = [];
   if (ctx.can.has("speak")) cards.push(await pageCard(shell, ctx));
   cards.push(await ballotsCard(shell, ctx), await relationsCard(shell, ctx));
+  if (mine !== drawings) return;
   document.title = `${view.name} · ${shell.game.game ?? "TerraForma"}`;
   replace(
     main,
