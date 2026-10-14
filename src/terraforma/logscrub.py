@@ -15,6 +15,8 @@ PATTERNS = [
     (re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+"), REDACTED),
     # key=value pairs for anything secret, in query strings, forms or text
     (re.compile(r"(?i)\b(password|passwd|token|secret|csrf[_-]?token|code|otp|session|state)=([^&\s\"']+)"), r"\1=" + REDACTED),
+    # the sign-in provider's secrets, which a word boundary in front of "secret" or "token" would miss after an underscore
+    (re.compile(r"(?i)\b(client_secret|code_verifier|access_token|id_token)=([^&\s\"']+)"), r"\1=" + REDACTED),
     # "key": "value" in JSON
     (re.compile(r'(?i)("(?:password|token|secret|csrf_token|code|otp)"\s*:\s*)"[^"]*"'), r'\1"' + REDACTED + '"'),
     # headers carrying credentials

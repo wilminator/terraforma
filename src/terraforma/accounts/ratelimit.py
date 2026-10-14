@@ -57,6 +57,11 @@ MONSTER_QUEUE_BY_ACCOUNT = Limit("monster-queue", 600, 60 * 60)
 PUBLIC_PROFILE_BY_ADDRESS = Limit("profile-public", 120, 15 * 60)
 # The server-to-server Challenge Token purchase call has no login: every attempt counts against the caller's address.
 CHALLENGE_PURCHASE_BY_ADDRESS = Limit("challenge-purchase", 600, 15 * 60)
+# The sign-in provider (oidc): the browser's authorize step, and the site's own server calling token and userinfo. All have no
+# login, so each counts against the caller's address (a store's server shares one address across all its players).
+OIDC_AUTHORIZE_BY_ADDRESS = Limit("oidc-authorize", 120, 15 * 60)
+OIDC_TOKEN_BY_ADDRESS = Limit("oidc-token", 300, 15 * 60)
+OIDC_USERINFO_BY_ADDRESS = Limit("oidc-userinfo", 600, 15 * 60)
 # The server-to-server store grant call has no login either.
 STORE_GRANT_BY_ADDRESS = Limit("store-grant", 600, 15 * 60)
 # Every limit above, for housekeeping: new limits go in here too (a test checks that none is missing).

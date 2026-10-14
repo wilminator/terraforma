@@ -208,5 +208,6 @@ def test_every_housekeeping_job_is_registered_and_so_runs():
         "ended_standing_statuses",
         "expired_remembered_browsers",
         "unconfirmed_security_keys",
+        "expired_oidc_codes_and_tokens",
         "old_unkept_fights",
     ]
