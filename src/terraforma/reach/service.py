@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..fights.rules import Rules
+from ..instances import service as instances
 from ..heroes.models import Hero, Team, TeamMember
 from ..maps.models import EDGE, MapObject
 from ..models import Map
@@ -78,7 +79,7 @@ async def nearby(session: AsyncSession, reach: Reach, rules: Rules, hero: Hero, 
         mine = await party_of_hero(session, hero)
         close = []
         for party in await _candidate_parties(session, reach, hero, mine):
-            if await towns.visit_of_party(session, party.id) is None and await reach.party(session, action, hero, party) is None:
+            if await towns.visit_of_party(session, party.id) is None and await instances.same_place(session, None if mine is None else mine.id, party.id) and await reach.party(session, action, hero, party) is None:
                 close.append((distance(found, here, (party.x, party.y)), party))
         close.sort(key=lambda pair: (pair[0], pair[1].id))
         entries += [{"kind": "party", "id": party.id, "teams": await _shown_teams(session, party.id), "distance": away} for away, party in close]

@@ -48,7 +48,7 @@ async def talk(hero_id: Id, npc_id: Id, account: ActingAccount, db: Db, npcs: Ga
     Answers with what was said (``events``: text and cues, in order), what the NPC asks (``prompt``) and whether it ended."""
     try:
         hero = await heroes.own_hero(db, account, hero_id)
-        return await service.talk(db, npcs, reach, hero, npc_id, partial(inns.rest, db, inn, rules, economy), economy)
+        return await service.talk(db, npcs, reach, hero, npc_id, partial(inns.rest, db, inn, rules, economy), economy, rules)
     except (heroes.HeroError, service.NpcError) as error:
         raise refuse(error) from error
 
@@ -68,7 +68,7 @@ async def next_step(hero_id: Id, body: Next, account: ActingAccount, db: Db, npc
     """Goes on: Next (no choice), or the answer picked. A warp into a town suspends the party there."""
     try:
         hero = await heroes.own_hero(db, account, hero_id)
-        frame = await service.answer(db, npcs, reach, hero, body.choice, partial(inns.rest, db, inn, rules, economy), economy)
+        frame = await service.answer(db, npcs, reach, hero, body.choice, partial(inns.rest, db, inn, rules, economy), economy, rules)
         await towns.settle_hero(db, town, hero.id)
         return frame
     except (heroes.HeroError, service.NpcError) as error:

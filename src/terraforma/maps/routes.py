@@ -109,7 +109,7 @@ async def check_in(party_id: PartyId, body: TileRef, db: Db, account: ActingAcco
     into a town is suspended there (the game's ``Towns.is_town``): the answer says ``town`` and the route is over."""
     try:
         async def run(hero, edge: MapObject) -> dict:
-            return await npcs.start(db, hooks, hero, edge, partial(inns.rest, db, inn, rules, economy), economy)
+            return await npcs.start(db, hooks, hero, edge, partial(inns.rest, db, inn, rules, economy), economy, rules)
 
         return await walking.step(db, rules, account.id, party_id, body.x, body.y, run, town, relations)
     except walking.WalkError as error:
@@ -124,7 +124,7 @@ async def use_object(hero_id: HeroId, object_id: ObjectId, db: Db, account: Acti
     or in a fight, and 404 for a thing that isn't there."""
     try:
         hero = await heroes.own_hero(db, account, hero_id)
-        frame = await objects.use(db, hooks, reach, hero, object_id, partial(inns.rest, db, inn, rules, economy), economy)
+        frame = await objects.use(db, hooks, reach, hero, object_id, partial(inns.rest, db, inn, rules, economy), economy, rules)
         await towns.settle_hero(db, town, hero.id)  # (a door may have warped the party into a town)
         return frame
     except objects.NoSuchObject as error:
