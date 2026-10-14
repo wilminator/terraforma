@@ -46,6 +46,14 @@ key_dir = "keys"
 # POST /api/server/challenge/purchase, sending "Authorization: Bearer <this secret>". Empty or absent: the call is off.
 # challenge_purchase_secret = ""
 
+# Sites that may sign players in with their game account (the engine as an OpenID Connect provider, for the store).
+# Leave this out and the provider is off. See README, "The engine as a sign-in provider".
+# [[oidc_clients]]
+# client_id = "store"
+# client_secret = "at least 32 random characters"
+# redirect_uris = ["https://store.example.com/callback"]
+# name = "The store"
+
 # A game whose store grants Challenge Tokens and items sets this (at least 32 characters). The store's backend then calls
 # POST /api/server/store/grant, sending "Authorization: Bearer <this secret>". Empty or absent: the call is off.
 # store_grant_secret = ""

@@ -1,11 +1,17 @@
 """The account pages in a real browser: registering, confirming by link, resetting a password, the handle, the email address and
 two-factor login, the way a player does them (the calls behind them are tests/test_accounts.py and tests/test_twofa.py)."""
 
+import base64
+import hashlib
 import re
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 from playwright.sync_api import expect
 
 from terraforma.accounts import twofa
+from terraforma.accounts.service import set_handle
+from terraforma.models import Account
+from terraforma.settings import OidcClient
 
 from .conftest import PASSWORD
 from .test_smoke import log_in
@@ -264,3 +270,26 @@ def test_a_remembered_browser_skips_the_second_factor_until_it_is_forgotten(page
     page.get_by_label("Password").fill(PASSWORD)
     page.get_by_role("button", name="Log in").click()
     expect(page.locator("#login-code")).to_be_visible()
+
+
+def test_a_site_that_asks_for_a_sign_in_sends_a_logged_out_player_through_the_login_and_back(page, live_server):
+    """The sign-in provider (tests/test_oidc_provider.py has the rest): authorize, the login page, then back to the site with a code."""
+    back = f"{live_server.url}/account/"  # a page of the game itself stands in for the site's address
+    live_server.app.state.settings = live_server.app.state.settings.model_copy(
+        update={"oidc_clients": [OidcClient(client_id="store", client_secret="s" * 32, redirect_uris=[back])]}
+    )
+    account_id = live_server.make_account("Mike").id
+
+    async def choose_handle(db):
+        await set_handle(db, await db.get(Account, account_id), "Sir Mike")
+
+    live_server.in_db(choose_handle)
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(b"v" * 50).digest()).rstrip(b"=").decode()
+    asked = {"response_type": "code", "client_id": "store", "redirect_uri": back, "scope": "openid", "state": "xyz", "code_challenge": challenge, "code_challenge_method": "S256"}
+    page.goto("/oidc/authorize?" + urlencode(asked))
+    expect(page).to_have_url(re.compile(r"/account/\?next=oidc&request="))
+    log_in(page, "Mike")
+    # The login hands the player on to /oidc/resume, which sends them to the site's address with the code.
+    page.wait_for_url(re.compile(r"[?&]code="), timeout=30_000)
+    query = parse_qs(urlsplit(page.url).query)
+    assert query["state"] == ["xyz"] and query["iss"] == [live_server.settings.public_url]

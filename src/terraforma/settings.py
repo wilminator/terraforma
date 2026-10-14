@@ -46,6 +46,38 @@ class MailSettings(BaseModel):
     from_address: str
 
 
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "[::1]"}
+
+
+class OidcClient(BaseModel):
+    """A site allowed to sign players in with this game (see README, "The engine as a sign-in provider")."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    client_id: str = Field(pattern=r"^[A-Za-z0-9_.-]{3,64}$")
+    # What the site sends to the token call. At least 32 characters.
+    client_secret: str = Field(min_length=32)
+    # The addresses the player may be sent back to, compared exactly (no patterns, no prefixes).
+    redirect_uris: list[str] = Field(min_length=1)
+    # Only for the game maker's own notes in settings.toml.
+    name: str = ""
+
+    @field_validator("redirect_uris")
+    @classmethod
+    def _exact_addresses(cls, values: list[str]) -> list[str]:
+        for value in values:
+            try:
+                parts = urlsplit(value)
+                host = parts.hostname
+            except ValueError as error:
+                raise ValueError(f"{value!r} is not an address") from error
+            if parts.scheme not in {"https", "http"} or not parts.netloc or not host or "@" in parts.netloc or parts.fragment:
+                raise ValueError(f"{value!r} must be a full https:// address with no user name and no #fragment")
+            if parts.scheme == "http" and (f"[{host}]" if ":" in host else host) not in LOCAL_HOSTS:
+                raise ValueError(f"{value!r} must use https (plain http is for localhost only)")
+        return values
+
+
 def _web_address(value: str, setting: str) -> str:
     """$value if it is an https address (http only for this computer, for development)."""
     parts = urlsplit(value)
@@ -138,6 +170,9 @@ class Settings(BaseModel):
     # A game that sells Challenge Tokens sets this (at least 32 characters) and its backend credits purchases with
     # POST /api/server/challenge/purchase, sending it as "Authorization: Bearer <secret>". Empty: the call is off.
     challenge_purchase_secret: str = ""
+    # The sites that may sign players in with this game (the engine as an OpenID Connect provider, for the game's store).
+    # Empty: the provider is off and none of its addresses exist.
+    oidc_clients: list[OidcClient] = []
     # Providers a player may sign in with instead of a password (each a [[external_providers]] section).
     external_providers: list[ExternalProvider] = []
 
@@ -159,6 +194,14 @@ class Settings(BaseModel):
         if value and len(value) < 32:
             raise ValueError(f"{info.field_name} must be at least 32 characters (or empty, to turn the call off)")
         return value
+
+    @field_validator("oidc_clients")
+    @classmethod
+    def _clients_are_unique(cls, values: list[OidcClient]) -> list[OidcClient]:
+        ids = [value.client_id for value in values]
+        if len(ids) != len(set(ids)):
+            raise ValueError("oidc_clients: every client_id must be different")
+        return values
 
 
 def load_settings(path: str | os.PathLike | None = None) -> Settings:

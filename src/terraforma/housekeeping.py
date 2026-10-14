@@ -24,6 +24,7 @@ from .fights.pending import OPEN, expire
 from .fights.rules import Rules
 from .fighttags import service as fighttags
 from .models import RateLimitHit, RememberedBrowser, WebauthnKey
+from .oidc import service as oidc
 from .relations.models import ANSWERED, DISMISSED, RatingPrompt
 from .settings import Settings
 from .standing import service as standing
@@ -145,6 +146,12 @@ async def unconfirmed_security_keys(session: AsyncSession, now: int, settings: S
     return (
         await session.execute(delete(WebauthnKey).where(WebauthnKey.confirmed_at.is_(None), WebauthnKey.created_at <= cutoff))
     ).rowcount
+
+
+@job
+async def expired_oidc_codes_and_tokens(session: AsyncSession, now: int, settings: Settings, rules: Rules | None = None) -> int:
+    """Sign-in provider codes and access tokens that have run out. Nothing accepts them any more; this only tidies the rows."""
+    return await oidc.remove_expired(session, now)
 
 
 @job

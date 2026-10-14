@@ -22,6 +22,7 @@ from .market.hooks import Market
 from .guild.hooks import Guild
 from .quests.hooks import WeeklyQuests
 from .heroes.hooks import Roster, Start
+from .storage.hooks import NoStorage, Storage
 from .npcs.hooks import Npcs
 from .npcs.inn import Inn
 from .reach.hooks import Reach
@@ -66,6 +67,8 @@ class Game:
     weekly_quests: WeeklyQuests = field(default_factory=WeeklyQuests)
     # What may change about the heroes of a saved team: removing, replacing and moving them (refused by default; a game may sell it).
     roster: Roster = field(default_factory=Roster)
+    # Whether teams (or accounts) keep items in storage beside the heroes' packs, how much, and when it may be used (none, by default).
+    storage: Storage = field(default_factory=NoStorage)
     # Two things about logging in: how long a browser that proved a second factor may skip it, and the note a player with a single
     # second factor sees (see accounts.hooks).
     sign_in: SignIn = field(default_factory=SignIn)
