@@ -82,11 +82,17 @@ def refuse(error: live.FightError) -> HTTPException:
 @router.post("/{fight_id}/commands", status_code=status.HTTP_202_ACCEPTED)
 async def fight_command(fight_id: FightId, body: FightCommand, request: Request, account: ActingAccount) -> dict:
     """Commits a command for one of the caller's fighters. The round plays at once if that was the last one needed."""
+    return await play_command(request, fight_id, account.id, body)
+
+
+async def play_command(request: Request, fight_id: int, holder: int, body: FightCommand) -> dict:
+    """Commits $body for a fighter $holder plays (an account's id; a guest who commands monsters is a negative number), and plays
+    the round at once if that was the last command needed. The calls that reach it have each checked who the caller is."""
     rules, channels = rules_of(request), request.app.state.fights
     try:
         async with request.app.state.sessionmaker() as session, session.begin():
             record = await live.get_record(session, fight_id)
-            number = await live.submit_command(session, record, account.id, body.fighter.address(), COMMANDS[body.command], body.using, body.target.address(), rules)
+            number = await live.submit_command(session, record, holder, body.fighter.address(), COMMANDS[body.command], body.using, body.target.address(), rules)
             result = await live.resolve_round(session, record, rules, economy_of(request), relations_of(request)) if await live.everyone_committed(session, record, rules) else None
     except live.FightError as error:
         raise refuse(error) from error

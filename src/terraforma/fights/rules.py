@@ -379,12 +379,15 @@ class Rules:
     #: How long a volunteer for the monsters' side may go without checking in (``monsterplay.service.check_in``) before the queue
     #: stops counting them as waiting.
     monster_checkin_seconds: int = 60
+    #: How long a guest (someone who plays monsters without logging in) stays known after they were last heard from.
+    monster_guest_seconds: int = 4 * 3600
 
     def may_queue_monsters(self, volunteer) -> str | None:
         """Whether $volunteer (a ``monsterplay.facts.Volunteer``, whose ``account_id`` may be None for someone not logged in) may
         wait to command monsters: None if they may, otherwise why not. By default a logged-in account with a team and no fight
         unfinished (as a hero or as a monster player), and not locked out (an admin is exempt from a lockout). A game that
-        accepts people who are not logged in overrides this and tells them apart by what its own code put in the volunteer."""
+        accepts people who are not logged in overrides this and lets in a ``volunteer`` whose ``guest_id`` is set (it has no account, no
+        teams, no lockout; it earns no tokens whatever the rules say)."""
         if volunteer.account_id is None:
             return "Log in to play monsters."
         if not volunteer.team_ids:

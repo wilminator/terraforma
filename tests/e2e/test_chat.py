@@ -38,6 +38,32 @@ def test_a_player_says_something_and_it_appears_in_the_channel(page, live_server
     expect(page.locator("#chat-body")).to_have_value("")
 
 
+def test_a_line_asked_for_twice_at_once_appears_once(page, live_server):
+    start(page, live_server)
+    expect(page.locator("#chat-lines")).to_contain_text("hello everyone")
+    held = []
+
+    def hold_the_first(route):  # the first ask for lines waits, as a slow answer would
+        if held:
+            route.continue_()
+        else:
+            held.append(route)
+
+    page.route("**/api/chat/messages**", hold_the_first)
+    page.locator("#chat-body").fill("hi there")
+    page.get_by_role("button", name="Send").click()
+    expect(page.locator("#chat-body")).to_have_value("")
+    while not held:
+        page.wait_for_timeout(20)
+    tab(page, "Nearby")
+    tab(page, "Chat")  # asks again, and that answer is not held
+    mine = page.locator("#chat-lines [data-mine='yes']")
+    expect(mine).to_have_count(1)
+    held[0].continue_()  # the late answer holds the same line
+    page.wait_for_timeout(500)
+    expect(mine).to_have_count(1)
+
+
 def test_the_channel_list_has_the_everyone_nearby_and_town_channels(page, live_server):
     start(page, live_server)
     expect(page.locator("#chat-channel option")).to_have_text(["Nearby", "Town", "Everyone"])

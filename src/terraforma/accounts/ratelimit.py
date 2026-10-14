@@ -54,6 +54,9 @@ SOCIAL_BY_ACCOUNT = Limit("social", 120, 60 * 60)
 # Every search of the directory counts against the searcher.
 DIRECTORY_BY_ACCOUNT = Limit("directory", 60, 15 * 60)
 MONSTER_QUEUE_BY_ACCOUNT = Limit("monster-queue", 600, 60 * 60)
+# Guests who play monsters have no account: every call of theirs counts against the caller's address, and making one counts apart.
+MONSTER_GUEST_BY_ADDRESS = Limit("monster-guest", 600, 60 * 60)
+MONSTER_GUEST_JOIN_BY_ADDRESS = Limit("monster-guest-join", 20, 60 * 60)
 # Public pages need no login: this keeps anyone from hunting for tokens.
 PUBLIC_PROFILE_BY_ADDRESS = Limit("profile-public", 120, 15 * 60)
 # The server-to-server Challenge Token purchase call has no login: every attempt counts against the caller's address.
