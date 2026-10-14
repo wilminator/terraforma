@@ -75,7 +75,7 @@ export function nearbyPanel(shell, roster) {
   let shownFor = null;
   roster.onChange(() => {
     draw();
-    if (roster.heroId !== shownFor) {
+    if (roster.heroId !== shownFor && !element.hidden) { // (a hidden panel asks the server nothing; opening it does)
       shownFor = roster.heroId;
       refresh();
     }

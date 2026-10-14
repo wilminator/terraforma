@@ -8,6 +8,7 @@
 // no movement.
 
 import * as api from "./api.js";
+import { drawFrame, frameRect } from "./art.js";
 import { h, replace } from "./dom.js";
 import { FightLink } from "./fight-link.js";
 import { FightMenu } from "./fight-menu.js";
@@ -16,6 +17,7 @@ import { FightModel } from "./fight-model.js";
 const SPEEDS = [1, 2, 4];
 const READ_MS = 650; // how long an event stays before the next at normal speed
 const MOVE_MS = 260; // how long one movement takes at normal speed
+const SPRITE = 48; // the size of a fighter's picture on the card (the sprite sheet's frame is scaled to it)
 
 const reducedMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
 
@@ -38,6 +40,8 @@ export class FightScene {
     this.shown = 0; // how many events have been played since the scene opened
     this.run = 0; // changes when the scene closes, so a playback in progress stops
     this.moving = new Set(); // the animations in flight
+    this.sprites = new Map(); // fighter key -> { canvas, loaded, frame, player } for each fighter whose personality has fight art
+    this.stopSprites = () => {};
     this.linkState = "closed";
     this.opened = 0;
   }
@@ -80,6 +84,7 @@ export class FightScene {
     for (const each of this.moving) each.cancel();
     this.moving.clear();
     this.menu.detach();
+    this.#clearSprites();
     this.layer?.remove();
     this.layer = null;
     this.model = null;
@@ -248,6 +253,7 @@ export class FightScene {
   }
 
   #build() {
+    this.#clearSprites();
     this.layer?.remove();
     this.cards = new Map();
     const sides = { left: h("div", { class: "fight-side left" }), right: h("div", { class: "fight-side right" }) };
@@ -255,6 +261,7 @@ export class FightScene {
       const card = h(
         "div",
         { class: "fighter", "data-fighter": key, "data-side": this.#side(fighter) },
+        fighter.art ? this.#spot(key) : null,
         h("span", { class: "fighter-name" }, fighter.name),
         h("span", { class: "fighter-bar" }, h("span", { class: "fighter-fill" })),
         h("span", { class: "fighter-hp" }),
@@ -278,6 +285,67 @@ export class FightScene {
     this.host.append(this.layer);
     this.menu.attach(this.layer);
     this.#paint();
+    this.#picture(this.run);
+  }
+
+  // --- pictures ------------------------------------------------------------------------------------
+
+  /** The place on a card where a fighter's picture goes once it has loaded (a fighter whose picture fails to load stays a plain card). */
+  #spot(key) {
+    const canvas = h("canvas", { class: "fighter-sprite", width: SPRITE, height: SPRITE, "aria-hidden": "true", hidden: true });
+    this.sprites.set(key, { canvas, loaded: null, frame: 0, player: null });
+    return canvas;
+  }
+
+  #clearSprites() {
+    this.stopSprites();
+    this.stopSprites = () => {};
+    this.sprites = new Map();
+  }
+
+  /** Loads the fight art of every fighter that has some and draws it; a fighter's art that plays "base" is redrawn whenever the clock shows
+   * another frame (one timer serves them all, and none runs for a player who asks for less motion). */
+  async #picture(run) {
+    const entries = [...this.sprites];
+    await Promise.all(
+      entries.map(async ([key, sprite]) => {
+        const art = this.model.fighter(key)?.art;
+        const loaded = await this.shell.art.load(art).catch(() => null);
+        if (!loaded?.source || run !== this.run || this.sprites.get(key) !== sprite) return;
+        sprite.loaded = loaded;
+        sprite.frame = typeof art === "object" ? (art.frame ?? 0) : 0;
+        sprite.player = loaded.animations && art.animations && !reducedMotion() ? loaded.animations.play("base") : null;
+        sprite.canvas.hidden = false;
+        this.#drawSprite(sprite);
+      }),
+    );
+    if (run !== this.run) return;
+    const playing = [...this.sprites.values()].filter((each) => each.player);
+    this.stopSprites = playing.length
+      ? this.shell.art.clock.subscribe(() => {
+          for (const each of playing) {
+            const at = each.player.frameAt().index;
+            if (at !== each.shown) this.#drawSprite(each);
+          }
+        })
+      : () => {};
+    this.#data();
+  }
+
+  #drawSprite(sprite) {
+    const { canvas, loaded } = sprite;
+    const context = canvas.getContext("2d");
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    if (sprite.player) {
+      const shows = sprite.player.frameAt();
+      sprite.shown = shows.index;
+      drawFrame(context, loaded, shows.frame, 0, 0, SPRITE, SPRITE, shows.ops);
+    } else if (loaded.frame) {
+      const rect = frameRect(loaded, sprite.frame);
+      context.drawImage(loaded.source, rect.x, rect.y, rect.w, rect.h, 0, 0, SPRITE, SPRITE);
+    } else {
+      context.drawImage(loaded.source, 0, 0, SPRITE, SPRITE);
+    }
   }
 
   #say(key, values) {
@@ -317,6 +385,8 @@ export class FightScene {
     set("over", this.model ? this.model.over : null);
     set("speed", this.model ? this.speed : null);
     set("shown", this.model ? this.shown : null);
+    set("sprites", this.model ? [...this.sprites.values()].filter((each) => each.loaded).length : null); // how many fighters show their picture
+    set("animated", this.model ? [...this.sprites.values()].filter((each) => each.player).length : null); // how many of them play an animation
     if (!this.model) {
       set("menu", null);
       set("hero", null);
