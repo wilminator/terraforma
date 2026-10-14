@@ -368,6 +368,20 @@ Each team may be offered one quest a week (weeks run Monday 00:00 UTC to the nex
 - **Generated quests are kept.** Every generated quest stays as a row (a deleted team leaves them behind, owned by nobody) so it can become a template. An admin lists them with `GET /api/admin/weekly-quests` (`promoted=true|false`, `after`, `limit`) and promotes one with `POST /api/admin/weekly-quests/{id}/promote` (`key`, and optionally `name`, `min_level`, `max_level`, `weight`, `spec`). Without tweaks the template keeps the quest's name and spec and fits teams at exactly its level; each generated quest can be promoted once.
 - **Templates by hand** are `quest_templates.json` in the seed (see Seed data).
 
+### Ranks and gates
+
+A team has **points** and a **rank** with each guild, kept per team like quests (`guild_standing`). A guild is just a name the game picks in its dialog text (`vanguard`, `crown`); the engine knows no guilds. A rank is a whole number, 0 the lowest and 99 the highest; the game names its own (Vanguard Tavern: E is 0, D 1, C 2, B 3, A 4, S 5). Points only grow, and a rank changes only when the dialog sets it, so a promotion quest is a dialog that checks the points, runs the quest and then sets the rank. Six dialog tags (see Dialog text in `npcs/script.py`) are the whole interface:
+
+| Tag | Does |
+|---|---|
+| `add_guild_points,guild,n` | the talking hero's team earns n points (1 or more) |
+| `set_guild_rank,guild,rank` | the team now holds that rank |
+| `guild_points,guild,op,n,scope,label` | the label unless the team's points compare true with n |
+| `guild_rank,guild,op,n,scope,label` | the label unless the team's rank compares true with n |
+| `party_gate,guild,average,lowest,highest,pxp_min,pxp_max,label` | the label unless the party passes the gate |
+
+`scope` and `op` are those of `quests`. **`party_gate`** is a quest's entry rule for the party the hero acts in: the teams' ranks average at least `average` (a number such as 1.5), every team has at least `lowest`, the best team has at least `highest`, and the party's strength (`Rules.pxp` added up over the heroes of its teams) is at least `pxp_min` and at most `pxp_max` (0 for no ceiling). A D average with at least one B is `party_gate,vanguard,1,0,3,0,0,no`. A gate that asks for strength needs the game's `Rules`, which the dialog routes pass in. A team that is deleted takes its standing with it.
+
 ## Towns
 
 In a *town* a party comes apart. The game says which places are towns (`Game(towns=...)`, `terraforma.towns.hooks.Towns`: `is_town(session, map_id, x, y)`, nowhere by default; the map will ask it as a party moves), and `terraforma.towns.service.enter_town` suspends a party there: it is split into groups of its teams (`Towns.groups`: by default one team each; a game can keep a player's own teams together, for example because the player paid for it), and each team shops and rests on its own. The party can't be joined, merged or have a team leave while it is apart (`parties.service` refuses), with one exception: the guild adds teams in town (see The adventurers guild).

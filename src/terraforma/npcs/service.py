@@ -10,6 +10,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..economy import Economy
+from ..fights.rules import Rules
 from ..heroes.field import in_running_fight
 from ..heroes.models import Hero, Team, TeamMember
 from ..maps.models import EDGE, MapObject
@@ -131,7 +132,7 @@ async def may_talk(session: AsyncSession, reach: Reach, source: Npc | MapObject,
         raise NpcError(reason)
 
 
-async def _run(session: AsyncSession, hooks: Npcs, hero: Hero, npc: Npc | MapObject, talk: NpcTalk | None, choice: int | None, rest: Rest | None = None, economy: Economy | None = None) -> dict:
+async def _run(session: AsyncSession, hooks: Npcs, hero: Hero, npc: Npc | MapObject, talk: NpcTalk | None, choice: int | None, rest: Rest | None = None, economy: Economy | None = None, rules: Rules | None = None) -> dict:
     script: Script = parse(npc.dialog)
     who = await who_is(session, hero)
 
@@ -143,7 +144,7 @@ async def _run(session: AsyncSession, hooks: Npcs, hero: Hero, npc: Npc | MapObj
 
     try:
         async with session.begin_nested():  # a step is all or nothing: a spend that fails undoes the rewards before it
-            result = await advance(script, talk.pos if talk else 0, talk.prompt if talk else None, choice, who, tag, DialogState(session, hero, economy))
+            result = await advance(script, talk.pos if talk else 0, talk.prompt if talk else None, choice, who, tag, DialogState(session, hero, economy, rules))
     except ScriptError as error:
         if talk is not None and not isinstance(error, BadAnswer):
             await session.delete(talk)
@@ -161,23 +162,23 @@ async def _run(session: AsyncSession, hooks: Npcs, hero: Hero, npc: Npc | MapObj
     return frame(npc, result["events"], result["prompt"])
 
 
-async def talk(session: AsyncSession, hooks: Npcs, reach: Reach, hero: Hero, npc_id: int, rest: Rest | None = None, economy: Economy | None = None) -> dict:
+async def talk(session: AsyncSession, hooks: Npcs, reach: Reach, hero: Hero, npc_id: int, rest: Rest | None = None, economy: Economy | None = None, rules: Rules | None = None) -> dict:
     """The hero starts talking to the NPC (leaving any other conversation): what it says first, and what it asks."""
     npc = await session.get(Npc, npc_id)
     if npc is None:
         raise NoSuchNpc("there's no such person")
     await may_talk(session, reach, npc, hero)
-    return await start(session, hooks, hero, npc, rest, economy)
+    return await start(session, hooks, hero, npc, rest, economy, rules)
 
 
-async def start(session: AsyncSession, hooks: Npcs, hero: Hero, source: Npc | MapObject, rest: Rest | None = None, economy: Economy | None = None) -> dict:
+async def start(session: AsyncSession, hooks: Npcs, hero: Hero, source: Npc | MapObject, rest: Rest | None = None, economy: Economy | None = None, rules: Rules | None = None) -> dict:
     """The hero's conversation with the NPC or map object begins (any other ends): what it says first, and what it asks. The
     caller has checked the hero may (``talk`` for an NPC, ``maps.objects.use`` for an object)."""
     await session.execute(delete(NpcTalk).where(NpcTalk.hero_id == hero.id))
-    return await _run(session, hooks, hero, source, None, None, rest, economy)
+    return await _run(session, hooks, hero, source, None, None, rest, economy, rules)
 
 
-async def answer(session: AsyncSession, hooks: Npcs, reach: Reach, hero: Hero, choice: int | None, rest: Rest | None = None, economy: Economy | None = None) -> dict:
+async def answer(session: AsyncSession, hooks: Npcs, reach: Reach, hero: Hero, choice: int | None, rest: Rest | None = None, economy: Economy | None = None, rules: Rules | None = None) -> dict:
     """The hero goes on: Next (no $choice), or the index of the answer picked (None cancels where a prompt can be cancelled).
     The hero must still be where they can talk, or the conversation ends."""
     current = await _talk_of(session, hero)
@@ -190,7 +191,7 @@ async def answer(session: AsyncSession, hooks: Npcs, reach: Reach, hero: Hero, c
         await session.delete(current)
         await session.flush()
         raise
-    return await _run(session, hooks, hero, npc, current, choice, rest, economy)
+    return await _run(session, hooks, hero, npc, current, choice, rest, economy, rules)
 
 
 async def activity(session: AsyncSession, hooks: Npcs, reach: Reach, hero: Hero, commands: tuple[str, ...]) -> dict:

@@ -22,6 +22,13 @@ its command, followed by comma separated parameters. Text outside tags is shown.
     quests,category,level,op,n,scope,label  jump to the label unless the quests the team completed compare true with n
     quest_marker,quest,op,value,scope,label  jump to the label unless the team's marker for the quest compares true with value
     set_quest_marker,quest,value   set the talking hero's team's marker for a quest (0 clears it)
+    add_guild_points,guild,n    the talking hero's team earns n points with the guild (a name the game picks)
+    set_guild_rank,guild,rank   the team now holds that rank with the guild (a promotion; 0 is the lowest rank)
+    guild_points,guild,op,n,scope,label  jump to the label unless the points the team has with the guild compare true with n
+    guild_rank,guild,op,n,scope,label    jump to the label unless the team's rank with the guild compares true with n
+    party_gate,guild,average,lowest,highest,pxp_min,pxp_max,label  jump to the label unless the party passes the guild's gate: its
+                         teams' ranks average at least `average` (a number, 1.5 say), every team has at least `lowest`, the best
+                         has at least `highest`, and the party's strength (PXP) is within pxp_min and pxp_max (0: no limit)
     weekly_quest,offer|start|finish_win|finish_lose,label  the talking hero's team's weekly quest (``quests.weekly``): offer this week's
                          (made if the team has none; the label if the game makes none or it is already finished), start it (the label unless it
                          is offered), or finish the active one as won or lost (the label if none is active)
@@ -41,7 +48,7 @@ its command, followed by comma separated parameters. Text outside tags is shown.
     ack                  wait until the player says to go on
     end                  leave the dialog here (the same as jumping to the end label)
 
-The scope of have_item, quests and quest_marker is ``any`` (it holds for any team of the party; for have_item, any hero of it),
+The scope of have_item, quests, quest_marker, guild_points and guild_rank is ``any`` (it holds for any team of the party; for have_item, any hero of it),
 ``lead`` (for the party's leading team) or ``each`` (for every team of the party; for have_item, a hero of every team). The
 level of ``quests`` is a whole number, or ``any`` to count every level. A comparison ``op`` is ``eq``, ``ne``, ``lt``,
 ``le``, ``gt`` or ``ge``. A party is the one the team acts in right now (``towns.service.acting_party``).
@@ -58,7 +65,7 @@ from dataclasses import dataclass
 SCOPES = ("any", "lead", "each")
 OPS = ("eq", "ne", "lt", "le", "gt", "ge")
 #: The tags that read or change the game's state, which the engine itself runs (through ``advance``'s $state).
-STATE_TAGS = ("have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker", "open_party", "add_status", "has_status", "have_tokens", "spend_tokens", "add_gold", "warp", "weekly_quest")
+STATE_TAGS = ("have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker", "add_guild_points", "set_guild_rank", "guild_points", "guild_rank", "party_gate", "open_party", "add_status", "has_status", "have_tokens", "spend_tokens", "add_gold", "warp", "weekly_quest")
 MAX_TEXT = 20000
 MAX_STEPS = 10000  # tags run in one call: a text that jumps in a circle with nothing to show or ask is cut off
 
@@ -81,6 +88,13 @@ def _name(command: str, value: str, what: str) -> None:
 def _one_of(command: str, value: str, allowed: tuple[str, ...], what: str) -> None:
     if value not in allowed:
         raise ScriptError(f"{command} tag: {what} is one of {', '.join(allowed)}, got {value!r}")
+
+
+def _decimal(command: str, value: str, what: str) -> None:
+    """A whole number with at most two decimal places (a rank average)."""
+    whole, _dot, fraction = value.partition(".")
+    if not whole.isascii() or not whole.isdigit() or len(whole) > 9 or len(fraction) > 2 or (fraction and not (fraction.isascii() and fraction.isdigit())):
+        raise ScriptError(f"{command} tag: {what} must be a number such as 2 or 1.5, got {value!r}")
 
 
 def _pairs(parts: list[str]) -> list[str]:
@@ -215,6 +229,30 @@ def check_tag(parts: list[str]) -> list[str]:
         _name(command, args[0], "a quest")
         if _whole(command, args[1], "the value") > 1_000_000:
             raise ScriptError("set_quest_marker tag: a marker is at most 1000000")
+    elif command == "add_guild_points":
+        count(2)
+        _name(command, args[0], "a guild")
+        if _whole(command, args[1], "the points") < 1:
+            raise ScriptError("add_guild_points tag: the points are at least 1")
+    elif command == "set_guild_rank":
+        count(2)
+        _name(command, args[0], "a guild")
+        if _whole(command, args[1], "the rank") > 99:
+            raise ScriptError("set_guild_rank tag: a rank is 0 to 99")
+    elif command in ("guild_points", "guild_rank"):
+        count(5)
+        _name(command, args[0], "a guild")
+        _one_of(command, args[1], OPS, "a comparison")
+        _whole(command, args[2], "the number")
+        _one_of(command, args[3], SCOPES, "a scope")
+        return [args[4]]
+    elif command == "party_gate":
+        count(7)
+        _name(command, args[0], "a guild")
+        _decimal(command, args[1], "the average rank")
+        for value, what in zip(args[2:6], ("the lowest rank", "the highest rank", "the least PXP", "the most PXP (0 for no limit)")):
+            _whole(command, value, what)
+        return [args[6]]
     elif command == "pause":
         count(1)
         _whole(command, args[0], "the wait in milliseconds")
