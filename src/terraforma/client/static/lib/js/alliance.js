@@ -66,9 +66,38 @@ function memberRow(member) {
   );
 }
 
+/** A search of the team directory by the start of a name: each team found has a button that invites it. */
+function teamSearchCard() {
+  const results = h("ul", { class: "rows", id: "team-results", "aria-label": t("alliance.search_results") });
+  const query = field("search-team", t("alliance.search_name"), { maxlength: "24", autocomplete: "off", required: true });
+  const card = formCard(shell, {
+    id: "team-search-form",
+    title: "alliance.search",
+    rows: [h("p", { class: "hint" }, t("alliance.search_hint")), query.row, results],
+    submit: "alliance.search_submit",
+    run: async (self) => {
+      const found = (await api.get(`/api/team-directory?prefix=${encodeURIComponent(query.input.value.trim())}`)).teams;
+      self.note.textContent = found.length ? "" : t("alliance.search_none");
+      replace(
+        results,
+        found.map((team) =>
+          h(
+            "li",
+            { class: "row", "data-found": team.name },
+            h("div", { class: "row-main" }, h("strong", {}, team.name), h("span", { class: "muted small" }, ` ${team.mine ? t("alliance.search_mine") : team.handle ?? ""}`.trimEnd())),
+            h("div", { class: "row-actions" }, h("button", { type: "button", "aria-label": t("alliance.invite_label", { name: team.name }), onclick: () => act(() => api.post(calls("/invite"), { team_id: ctx.teamId, target_team_id: team.id })) }, t("alliance.invite_submit"))),
+          ),
+        ),
+      );
+    },
+  });
+  return card.form;
+}
+
 function inviteCards() {
   const cards = [];
   if (ctx.can.has("invite")) {
+    cards.push(teamSearchCard());
     const number = field("invite-team", t("alliance.invite_number"), { type: "number", min: "1", required: true });
     cards.push(
       formCard(shell, {

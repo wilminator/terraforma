@@ -1,8 +1,15 @@
 """Teams in a real browser: a team is made in the game client's Teams panel, then filled in on its own page; plus the party and nearby panels."""
 
+import dataclasses
 import re
 
+import pytest
 from playwright.sync_api import expect
+
+from terraforma.example import GAME
+from terraforma.heroes.hooks import Start, StartPlace
+from terraforma.models import Map
+from terraforma.world.start import ensure_start
 
 from .test_smoke import log_in
 
@@ -237,3 +244,37 @@ def test_the_menu_lists_the_engines_panels(page, live_server):
     open_game(page, live_server)
     names = page.get_by_role("navigation", name="Game menu").get_by_role("button")
     expect(names).to_have_text(["Teams", "Party", "Nearby", "Talk", "Pack", "Chat"])
+
+
+class Capitals(Start):
+    async def places(self, session, account):
+        return [StartPlace("aldergate", "Aldergate", "aldergate", 5, 6), StartPlace("solhaven", "Solhaven", "solhaven", 2, 3)]
+
+
+with_capitals = pytest.mark.parametrize("live_game", [dataclasses.replace(GAME, start=Capitals())], indirect=True)
+
+
+@with_capitals
+def test_the_first_hero_of_an_empty_team_picks_where_the_team_starts(page, live_server):
+    async def maps(db):
+        hub = await ensure_start(db)
+        for name in ("aldergate", "solhaven"):
+            db.add(Map(world_id=hub.world_id, name=name))
+
+    live_server.in_db(maps)
+    open_game(page, live_server)
+    new_team(page, "Alpha")
+    expect(page.locator("#new-hero-start option")).to_have_text(["Aldergate", "Solhaven"])
+    page.locator("#new-hero-start").select_option("solhaven")
+    add_hero(page, "Aria")
+    expect(page.locator("[data-hero='Aria']")).to_contain_text("on solhaven at (2, 3)")
+    expect(page.locator("#new-hero-start")).to_have_count(0)  # the team has a place now; the next hero stands where it does
+    add_hero(page, "Bryn")
+    expect(page.locator("[data-hero='Bryn']")).to_contain_text("on solhaven at (2, 3)")
+
+
+def test_a_game_with_no_places_to_pick_shows_no_start_picker(page, live_server):
+    open_game(page, live_server)
+    new_team(page, "Alpha")
+    expect(page.locator("#add-hero-form")).to_be_visible()
+    expect(page.locator("#new-hero-start")).to_have_count(0)
