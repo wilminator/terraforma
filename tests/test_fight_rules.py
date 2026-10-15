@@ -499,6 +499,33 @@ def test_changing_weapons_takes_the_old_one_off_first_and_says_what_changed():
     assert hero.equipment["lhand"] == 1
 
 
+def test_a_refused_change_of_weapon_changes_nothing_in_a_fight():
+    hero = fighter("hero", Strength=3)
+    hero.job = "fighter"
+    old, heavy = sword(), ItemSpec("maul", "Maul", ("hand",), requires={"stats": {"Strength": 10}})
+    hero.inventory = [[old, 1], [heavy, 1]]
+    hero.equipment = {"lhand": 0}
+    hero.command, hero.using, hero.target = Command.EQUIP, 1, (0, 0, 0)
+    fight, hero, foe = duel(hero)
+    events = do_combat(fight, RULES, Scripted(100))
+    assert acts(events) == [("Turn", 0, 0, 0)], "the sword isn't even taken off"
+    assert hero.equipment["lhand"] == 0
+
+
+def test_what_a_hero_may_wear_survives_the_fight_snapshot():
+    from terraforma.fights.state import dehydrate, hydrate
+
+    hero = fighter("hero")
+    hero.job = "mage"
+    hero.inventory = [[ItemSpec("rod", "Rod", ("hand",), requires={"jobs": ["mage"], "level": 2, "stats": {}}), 1]]
+    fight, hero, foe = duel(hero)
+    raw = json.loads(json.dumps(dehydrate(fight)))
+    again = hydrate(raw)
+    assert dehydrate(again) == dehydrate(fight)
+    restored = again.get((0, 0, 0))
+    assert restored.job == "mage" and restored.inventory[0][0].requires == {"jobs": ["mage"], "level": 2, "stats": {}}
+
+
 def test_putting_a_weapon_away_and_loading_ammunition():
     hero = archer(5)
     hero.equipment = {}

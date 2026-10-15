@@ -15,7 +15,7 @@ from ..relations.hooks import Relations
 from ..pvp.hooks import PvpZones
 from ..market.hooks import Market
 from ..guild.hooks import Guild
-from ..quests.hooks import WeeklyQuests
+from ..quests.hooks import RotatingQuests, WeeklyQuests
 from ..heroes.hooks import Roster, Start
 from ..npcs.hooks import Npcs
 from ..npcs.inn import Inn
@@ -32,6 +32,7 @@ async def get_db(request: Request) -> AsyncIterator[AsyncSession]:
     async with request.app.state.sessionmaker() as session:
         # What the dialog tags that reach a game's rules need (``npcs.state.DialogState``), without passing it through every call.
         session.info["weekly_quests"] = get_weekly_quests(request)
+        session.info["rotating_quests"] = get_rotating_quests(request)
         async with session.begin():
             yield session
 
@@ -111,6 +112,15 @@ def get_weekly_quests(request: Request) -> WeeklyQuests:
 
 
 GameWeeklyQuests = Annotated[WeeklyQuests, Depends(get_weekly_quests)]
+
+
+def get_rotating_quests(request: Request) -> RotatingQuests:
+    """The game's rotating quest rules (the engine's defaults, which make none and penalize nothing, when the app runs without a game)."""
+    game = request.app.state.game
+    return game.rotating_quests if game else RotatingQuests()
+
+
+GameRotatingQuests = Annotated[RotatingQuests, Depends(get_rotating_quests)]
 
 
 async def current_account(request: Request, db: Db) -> Account:

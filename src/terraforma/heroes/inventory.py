@@ -18,7 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..content.models import Ability, Item, Job
 from ..economy import Economy, TeamGold
-from ..fights.gear import AMMO_SLOTS, SIDED, EquipOutcome, EquipResult, equipment_bonus, find_slot, round_half_up
+from ..fights.content import item_spec
+from ..fights.gear import AMMO_SLOTS, SIDED, EquipOutcome, EquipResult, Wearer, equipment_bonus, find_slot, round_half_up
+from ..fights.rules import Rules
 from .models import Hero, HeroAbility, HeroEquipment, HeroItem
 
 MAX_ITEMS = 12
@@ -122,8 +124,15 @@ async def move_item(session: AsyncSession, hero: Hero, from_position: int, to_po
 
 # --- equipment ---------------------------------------------------------------------------------
 
-async def equip(session: AsyncSession, hero: Hero, position: int, side: int = 0) -> EquipResult:
-    """Wields or wears the stack at $position, on $side (0 left, 1 right) for the sided slots."""
+async def wearer(session: AsyncSession, hero: Hero) -> Wearer:
+    """The hero as ``Rules.equip_refusal`` sees them: job, level and base stats (the hero's own, before any gear)."""
+    job = await session.get(Job, hero.job_id)
+    return Wearer(job.key, hero.level, dict(hero.stats))
+
+
+async def equip(session: AsyncSession, hero: Hero, position: int, side: int = 0, rules: Rules | None = None) -> EquipResult:
+    """Wields or wears the stack at $position, on $side (0 left, 1 right) for the sided slots. The game's $rules (the engine's
+    if left out) may refuse the hero (NOT_ALLOWED, with the reason); that is asked before anything else, so nothing is moved."""
     current = await stacks(session, hero)
     found = next(((stack, item) for stack, item in current if stack.position == position), None)
     if found is None:
@@ -131,6 +140,9 @@ async def equip(session: AsyncSession, hero: Hero, position: int, side: int = 0)
     stack, item = found
     if not item.equip_slots:
         return EquipResult(EquipOutcome.NOT_EQUIPABLE)
+    reason = (rules or Rules()).equip_refusal(await wearer(session, hero), item_spec(item))
+    if reason:
+        return EquipResult(EquipOutcome.NOT_ALLOWED, reason=reason)
     worn = await equipment(session, hero)
     by_id = {other.id: other.position for other, _ in current}
     slots = list(item.equip_slots)
@@ -212,8 +224,11 @@ async def known_abilities(session: AsyncSession, hero: Hero) -> list[Ability]:
 
 # --- what the player sees ---------------------------------------------------------------------------
 
-async def view(session: AsyncSession, hero: Hero, economy: Economy | None = None) -> dict:
-    """What the player sees of a hero's belongings. Gold is the hero's purse in the game's $economy (the team's, by default)."""
+async def view(session: AsyncSession, hero: Hero, economy: Economy | None = None, rules: Rules | None = None) -> dict:
+    """What the player sees of a hero's belongings. Gold is the hero's purse in the game's $economy (the team's, by default).
+    Gear the hero may not wear carries a ``refused`` reason (from the game's $rules: ``Rules.equip_refusal``)."""
+    rules = rules or Rules()
+    who = await wearer(session, hero)
     current = await stacks(session, hero)
     worn = await equipment(session, hero)
     slots_of: dict[int, list[str]] = {}
@@ -224,7 +239,8 @@ async def view(session: AsyncSession, hero: Hero, economy: Economy | None = None
         "gold": await (economy or TeamGold()).balance(session, hero),
         "items": [
             {"position": stack.position, "item": item.key, "name": item.name, "qty": stack.qty,
-             "equipped_in": sorted(slots_of.get(stack.id, []))}
+             "equipped_in": sorted(slots_of.get(stack.id, [])),
+             **({"refused": reason} if item.equip_slots and (reason := rules.equip_refusal(who, item_spec(item))) else {})}
             for stack, item in current
         ],
         "equipment": {slot: position_of[stack_id] for slot, stack_id in sorted(worn.items())},
