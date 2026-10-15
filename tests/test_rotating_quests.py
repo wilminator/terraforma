@@ -18,6 +18,7 @@ from terraforma.quests import service as quests
 from terraforma.quests import weekly
 from terraforma.quests.hooks import GeneratedQuest, RotatingQuests, WeeklyQuests
 from terraforma.quests.rotation_models import QuestSlot, SlotQuest, TeamSlotQuest
+from terraforma.quests.weekly_models import QuestTemplate
 from terraforma.testing import in_app_db, make_team
 from terraforma.world.start import ensure_start
 
@@ -462,3 +463,39 @@ async def test_a_dialog_for_an_unknown_slot_is_an_error_the_dialog_reports(db):
     p = await a_party(db)
     with pytest.raises(NpcError, match="no such quest slot"):
         await npc_says(db, p.heroes[0], check("slot_quest,nowhere,offer,no"))
+
+
+def test_the_slot_template_tag_is_checked_when_the_dialog_is_parsed():
+    from terraforma.npcs.script import ScriptError, parse
+    parse("`slot_template,rank-s,dragon,end`done")
+    for bad, why in (("`slot_template,rank-s,dragon`", "takes 3 parameters"), ("`slot_template,,dragon,end`", "a quest slot key"),
+                     ("`slot_template,rank-s,,end`", "a quest template key"), ("`slot_template,rank-s,dragon,nowhere`", "nowhere")):
+        with pytest.raises(ScriptError, match=why):
+            parse(bad)
+
+
+async def test_a_dialog_can_tell_which_template_the_slot_holds(db):
+    await a_world(db, template("dragon"), template("wyrm"))
+    p = await a_party(db)
+    db.info["rotating_quests"] = Hooks()
+    aria = p.heroes[0]
+    held = (await rotation.offer(db, Hooks(), p.teams[0], "rank-s")).slot_quest_id
+    key = await db.scalar(select(QuestTemplate.key).join(SlotQuest, SlotQuest.template_id == QuestTemplate.id).where(SlotQuest.id == held))
+    other = "wyrm" if key == "dragon" else "dragon"
+    assert await npc_says(db, aria, check(f"slot_template,rank-s,{key},no")) == "yes"
+    assert await npc_says(db, aria, check(f"slot_template,rank-s,{other},no")) == "no"
+
+
+async def test_a_slot_template_check_goes_to_the_label_when_the_quest_was_generated_or_there_is_none(db):
+    await a_world(db)  # no templates: the game makes the quest up, so it has none
+    p = await a_party(db)
+    db.info["rotating_quests"] = Hooks()
+    assert await npc_says(db, p.heroes[0], check("slot_template,rank-s,dragon,no")) == "no"
+
+
+async def test_a_slot_template_check_for_an_unknown_slot_is_an_error_the_dialog_reports(db):
+    from terraforma.npcs.service import NpcError
+
+    p = await a_party(db)
+    with pytest.raises(NpcError, match="no such quest slot"):
+        await npc_says(db, p.heroes[0], check("slot_template,nowhere,dragon,no"))
