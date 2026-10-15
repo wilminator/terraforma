@@ -54,6 +54,8 @@ class Flow:
     account_id: int | None = None
     # Where the account page should send the player after a good login (a name the page knows, never an address).
     next: str | None = None
+    # With next="oidc": the signed request of the sign-in provider that is waiting for this login (checked again at /oidc/resume).
+    request: str | None = None
 
     def dump(self) -> dict:
         return {key: value for key, value in self.__dict__.items()}
@@ -68,7 +70,7 @@ class Identity:
     email_verified: bool
 
 
-def new_flow(provider: ExternalProvider, purpose: str, account_id: int | None = None, next: str | None = None) -> Flow:
+def new_flow(provider: ExternalProvider, purpose: str, account_id: int | None = None, next: str | None = None, request: str | None = None) -> Flow:
     return Flow(
         provider=provider.name,
         state=secrets.token_urlsafe(32),
@@ -77,6 +79,7 @@ def new_flow(provider: ExternalProvider, purpose: str, account_id: int | None = 
         purpose=purpose,
         account_id=account_id,
         next=next,
+        request=request,
     )
 
 
