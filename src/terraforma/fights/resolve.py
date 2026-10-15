@@ -352,6 +352,31 @@ def do_effect(fight, rules, rng, effect, actor, target, target_address, impact, 
         damage = math.floor(rules.roll_amount(rng, effect) * immunity * impact)
         damage = status.adjusted_damage(fight.get(actor), target, damage, effect.attribute)
         inflict_damage(fight, rules, actor, target, target_address, damage, False, log)
+    elif effect.effect == specs.STEAL_HP:
+        if target.get_current(rules, vital) == 0:
+            return False
+        damage = math.floor(rules.roll_amount(rng, effect) * immunity * impact)
+        giver = fight.get(actor)
+        damage = status.adjusted_damage(giver, target, damage, effect.attribute)
+        taken = max(0, min(damage, target.current[vital]))
+        inflict_damage(fight, rules, actor, target, target_address, damage, False, log)
+        if taken and giver is not target and 0 < giver.get_current(rules, vital) < giver.get_base(rules, vital):
+            restore_vital(fight, rules, actor, giver, actor, taken, log)
+    elif effect.effect == specs.STEAL_MP:
+        if target.get_current(rules, vital) == 0:
+            return False
+        giver = fight.get(actor)
+        taken = min(math.floor(rules.roll_amount(rng, effect) * immunity * impact), target.current[rules.mana])
+        if taken > 0:
+            drain_pool(fight, rules, actor, target, target_address, rules.mana, taken, log)
+            if giver is not target and giver.get_current(rules, vital) > 0 and giver.current[rules.mana] < giver.get_base(rules, rules.mana):
+                restore_pool(fight, rules, actor, giver, actor, rules.mana, taken, log)
+        else:
+            log.add(EventType.NO_EFFECT, *target_address)
+    elif effect.effect in (specs.TRANSFER_HP, specs.TRANSFER_MP):
+        if target.get_current(rules, vital) == 0:
+            return False
+        transfer(fight, rules, rng, effect, actor, target, target_address, log)
     elif effect.effect == specs.REVIVE:
         maximum = target.get_base(rules, vital)
         if target.get_current(rules, vital) == 0:
@@ -462,6 +487,38 @@ def restore_pool(fight, rules, actor, target, target_address, resource, amount, 
     gauge_changed(fight, rules, actor, target_address, resource, before, target.current[resource], maximum, log)
     if amount > 0 and not log.ticking:
         fire(fight, rules, None, target_address, status.HELPED, log)
+
+
+def drain_pool(fight, rules, actor, target, target_address, resource, amount, log) -> None:
+    """One fighter takes $amount of another's mana (the target loses it whether or not the taker has room for it)."""
+    before, maximum = target.current[resource], target.get_base(rules, resource)
+    log.add(EventType.ALTER_STAT, *target_address, resource, -amount)
+    target.current[resource] -= amount
+    gauge_changed(fight, rules, actor, target_address, resource, before, target.current[resource], maximum, log)
+
+
+def transfer(fight, rules, rng, effect, actor, target, target_address, log) -> None:
+    """The user gives life or mana of its own to $target: what it rolls, but no more than it has to spare (it keeps
+    1 life; mana can run out) and no more than fits in the target. It loses exactly what the target takes in."""
+    vital = rules.vital
+    resource = vital if effect.effect == specs.TRANSFER_HP else rules.mana
+    giver = fight.get(actor)
+    amount = rules.roll_amount(rng, effect)
+    spare = giver.current[resource] - (1 if resource == vital else 0)
+    room = target.get_base(rules, resource) - target.get_current(rules, resource)
+    amount = min(amount, spare, room)
+    if giver is target or amount <= 0:
+        log.add(EventType.NO_EFFECT, *target_address)
+        return
+    if resource == vital:
+        log.add(EventType.DAMAGE, *actor, amount, False)
+    else:
+        log.add(EventType.ALTER_STAT, *actor, resource, -amount)
+    giver.current[resource] -= amount
+    if resource == vital:
+        restore_vital(fight, rules, actor, target, target_address, amount, log)
+    else:
+        restore_pool(fight, rules, actor, target, target_address, resource, amount, log)
 
 
 # --- statuses ------------------------------------------------------------------------------------------------------
