@@ -5,7 +5,7 @@ from pydantic import Field
 
 from ..accounts import ratelimit
 from ..accounts.routes import Strict, limited
-from ..api.deps import ActingAccount, CurrentAccount, Db, GameEconomy
+from ..api.deps import ActingAccount, CurrentAccount, Db, GameEconomy, GameRules
 from ..heroes import inventory, service
 from ..heroes.routes import Id
 from ..heroes.routes import refuse as refuse_hero
@@ -44,12 +44,12 @@ async def give_gold(hero_id: Id, body: GiveGold, request: Request, account: Acti
 
 
 @router.post("/give-item")
-async def give_item(hero_id: Id, body: GiveItem, request: Request, account: ActingAccount, db: Db, economy: GameEconomy) -> dict:
+async def give_item(hero_id: Id, body: GiveItem, request: Request, account: ActingAccount, db: Db, economy: GameEconomy, rules: GameRules) -> dict:
     await limited(request, ratelimit.TRADE_BY_ACCOUNT, str(account.id))
     try:
         hero = await service.own_hero(db, account, hero_id)
         await trading.give_item(db, economy, hero, body.to_hero_id, body.position, body.qty)
-        return await inventory.view(db, hero, economy)
+        return await inventory.view(db, hero, economy, rules)
     except (service.HeroError, trading.TradeError) as error:
         raise refuse(error) from error
 

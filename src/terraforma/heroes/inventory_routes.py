@@ -46,32 +46,35 @@ def outcome(result: inventory.EquipResult):
     code = {
         inventory.EquipOutcome.NOT_FOUND: status.HTTP_404_NOT_FOUND,
         inventory.EquipOutcome.NOT_EQUIPABLE: status.HTTP_422_UNPROCESSABLE_CONTENT,
+        inventory.EquipOutcome.NOT_ALLOWED: status.HTTP_422_UNPROCESSABLE_CONTENT,
     }.get(result.outcome, status.HTTP_409_CONFLICT)
     if result.occupying_position is not None:
         body["occupying_position"] = result.occupying_position
+    if result.reason:
+        body["reason"] = result.reason
     return JSONResponse(body, status_code=code)
 
 
 @router.get("/inventory")
-async def look(hero_id: Id, account: CurrentAccount, db: Db, economy: GameEconomy) -> dict:
+async def look(hero_id: Id, account: CurrentAccount, db: Db, economy: GameEconomy, rules: GameRules) -> dict:
     try:
-        return await inventory.view(db, await service.own_hero(db, account, hero_id), economy)
+        return await inventory.view(db, await service.own_hero(db, account, hero_id), economy, rules)
     except service.HeroError as error:
         raise refuse(error) from error
 
 
 @router.post("/inventory/move")
-async def move(hero_id: Id, body: Move, account: ActingAccount, db: Db, economy: GameEconomy) -> dict:
+async def move(hero_id: Id, body: Move, account: ActingAccount, db: Db, economy: GameEconomy, rules: GameRules) -> dict:
     try:
         hero = await service.own_hero(db, account, hero_id)
         await inventory.move_item(db, hero, body.from_position, body.to_position)
-        return await inventory.view(db, hero, economy)
+        return await inventory.view(db, hero, economy, rules)
     except (service.HeroError, inventory.InventoryError) as error:
         raise refuse(error) from error
 
 
 @router.post("/inventory/discard")
-async def discard(hero_id: Id, body: Discard, account: ActingAccount, db: Db, economy: GameEconomy) -> dict:
+async def discard(hero_id: Id, body: Discard, account: ActingAccount, db: Db, economy: GameEconomy, rules: GameRules) -> dict:
     """Throws away up to qty of the stack (all of it, and its equipment slots, if that's the lot)."""
     try:
         hero = await service.own_hero(db, account, hero_id)
@@ -80,16 +83,16 @@ async def discard(hero_id: Id, body: Discard, account: ActingAccount, db: Db, ec
     removed = await inventory.remove_item(db, hero, body.position, body.qty)
     if removed == 0:
         raise refuse(service.NotFound("there's nothing in that position"))
-    return {"discarded": removed, **await inventory.view(db, hero, economy)}
+    return {"discarded": removed, **await inventory.view(db, hero, economy, rules)}
 
 
 @router.post("/equip")
-async def equip(hero_id: Id, body: Equip, account: ActingAccount, db: Db):
+async def equip(hero_id: Id, body: Equip, account: ActingAccount, db: Db, rules: GameRules):
     try:
         hero = await service.own_hero(db, account, hero_id)
     except service.HeroError as error:
         raise refuse(error) from error
-    return outcome(await inventory.equip(db, hero, body.position, body.side))
+    return outcome(await inventory.equip(db, hero, body.position, body.side, rules))
 
 
 @router.post("/unequip")
