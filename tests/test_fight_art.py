@@ -1,4 +1,4 @@
-"""The fight's pictures: a personality's ``fight_art`` reaches the fight view for the monsters that have the personality and for the heroes
+"""The fight's pictures (and the map's): a personality's ``fight_art`` reaches the fight view for the monsters that have the personality and for the heroes
 whose job has the personality's key, and a fighter without any is left plain. On every database."""
 
 import copy
@@ -9,6 +9,8 @@ from terraforma.content.loader import load_content
 from terraforma.fights import live
 from terraforma.fights.models import FightRecord
 from terraforma.fights.rules import Rules
+from terraforma.models import Account
+from terraforma.heroes import service as heroes
 from terraforma.heroes.models import Team
 
 from .test_fight_store import SEED
@@ -60,3 +62,19 @@ async def test_a_fighter_with_no_art_has_no_art_key(db):
     record = await db.get(FightRecord, record_id)
     aria, ogre = (await live.view(db, record, RULES, mike_id))["fighters"]
     assert aria["art"] == STORED and "art" not in ogre
+
+
+async def test_a_teams_members_carry_the_map_art_of_the_personality_of_their_jobs_key(db):
+    """The map draws the party as its first hero: the team list gives each member the ``map_art`` of the personality named like its job."""
+    _hero, mike, team = await a_team(db)
+    team_id, mike_id = team.id, mike.id
+    seed = drawn()
+    seed["personalities"].append({"key": "fighter", "name": "Fighter", "fight_art": "aria_fight.png", "map_art": SHEET})
+    await load_content(db, seed)
+    (listed,) = [each for each in await heroes.list_teams(db, await db.get(Account, mike_id)) if each["id"] == team_id]
+    assert [member["map_art"] for member in listed["members"]] == [STORED]
+
+    seed["personalities"][-1]["map_art"] = None  # (no map art: the key is left out, and the map draws a marker)
+    await load_content(db, seed)
+    (listed,) = [each for each in await heroes.list_teams(db, await db.get(Account, mike_id)) if each["id"] == team_id]
+    assert all("map_art" not in member for member in listed["members"])

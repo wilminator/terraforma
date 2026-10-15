@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Command the monsters</title>
+  <meta name="robots" content="noindex">
+  <link rel="stylesheet" href="/client/css/engine.css">
+</head>
+<body class="play">
+  <main id="app"></main>
+  <!-- Shown by the stylesheet while the device is upright: a fight is played sideways. -->
+  <div id="rotate" class="rotate" role="status">
+    <p id="rotate-text" data-text="play.rotate">Turn your device sideways to play.</p>
+  </div>
+  <noscript><p>This page needs JavaScript.</p></noscript>
+  <script type="module" src="/client/js/monsters.js"></script>
+</body>
+</html>

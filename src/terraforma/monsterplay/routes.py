@@ -3,13 +3,16 @@ A volunteer needs a login like any player; the calls that change something also 
 
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Path, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Path, Request, WebSocket, WebSocketDisconnect, status
 
 from ..accounts import ratelimit
 from ..accounts.routes import limited
-from ..api.deps import ActingAccount, CurrentAccount, Db, GameRules
+from ..api.deps import ActingAccount, CurrentAccount, Db, GameRules, client_address
+from ..api.security import same_origin
 from ..fights import live
+from ..fights.routes import FightCommand, play_command, rules_of
 from . import service
+from .models import MonsterSeat
 
 router = APIRouter(prefix="/api/monsters/queue")
 #: The calls on the monsters of one running fight.
@@ -86,3 +89,159 @@ async def take_over(fight_id: FightId, request: Request, account: ActingAccount,
         raise refuse(error) from error
     await request.app.state.fights.push(fight_id, {"type": "deadline", "fight": fight_id, "deadline": deadline})
     return {"seat": service.view_of(seat), "deadline": deadline}
+
+
+# --- guests: people who play monsters without logging in -----------------------------------------------------------------
+#
+# No cookie and no login: a guest holds a random token and sends it as ``Authorization: Bearer <token>``. Since nothing rides along
+# by itself, another site cannot act for a guest (that is what the CSRF token guards for accounts); instead the calls that change
+# something must carry this site's Origin header, and every call counts against the caller's address. The engine's rules refuse
+# guests (``Rules.may_queue_monsters``), so these calls only work in a game that accepts them.
+
+guest_router = APIRouter(prefix="/api/monsters/guest")
+
+
+def _origin_here(request: Request) -> None:
+    if not same_origin(request):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "wrong origin")
+
+
+async def _guest(request: Request, rules: GameRules, authorization: Annotated[str | None, Header()] = None) -> int:
+    """The guest's id, from the bearer token. (Looked up in a transaction of its own, closed before the call goes on, so keeping
+    the guest alive never holds a lock while the call plays a round.)"""
+    await limited(request, ratelimit.MONSTER_GUEST_BY_ADDRESS, client_address(request))
+    scheme, _, token = (authorization or "").partition(" ")
+    guest = None
+    if scheme.lower() == "bearer" and token:
+        async with request.app.state.sessionmaker() as session, session.begin():
+            guest = await service.guest_for(session, rules, token)
+            guest_id = guest.id if guest is not None else None
+    if guest is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "not a guest we know", headers={"WWW-Authenticate": "Bearer"})
+    return guest_id
+
+
+async def _acting_guest(request: Request, guest_id: Annotated[int, Depends(_guest)]) -> int:
+    _origin_here(request)
+    return guest_id
+
+
+Guest = Annotated[int, Depends(_guest)]
+ActingGuest = Annotated[int, Depends(_acting_guest)]
+
+
+@guest_router.post("/join")
+async def guest_join(request: Request, db: Db, rules: GameRules) -> dict:
+    """A person who is not logged in volunteers: makes a guest, queues it, and answers with its token (shown once; the page keeps it
+    for the guest calls). 409 with the rules' reason when the game does not take guests (the engine's rules do not), and nothing is made."""
+    _origin_here(request)
+    await limited(request, ratelimit.MONSTER_GUEST_JOIN_BY_ADDRESS, client_address(request))
+    guest, token = await service.new_guest(db, rules)
+    try:
+        await service.join_guest(db, rules, guest.id)
+    except service.MonsterError as error:
+        raise refuse(error) from error
+    return {"token": token, **await service.status_guest(db, rules, guest.id)}
+
+
+@guest_router.get("")
+async def guest_where(guest: Guest, db: Db, rules: GameRules) -> dict:
+    """Where the guest stands: queued and at what place, and the fight whose monsters it commands."""
+    return await service.status_guest(db, rules, guest)
+
+
+@guest_router.post("/leave")
+async def guest_leave(guest: ActingGuest, db: Db, rules: GameRules) -> dict:
+    await service.leave_guest(db, guest)
+    return await service.status_guest(db, rules, guest)
+
+
+@guest_router.post("/check-in")
+async def guest_check_in(guest: ActingGuest, db: Db, rules: GameRules) -> dict:
+    try:
+        await service.check_in_guest(db, rules, guest)
+    except service.MonsterError as error:
+        raise refuse(error) from error
+    return await service.status_guest(db, rules, guest)
+
+
+async def _own_fight(db, fight_id: int, guest_id: int):
+    try:
+        record = await live.get_record(db, fight_id)
+    except live.FightError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+    seat = await db.get(MonsterSeat, fight_id)
+    if seat is None or seat.guest_id != guest_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "that isn't your fight")
+    return record
+
+
+@guest_router.get("/fights/{fight_id}")
+async def guest_fight(fight_id: FightId, guest: Guest, db: Db, rules: GameRules) -> dict:
+    """The fight the guest commands the monsters of, as the heroes' page shows it (the guest's socket, below, tells it when to ask again)."""
+    record = await _own_fight(db, fight_id, guest)
+    return await live.view(db, record, rules, -guest)
+
+
+@guest_router.post("/fights/{fight_id}/commands", status_code=status.HTTP_202_ACCEPTED)
+async def guest_command(fight_id: FightId, body: FightCommand, request: Request, guest: ActingGuest) -> dict:
+    """Commits a command for one of the guest's monsters. The round plays at once if that was the last one needed."""
+    async with request.app.state.sessionmaker() as session:
+        await _own_fight(session, fight_id, guest)
+    return await play_command(request, fight_id, -guest, body)
+
+
+@guest_router.post("/fights/{fight_id}/back")
+async def guest_back(fight_id: FightId, guest: ActingGuest, db: Db) -> dict:
+    """The guest says they are back after the AI took over the monsters."""
+    record = await _own_fight(db, fight_id, guest)
+    try:
+        seat = await service.come_back(db, record, -guest)
+    except service.MonsterError as error:
+        raise refuse(error) from error
+    return {"seat": service.view_of(seat)}
+
+
+# --- the guest's fight socket ----------------------------------------------------------------------------------------------
+#
+# A browser cannot put an Authorization header on a WebSocket, and a token in the address would end up in logs, so the guest sends its
+# token as the second of two subprotocols: ``new WebSocket(url, [GUEST_PROTOCOL, token])``. The server checks everything before it
+# accepts (this site's Origin, the rate limit, the token, that the guest commands this fight) and answers with the first only.
+
+GUEST_PROTOCOL = "terraforma.guest"
+
+
+async def guest_fight_socket(socket: WebSocket, fight_id: FightId) -> None:
+    """Pushes a fight's events to the guest who commands its monsters, as ``/ws/fights/{id}`` does for the players. Like the guest's
+    calls it needs the guest's token (see above), and it lets in only the guest the fight's monsters are seated to. The page only
+    listens: commands go through ``POST /api/monsters/guest/fights/{id}/commands``."""
+    asked = socket.scope.get("subprotocols", [])
+    guest_id = None
+    if same_origin(socket) and len(asked) == 2 and asked[0] == GUEST_PROTOCOL:
+        try:
+            await ratelimit.hit(socket.app.state.sessionmaker, ratelimit.MONSTER_GUEST_BY_ADDRESS, client_address(socket))
+        except ratelimit.RateLimited:
+            pass
+        else:
+            async with socket.app.state.sessionmaker() as session, session.begin():
+                guest = await service.guest_for(session, rules_of(socket), asked[1])
+                guest_id = guest.id if guest is not None else None
+    allowed = False
+    if guest_id is not None:
+        async with socket.app.state.sessionmaker() as session:
+            seat = await session.get(MonsterSeat, fight_id)
+            allowed = seat is not None and seat.guest_id == guest_id
+    if not allowed:
+        await socket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+    channels = socket.app.state.fights
+    await socket.accept(subprotocol=GUEST_PROTOCOL)
+    channels.join(fight_id, socket)
+    try:
+        await socket.send_json({"type": "joined", "fight": fight_id, "watching": channels.watching(fight_id)})
+        while True:
+            await socket.receive_text()  # anything it sends is ignored
+    except WebSocketDisconnect:
+        pass
+    finally:
+        channels.leave(fight_id, socket)

@@ -5,19 +5,25 @@
 
 const RETRY_MS = 1000;
 const TRIES = 5;
+const socketPath = (id) => `/ws/fights/${id}`;
 
 export class FightLink {
-  /** $handlers: { message(object), state("open" | "retrying" | "lost") }. */
-  constructor(id, handlers, { socket = (url) => new WebSocket(url), retryMs = RETRY_MS } = {}) {
+  /** $handlers: { message(object), state("open" | "retrying" | "lost") }. $path is the socket's address on this site and $protocols what the
+   * handshake offers (a guest's token travels there); the defaults are the logged-in player's. */
+  constructor(id, handlers, { socket = (url, protocols) => new WebSocket(url, protocols), retryMs = RETRY_MS, path = socketPath, protocols = [] } = {}) {
     this.id = id;
     this.handlers = handlers;
     this.state = "closed";
     this.#open = socket;
     this.#retryMs = retryMs;
+    this.#path = path;
+    this.#protocols = protocols;
   }
 
   #open;
   #retryMs;
+  #path;
+  #protocols;
   #socket = null;
   #tries = 0;
   #stopped = false;
@@ -37,7 +43,7 @@ export class FightLink {
   }
 
   #url() {
-    return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/fights/${this.id}`;
+    return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${this.#path(this.id)}`;
   }
 
   #set(state) {
@@ -46,7 +52,7 @@ export class FightLink {
   }
 
   #connect() {
-    const socket = this.#open(this.#url());
+    const socket = this.#open(this.#url(), this.#protocols);
     this.#socket = socket;
     socket.onmessage = (event) => {
       let message;

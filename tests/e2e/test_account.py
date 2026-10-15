@@ -31,6 +31,9 @@ def confirmed_and_logged_in(page, live_server, username="Mike"):
 def test_a_player_registers_confirms_by_the_link_and_logs_in(page, mailbox):
     page.goto("/account/")
     page.get_by_role("link", name="Create an account").click()
+    # The login form stays up until the page has asked the server about the session and drawn the registration form: wait for
+    # that, or the name typed next goes into the login form's Username field, which the new form then replaces.
+    expect(page.get_by_role("heading", name="Create an account")).to_be_visible()
     page.get_by_label("Username").fill("Zed")
     page.get_by_label("Email address").fill("zed@example.com")
     page.get_by_label("Password", exact=True).fill(PASSWORD)

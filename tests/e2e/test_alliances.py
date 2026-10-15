@@ -155,6 +155,38 @@ def test_the_roster_links_only_visible_teams_and_names_players_only_in_the_direc
     expect(row.get_by_role("link", name="MikeTheBold")).to_have_attribute("href", re.compile(r"^/p/"))
 
 
+def test_a_slow_answer_does_not_draw_the_page_over_a_newer_one(page, new_page, live_server):
+    live_server.make_account("Mike")
+    mike = sign_in(page, "Mike")
+    vanguard = make_team(mike, "Vanguard")
+    alliance = mike.post("/api/alliances", {"team_id": vanguard["id"], "name": "Iron Pact"})
+    zed_page, zed = second_player(new_page, live_server, "Zed")
+    for name in ("Strangers", "Wanderers"):
+        team = make_team(zed, name)
+        mike.post(f"/api/alliances/{alliance['id']}/invite", {"team_id": vanguard["id"], "target_team_id": team["id"]})
+        zed.post(f"/api/teams/{team['id']}/invitations/accept", {"alliance_id": alliance["id"]})
+    page.goto(f"/alliance/{alliance['id']}")
+    expect(page.locator("[data-team='Wanderers']")).to_be_visible()
+    held = []
+
+    def hold_the_first(route):  # the roster asked for after the role change is read now, but arrives late
+        if held:
+            route.continue_()
+        else:
+            held.append((route, route.fetch()))
+
+    page.route("**/roster", hold_the_first)
+    page.locator("[data-team='Strangers']").get_by_label("Role of Strangers").select_option("officer")
+    while not held:
+        page.wait_for_timeout(20)
+    page.locator("[data-team='Wanderers']").get_by_role("button", name="Remove Wanderers").click()
+    expect(page.locator("[data-team='Wanderers']")).to_have_count(0)
+    route, answer = held[0]
+    route.fulfill(response=answer)  # the late answer still lists Wanderers
+    page.wait_for_timeout(500)
+    expect(page.locator("[data-team='Wanderers']")).to_have_count(0)
+
+
 def test_a_leader_finds_a_team_by_name_and_invites_it_without_its_number(page, new_page, live_server):
     live_server.make_account("Mike")
     mike = sign_in(page, "Mike")

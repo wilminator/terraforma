@@ -9,6 +9,7 @@ from terraforma.challenge import service as tokens
 from terraforma.challenge.models import ChallengeEntry
 from terraforma.content.models import Item
 from terraforma.fights.rules import Rules
+from terraforma.oidc import service as oidc_service
 from terraforma.storegrant import service
 from terraforma.storegrant.models import StoreGrant
 from terraforma.testing import in_app_db
@@ -167,6 +168,11 @@ def setup_player(client, username="Mike", confirmed=True):
     return in_app_db(client, make)
 
 
+def subject_of(client, account_id):
+    """The opaque id the store knows the player by (made the way the sign-in provider makes it)."""
+    return in_app_db(client, lambda db: oidc_service.subject_for(db, account_id, "store"))
+
+
 def store(client, secret=SECRET):
     client.app.state.settings = client.app.state.settings.model_copy(update={"store_grant_secret": secret})
     return {"Authorization": f"Bearer {SECRET}"}
@@ -174,21 +180,21 @@ def store(client, secret=SECRET):
 
 def test_the_call_does_not_exist_until_a_game_sets_the_secret(app_client):
     account_id = setup_player(app_client)
-    reply = app_client.post(URL, json={"account_id": account_id, "tokens": 5, "key": "order-0001"}, headers={"Authorization": f"Bearer {SECRET}"})
+    reply = app_client.post(URL, json={"subject": subject_of(app_client, account_id), "tokens": 5, "key": "order-0001"}, headers={"Authorization": f"Bearer {SECRET}"})
     assert reply.status_code == 404
 
 
 def test_the_purchase_secret_does_not_open_the_store_call(app_client):
     account_id = setup_player(app_client)
     app_client.app.state.settings = app_client.app.state.settings.model_copy(update={"challenge_purchase_secret": SECRET})
-    reply = app_client.post(URL, json={"account_id": account_id, "tokens": 5, "key": "order-0001"}, headers={"Authorization": f"Bearer {SECRET}"})
+    reply = app_client.post(URL, json={"subject": subject_of(app_client, account_id), "tokens": 5, "key": "order-0001"}, headers={"Authorization": f"Bearer {SECRET}"})
     assert reply.status_code == 404
 
 
 def test_the_call_grants_once_and_mails_the_player_once(app_client, mailbox):
     account_id = setup_player(app_client)
     headers = store(app_client)
-    body = {"account_id": account_id, "tokens": 25, "items": {"potion": 2}, "message": "Your order #7 arrived.", "key": "order-0001"}
+    body = {"subject": subject_of(app_client, account_id), "tokens": 25, "items": {"potion": 2}, "message": "Your order #7 arrived.", "key": "order-0001"}
     assert expect(app_client.post(URL, json=body, headers=headers), 200).json() == {"balance": 25, "duplicate": False, "emailed": True}
     assert expect(app_client.post(URL, json=body, headers=headers), 200).json() == {"balance": 25, "duplicate": True, "emailed": False}
     assert in_app_db(app_client, lambda db: tokens.balance(db, account_id)) == 25
@@ -203,8 +209,8 @@ def test_the_player_can_be_left_unmailed_or_have_no_confirmed_address(app_client
     quiet = setup_player(app_client)
     unconfirmed = setup_player(app_client, "Zed", confirmed=False)
     headers = store(app_client)
-    one = app_client.post(URL, json={"account_id": quiet, "tokens": 5, "email": False, "key": "order-0001"}, headers=headers)
-    two = app_client.post(URL, json={"account_id": unconfirmed, "tokens": 5, "key": "order-0002"}, headers=headers)
+    one = app_client.post(URL, json={"subject": subject_of(app_client, quiet), "tokens": 5, "email": False, "key": "order-0001"}, headers=headers)
+    two = app_client.post(URL, json={"subject": subject_of(app_client, unconfirmed), "tokens": 5, "key": "order-0002"}, headers=headers)
     assert expect(one, 200).json()["emailed"] is False and expect(two, 200).json()["emailed"] is False
     assert mailbox.sent == []
 
@@ -217,14 +223,14 @@ def test_a_mail_that_fails_does_not_undo_the_grant(app_client, mailbox, monkeypa
         raise OSError("the mail server is down")
 
     monkeypatch.setattr(app_client.app.state.mailer, "send", broken)
-    reply = app_client.post(URL, json={"account_id": account_id, "tokens": 5, "key": "order-0001"}, headers=headers)
+    reply = app_client.post(URL, json={"subject": subject_of(app_client, account_id), "tokens": 5, "key": "order-0001"}, headers=headers)
     assert expect(reply, 200).json() == {"balance": 5, "duplicate": False, "emailed": False}
 
 
 def test_the_call_needs_the_secret(app_client):
     account_id = setup_player(app_client)
     store(app_client)
-    body = {"account_id": account_id, "tokens": 25, "key": "order-0001"}
+    body = {"subject": subject_of(app_client, account_id), "tokens": 25, "key": "order-0001"}
     for headers in ({}, {"Authorization": "Bearer wrong"}, {"Authorization": SECRET}, {"Authorization": f"Basic {SECRET}"}):
         reply = app_client.post(URL, json=body, headers=headers)
         assert reply.status_code == 401 and reply.headers["WWW-Authenticate"] == "Bearer"
@@ -235,7 +241,7 @@ def test_a_player_logged_in_cannot_use_the_call_without_the_secret(app_client):
     account_id = setup_player(app_client)
     store(app_client)
     app_client.post("/api/login", json={"username": "Mike", "password": PASSWORD})
-    assert app_client.post(URL, json={"account_id": account_id, "tokens": 25, "key": "order-0001"}).status_code == 401
+    assert app_client.post(URL, json={"subject": subject_of(app_client, account_id), "tokens": 25, "key": "order-0001"}).status_code == 401
 
 
 def test_the_call_answers_what_went_wrong(app_client):
@@ -243,9 +249,9 @@ def test_the_call_answers_what_went_wrong(app_client):
     headers = store(app_client)
 
     def post(**changes):
-        return app_client.post(URL, json={"account_id": account_id, "tokens": 5, "key": "order-0001", **changes}, headers=headers)
+        return app_client.post(URL, json={"subject": subject_of(app_client, account_id), "tokens": 5, "key": "order-0001", **changes}, headers=headers)
 
-    assert post(account_id=9999).status_code == 404
+    assert post(subject="no-such-subject").status_code == 404
     assert post(items={"nothing": 1}).status_code == 404
     assert post(tokens=-6, key="order-0002").status_code == 409, "not enough tokens"
     assert post(key="order-0003").status_code == 200
@@ -259,7 +265,7 @@ def test_the_games_refusal_is_shown_to_the_store(app_client):
     account_id = setup_player(app_client)
     headers = store(app_client)
     app_client.app.state.game = Game(name="Test", rules=Says(no="Not for sale today."))
-    reply = app_client.post(URL, json={"account_id": account_id, "tokens": 5, "key": "order-0001"}, headers=headers)
+    reply = app_client.post(URL, json={"subject": subject_of(app_client, account_id), "tokens": 5, "key": "order-0001"}, headers=headers)
     assert reply.status_code == 422 and reply.json()["detail"] == "Not for sale today."
     assert in_app_db(app_client, lambda db: tokens.balance(db, account_id)) == 0
 
@@ -267,7 +273,7 @@ def test_the_games_refusal_is_shown_to_the_store(app_client):
 def test_the_call_refuses_bad_bodies(app_client):
     account_id = setup_player(app_client)
     headers = store(app_client)
-    good = {"account_id": account_id, "tokens": 5, "key": "order-0001"}
+    good = {"subject": subject_of(app_client, account_id), "tokens": 5, "key": "order-0001"}
     for bad in (
         {**good, "tokens": "5"},
         {**good, "tokens": 2_000_000_000},
@@ -281,6 +287,9 @@ def test_the_call_refuses_bad_bodies(app_client):
         {**good, "key": "has spaces in it!"},
         {**good, "extra": 1},
         {"tokens": 5, "key": "order-0001"},
+        {**good, "subject": ""},
+        {**good, "subject": "s" * 65},
+        {"account_id": account_id, "tokens": 5, "key": "order-0001"},
     ):
         assert app_client.post(URL, json=bad, headers=headers).status_code == 422, bad
 
@@ -291,7 +300,7 @@ def test_the_call_is_rate_limited_by_address(app_client, monkeypatch):
     account_id = setup_player(app_client)
     headers = store(app_client)
     monkeypatch.setattr(ratelimit, "STORE_GRANT_BY_ADDRESS", ratelimit.Limit("store-grant", 2, 15 * 60))
-    body = {"account_id": account_id, "tokens": 5, "key": "order-0001"}
+    body = {"subject": subject_of(app_client, account_id), "tokens": 5, "key": "order-0001"}
     assert app_client.post(URL, json=body, headers=headers).status_code == 200
     assert app_client.post(URL, json=body, headers=headers).status_code == 200
     assert app_client.post(URL, json=body, headers=headers).status_code == 429

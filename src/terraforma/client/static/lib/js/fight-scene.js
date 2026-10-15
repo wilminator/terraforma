@@ -7,12 +7,11 @@
 // of the events and nothing is timed against the clock. A player who asks the system for less motion sees the same text and gauges, and
 // no movement.
 
-import * as api from "./api.js";
 import { drawFrame, frameRect } from "./art.js";
 import { h, replace } from "./dom.js";
-import { FightLink } from "./fight-link.js";
 import { FightMenu } from "./fight-menu.js";
 import { FightModel } from "./fight-model.js";
+import { playerSource } from "./fight-source.js";
 
 const SPEEDS = [1, 2, 4];
 const READ_MS = 650; // how long an event stays before the next at normal speed
@@ -22,9 +21,11 @@ const SPRITE = 48; // the size of a fighter's picture on the card (the sprite sh
 const reducedMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
 
 export class FightScene {
-  /** $stage is the element that carries the data attributes; $host the element the scene's layer goes in. */
-  constructor(shell, { stage, host }) {
+  /** $stage is the element that carries the data attributes; $host the element the scene's layer goes in; $source where the fight comes
+   * from (fight-source.js: the logged-in player's unless a guest's is given). */
+  constructor(shell, { stage, host, source = playerSource }) {
     this.shell = shell;
+    this.source = source;
     this.stage = stage;
     this.host = host;
     this.t = (key, values) => shell.text.get(key, values);
@@ -55,7 +56,7 @@ export class FightScene {
     this.close();
     let view;
     try {
-      view = await api.get(`/api/fights/${id}`);
+      view = await this.source.view(id);
     } catch (error) {
       note?.(error.message);
       return false;
@@ -68,7 +69,7 @@ export class FightScene {
     this.skipping = false;
     this.#build();
     this.#data();
-    this.link = new FightLink(id, {
+    this.link = this.source.link(id, {
       message: (message) => this.#message(run, message),
       state: (state) => this.#linkChanged(run, state),
     });
@@ -124,7 +125,7 @@ export class FightScene {
   async #resync(run) {
     if (this.playing || this.queue.length) return;
     try {
-      const view = await api.get(`/api/fights/${this.model.id}`);
+      const view = await this.source.view(this.model.id);
       if (run !== this.run || this.playing || this.queue.length) return;
       this.model = new FightModel(view);
       this.#build();
@@ -160,7 +161,7 @@ export class FightScene {
       this.model.endRound(round.round, round.over, round.deadline);
       this.#paint();
       // Playing the round out counts as play time (up to the game's cap since it played); a failure here is not the player's concern.
-      api.post(`/api/fights/${this.model.id}/playback-done`, { round: round.round }).catch(() => {});
+      this.source.playbackDone(this.model.id, round.round).catch(() => {});
     }
     if (run !== this.run) return;
     if (!this.model.over) await this.refreshMenu(run);
@@ -212,10 +213,10 @@ export class FightScene {
   /** Asks the server what the player's heroes can do now and who has chosen (the menu's choices change as items and MP are spent). */
   async refreshMenu(run = this.run) {
     try {
-      const view = await api.get(`/api/fights/${this.model.id}`);
+      const view = await this.source.view(this.model.id);
       if (run === this.run && this.model) {
         this.model.refresh(view);
-        this.#paint();
+        this.#data(); // (which paints)
       }
     } catch {
       // (the menu keeps what it had; the next round asks again)
@@ -225,6 +226,18 @@ export class FightScene {
   /** Draws the fight again from the model (the menu calls it when it changes something). */
   repaint() {
     this.#paint();
+  }
+
+  /** Says the player who commands the monsters is back after the AI took them over: they command again from the next round. */
+  async comeBack() {
+    const model = this.model;
+    try {
+      await this.source.back(model.id);
+    } catch (error) {
+      this.#say("fight.back_failed", { reason: error.message });
+      return;
+    }
+    if (this.model === model) await this.refreshMenu();
   }
 
   skip() {
@@ -273,12 +286,13 @@ export class FightScene {
     this.statusLine = h("span", { class: "fight-round", id: "fight-round", role: "status" });
     this.skipButton = h("button", { type: "button", id: "fight-skip", onclick: () => this.skip() }, this.t("fight.skip"));
     this.speedButton = h("button", { type: "button", id: "fight-speed", onclick: () => this.cycleSpeed() });
+    this.backButton = h("button", { type: "button", id: "fight-back", class: "primary", hidden: true, onclick: () => this.comeBack() }, this.t("fight.back"));
     this.leaveButton = h("button", { type: "button", id: "fight-leave", class: "primary", hidden: true, onclick: () => this.stage.dispatchEvent(new CustomEvent("fight-leave")) }, this.t("fight.leave"));
     this.lines = h("ol", { class: "fight-log", id: "fight-log", role: "log", "aria-label": this.t("fight.log") });
     this.layer = h(
       "div",
       { class: "fight-layer", id: "fight-layer", role: "group", "aria-label": this.t("fight.label") },
-      h("div", { class: "fight-bar" }, this.statusLine, this.skipButton, this.speedButton, this.leaveButton),
+      h("div", { class: "fight-bar" }, this.statusLine, this.skipButton, this.speedButton, this.backButton, this.leaveButton),
       h("div", { class: "fight-field" }, sides.left, sides.right),
       this.lines,
     );
@@ -373,6 +387,7 @@ export class FightScene {
     this.speedButton.textContent = this.t("fight.speed", { speed: this.speed });
     this.skipButton.disabled = !this.playing;
     this.leaveButton.hidden = !(this.model.over && !this.playing);
+    this.backButton.hidden = !(this.model.seat?.absent && !this.model.over); // (the AI took the monsters over after a missed round)
     this.menu.sync();
   }
 
@@ -385,6 +400,7 @@ export class FightScene {
     set("over", this.model ? this.model.over : null);
     set("speed", this.model ? this.speed : null);
     set("shown", this.model ? this.shown : null);
+    set("absent", this.model?.seat ? this.model.seat.absent : null); // set only for the player who commands monsters
     set("sprites", this.model ? [...this.sprites.values()].filter((each) => each.loaded).length : null); // how many fighters show their picture
     set("animated", this.model ? [...this.sprites.values()].filter((each) => each.player).length : null); // how many of them play an animation
     if (!this.model) {

@@ -40,6 +40,9 @@ export class MapScene {
     this.art = [];
     this.stopAnimating = () => {};
     this.shown = ""; // which frame each animated tile kind showed when the stage was last drawn
+    this.hero = null; // the picture of the party's first hero: { loaded, art, player, pose } once its map art has loaded, else null (a marker is drawn)
+    this.heroArt = null; // the map art reference that picture was asked for
+    this.facing = "down"; // the way the party last stepped
     this.partyId = null;
     this.tile = { x: 0, y: 0 }; // where the server says the party is
     this.at = { x: 0, y: 0 }; // where it is drawn (between tiles while it walks)
@@ -48,9 +51,13 @@ export class MapScene {
     this.t = (key, values) => shell.text.get(key, values);
     canvas.addEventListener("pointerdown", (event) => this.#tapped(event));
     stage.addEventListener("keydown", (event) => this.#key(event));
-    roster.onChange(() => this.#follow());
+    roster.onChange(() => {
+      this.#follow();
+      this.#heroChanged();
+    });
     shell.conversation.onChange(() => this.#conversationMoved());
     this.#follow();
+    this.#heroChanged();
   }
 
   /** Lets go of the stage (a fight is shown on it): the map ignores taps and keys and stops walking. */
@@ -71,6 +78,40 @@ export class MapScene {
   /** The party of the team the player is looking at (the Party panel's), or null. */
   #wanted() {
     return this.roster.team(this.roster.teamId)?.party ?? null;
+  }
+
+  /** The map art of the first hero of the party's team (the leader's, as the Talk panel's), or null. */
+  #leaderArt() {
+    return this.roster.team(this.roster.teamId)?.members[0]?.map_art ?? null;
+  }
+
+  /** Loads the picture of the party's first hero when it is another from the one drawn. */
+  async #heroChanged() {
+    const art = this.#leaderArt();
+    if (JSON.stringify(art) === JSON.stringify(this.heroArt)) return;
+    this.heroArt = art;
+    this.hero = null;
+    const loaded = art ? await this.shell.art.load(art).catch(() => null) : null;
+    if (art !== this.heroArt) return; // (another hero came while this loaded)
+    if (loaded?.source) this.hero = { loaded, art, frame: typeof art === "object" ? (art.frame ?? 0) : 0, player: null, pose: "" };
+    this.#animate();
+    this.#data();
+    this.#draw();
+  }
+
+  #poseName() {
+    return `${this.walking ? "move" : "stand"}_${this.facing}`;
+  }
+
+  /** The hero's player for what the party is doing (walking or standing, facing the way it last stepped); the same one while that holds. */
+  #pose() {
+    const hero = this.hero;
+    const pose = this.#poseName();
+    if (hero.pose !== pose) {
+      hero.pose = pose;
+      hero.player = hero.loaded.animations && hero.art.animations ? hero.loaded.animations.play(this.walking ? "move" : "stand", { direction: this.facing }) : null;
+    }
+    return hero.player;
   }
 
   async #follow() {
@@ -122,7 +163,7 @@ export class MapScene {
   #animate() {
     this.stopAnimating();
     this.shown = "";
-    this.stopAnimating = this.art.some((art) => art?.player)
+    this.stopAnimating = this.art.some((art) => art?.player) || this.hero?.loaded.animations
       ? this.shell.art.clock.subscribe(() => {
           const now = this.#frames();
           if (now !== this.shown && !this.suspended) this.#draw();
@@ -131,7 +172,8 @@ export class MapScene {
   }
 
   #frames() {
-    return this.art.map((art) => art?.player?.frameAt().index ?? "-").join(",");
+    const heroAt = this.hero ? `${this.hero.pose}:${this.hero.player?.frameAt().index ?? "-"}` : "";
+    return `${this.art.map((art) => art?.player?.frameAt().index ?? "-").join(",")}|${heroAt}`;
   }
 
   #conversationMoved() {
@@ -148,6 +190,7 @@ export class MapScene {
     set("partyY", this.map ? this.tile.y : null);
     set("walking", this.map ? this.walking : null);
     set("animated", this.map ? this.art.filter((art) => art?.player).length : null); // how many of them play an animation
+    set("pose", this.map ? (this.hero ? this.#poseName() : "marker") : null); // the hero's picture (and what it is doing), or the marker
     set("art", this.map ? this.art.filter(Boolean).length : null); // how many of the map's tile kinds have their picture
     this.stage.setAttribute("aria-label", this.map ? this.t("map.label", { map: this.map.title || this.map.map, x: this.tile.x, y: this.tile.y }) : this.t("play.stage"));
   }
@@ -192,6 +235,12 @@ export class MapScene {
     }
     const px = this.at.x - corner.x + TILE / 2;
     const py = this.at.y - corner.y + TILE / 2;
+    if (this.hero) this.#drawHero(px - TILE / 2, py - TILE / 2);
+    else this.#drawMarker(px, py);
+  }
+
+  #drawMarker(px, py) {
+    const c = this.context;
     c.fillStyle = "#d94a3d";
     c.strokeStyle = "#ffffff";
     c.lineWidth = 2;
@@ -199,6 +248,21 @@ export class MapScene {
     c.arc(px, py, TILE / 2 - 5, 0, Math.PI * 2);
     c.fill();
     c.stroke();
+  }
+
+  /** The first hero's picture on its tile: the frame its animation shows (move_DIRECTION while walking, stand_DIRECTION otherwise), or the art's own frame. */
+  #drawHero(x, y) {
+    const { loaded, frame } = this.hero;
+    const player = this.#pose();
+    if (player) {
+      const shows = player.frameAt();
+      drawFrame(this.context, loaded, shows.frame, x, y, TILE, TILE, shows.ops);
+    } else if (loaded.frame) {
+      const rect = frameRect(loaded, frame);
+      this.context.drawImage(loaded.source, rect.x, rect.y, rect.w, rect.h, x, y, TILE, TILE);
+    } else {
+      this.context.drawImage(loaded.source, x, y, TILE, TILE);
+    }
   }
 
   /** The tileset index at ($tx, $ty), wrapping where the map does; null off the map. */
@@ -318,6 +382,9 @@ export class MapScene {
   /** Moves the drawn party to ($x, $y) pixels over one step. */
   #slide(x, y) {
     const from = { ...this.at };
+    const dx = x - from.x;
+    const dy = y - from.y;
+    if (dx || dy) this.facing = Math.abs(dx) >= Math.abs(dy) ? (dx < 0 ? "left" : "right") : dy < 0 ? "up" : "down";
     return new Promise((done) => {
       const start = performance.now();
       const frame = (now) => {

@@ -25,12 +25,13 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..api.deps import ActingAccount, CurrentAccount, Db, client_address, current_account, sign_in_of
 from ..api.security import start_session
 from ..models import Account
 from ..settings import ExternalProvider
+from .tokens import TokenError
 from . import oidc, ratelimit, remember, second, service, twofa
 from .common import Strict, limited
 from .routes import single_method_note
@@ -43,13 +44,24 @@ SESSION_SIGNUP = "external_signup"  # a first sign-in waiting for the player to 
 SESSION_TWOFA = "external_2fa"  # a sign-in waiting for the two-factor code
 
 # The pages a player can be sent back to after logging in: names, never addresses (the account page knows them).
-NEXT = Literal["play", "profile"]
+# The signed request is kept in the session cookie while the player is at the provider, so it is kept short of the cookie's 4 KB.
+OIDC_REQUEST_MAX = 2048
+NEXT = Literal["play", "profile", "oidc"]
 
 
 class StartQuery(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     next: NEXT | None = None
+    # With ``next=oidc``: the signed request the sign-in provider (``/oidc/authorize``) left in the login page's address, so a store
+    # sign-in through an external provider comes back to the store. It is checked here and again at ``/oidc/resume``, never followed.
+    request: str | None = Field(default=None, min_length=1, max_length=OIDC_REQUEST_MAX)
+
+    @model_validator(mode="after")
+    def _request_goes_with_oidc(self) -> "StartQuery":
+        if (self.next == "oidc") != (self.request is not None):
+            raise ValueError("request goes with next=oidc, and only with it")
+        return self
 
 
 class CallbackQuery(BaseModel):
@@ -101,13 +113,15 @@ def label_of(request: Request, name: str) -> str:
     return name
 
 
-def back(outcome: str, reason: str | None = None, next: str | None = None) -> RedirectResponse:
+def back(outcome: str, reason: str | None = None, next: str | None = None, request: str | None = None) -> RedirectResponse:
     """Ends a browser trip: to the account page, which says what came of it (the address carries a word, never a secret)."""
     query = {"external": outcome}
     if reason:
         query["reason"] = reason
     if next:
         query["next"] = next
+        if request:
+            query["request"] = request
     return RedirectResponse(f"/account/?{urlencode(query)}", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -137,7 +151,12 @@ async def start(name: str, query: Annotated[StartQuery, Query()], request: Reque
     """Sends the browser to the provider to sign in (or up)."""
     provider = provider_of(request, name)
     await limited(request, ratelimit.EXTERNAL_START_BY_ADDRESS, client_address(request))
-    flow = oidc.new_flow(provider, "login", next=query.next)
+    if query.request is not None:
+        try:
+            request.app.state.tokens.read("oidc-authorize", query.request)
+        except TokenError:
+            return back("error", "expired")
+    flow = oidc.new_flow(provider, "login", next=query.next, request=query.request)
     try:
         where = await oidc.endpoints(request.app.state.http_client, provider)
     except oidc.SignInError:
@@ -190,7 +209,7 @@ async def callback(name: str, query: Annotated[CallbackQuery, Query()], request:
         account = await db.get(Account, known.account_id)
         if account is None:
             return back("error", "failed")
-        return await _logged_in(request, db, account, flow.next)
+        return await _logged_in(request, db, account, flow.next, flow.request)
 
     # A first sign-in with this provider: it needs an email the provider has verified, that no account has.
     try:
@@ -201,18 +220,18 @@ async def callback(name: str, query: Annotated[CallbackQuery, Query()], request:
         return back("error", "email_unverified")
     if await service.find_by_email(db, email) is not None:
         return back("error", "email_in_use")
-    request.session[SESSION_SIGNUP] = {"provider": name, "subject": who.subject, "email": email, "next": flow.next}
-    return back("finish", next=flow.next)
+    request.session[SESSION_SIGNUP] = {"provider": name, "subject": who.subject, "email": email, "next": flow.next, "request": flow.request}
+    return back("finish", next=flow.next, request=flow.request)
 
 
-async def _logged_in(request: Request, db: Db, account: Account, next: str | None) -> RedirectResponse:
+async def _logged_in(request: Request, db: Db, account: Account, next: str | None, oidc_request: str | None = None) -> RedirectResponse:
     """Logs $account in, or, with two-factor login on (and this browser not remembered), waits for the second factor."""
     if twofa.enabled(account) and not await remember.is_remembered(request, db, account):
         request.session.clear()
-        request.session[SESSION_TWOFA] = {"account_id": account.id, "version": account.session_version, "next": next}
-        return back("twofa", next=next)
+        request.session[SESSION_TWOFA] = {"account_id": account.id, "version": account.session_version, "next": next, "request": oidc_request}
+        return back("twofa", next=next, request=oidc_request)
     start_session(request, account.id, account.session_version)
-    return back("done", next=next)
+    return back("done", next=next, request=oidc_request)
 
 
 async def _linked(request: Request, db: Db, flow: oidc.Flow, name: str, who: oidc.Identity, known) -> RedirectResponse:

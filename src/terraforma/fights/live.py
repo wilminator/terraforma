@@ -182,7 +182,7 @@ async def start_party_fight(session: AsyncSession, party_id: int, monster_keys: 
 
 async def owners(session: AsyncSession, record: FightRecord) -> dict[Address, int]:
     """The account that plays each fighter: a hero's own account, and, for a fight whose monsters a player commands
-    (``monsterplay``), that player for every fighter of the monster party. The other monsters have no entry: the AI plays them."""
+    (``monsterplay``), that player for every fighter of the monster party (a guest shows as a negative number, see ``MonsterSeat.holder``). The other monsters have no entry: the AI plays them."""
     rows = await session.execute(
         select(FightParticipant.party, FightParticipant.group_index, FightParticipant.character, Hero.account_id)
         .join(Hero, Hero.id == FightParticipant.hero_id).where(FightParticipant.fight_id == record.id)
@@ -194,7 +194,7 @@ async def owners(session: AsyncSession, record: FightRecord) -> dict[Address, in
             select(FightParticipant.party, FightParticipant.group_index, FightParticipant.character)
             .where(FightParticipant.fight_id == record.id, FightParticipant.party == seat.party, FightParticipant.hero_id.is_(None))
         )
-        result |= {(party, group, character): seat.account_id for party, group, character in monsters_rows.all()}
+        result |= {(party, group, character): seat.holder for party, group, character in monsters_rows.all()}
     return result
 
 
@@ -449,7 +449,7 @@ async def view(session: AsyncSession, record: FightRecord, rules: Rules, account
             for address in fight.addresses()
         ],
     }
-    if seat is not None and account_id == seat.account_id:  # the player who commands the monsters is told so
+    if seat is not None and account_id == seat.holder:  # the player who commands the monsters is told so
         view["seat"] = {"party": seat.party, "absent": seat.absent, "admin": seat.admin}
     return view
 
