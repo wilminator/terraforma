@@ -44,14 +44,22 @@ REMOVE_GOOD_STATUS = "remove_good_status"
 CAUSE_BAD_STATUS = "cause_bad_status"
 REMOVE_BAD_STATUS = "remove_bad_status"
 RESTORE_MP = "restore_mp"
+#: Takes life from the target as ``hurt`` does and gives the user what the target actually lost.
+STEAL_HP = "steal_hp"
+#: Takes mana from the target and gives the user what fits in its own pool.
+STEAL_MP = "steal_mp"
+#: The reverse of stealing: the user gives its own life to the target (never its last point) ...
+TRANSFER_HP = "transfer_hp"
+#: ... or its own mana, and loses exactly what the target took in.
+TRANSFER_MP = "transfer_mp"
 #: Forces the target out of the fight, as a flee that is not its own choice (``Rules.eject_chance``): ``base`` is the chance
 #: out of 100, before the user's Power against the target's Resistance move it between half and double.
 EJECT = "eject"
 
-DETRIMENTAL = {HURT, SLAY, REMOVE_GOOD_STATUS, CAUSE_BAD_STATUS}
+DETRIMENTAL = {HURT, SLAY, REMOVE_GOOD_STATUS, CAUSE_BAD_STATUS, STEAL_HP, STEAL_MP}
 ONLY_LIVING = {
     HEAL, HURT, SLAY, CAUSE_GOOD_STATUS,
-    REMOVE_GOOD_STATUS, CAUSE_BAD_STATUS, REMOVE_BAD_STATUS, RESTORE_MP, EJECT,
+    REMOVE_GOOD_STATUS, CAUSE_BAD_STATUS, REMOVE_BAD_STATUS, RESTORE_MP, EJECT, STEAL_HP, STEAL_MP, TRANSFER_HP, TRANSFER_MP,
 }
 
 

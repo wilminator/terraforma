@@ -71,6 +71,7 @@ Targets = (
 Effect = Literal[
     "none", "heal", "hurt", "revive", "slay",
     "cause_good_status", "remove_good_status", "cause_bad_status", "remove_bad_status", "restore_mp", "eject",
+    "steal_hp", "steal_mp", "transfer_hp", "transfer_mp",
 ]
 
 
