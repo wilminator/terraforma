@@ -29,6 +29,7 @@ from .fights.routes import economy_of, fight_socket, relations_of, rules_of
 from .fights.pending_routes import router as pending_drops_router
 from .fights.routes import router as fights_router
 from .fights.timing_routes import router as timing_router
+from .animations import check_hero_back_views
 from .content.loader import load_content
 from .game import Game
 from .heroes.inventory_routes import router as inventory_router
@@ -106,7 +107,10 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
         if game and game.seed_dir:
             # A seed that doesn't check out stops the server here, naming what's wrong.
             async with app.state.sessionmaker() as session, session.begin():
-                await load_content(session, load_seed(game.seed_dir), game.rules.stats, game.rules.resource_names, game.rules.drop_chance_scale)
+                seed = load_seed(game.seed_dir)
+                await load_content(session, seed, game.rules.stats, game.rules.resource_names, game.rules.drop_chance_scale)
+                if game.assets_dir is not None:
+                    check_hero_back_views(seed, game.assets_dir)
         timer = asyncio.create_task(fight_timer(app, settings.fight_timer_seconds)) if settings.fight_timer_seconds else None
         tidier = asyncio.create_task(housekeeping_timer(app, settings.housekeeping_seconds)) if settings.housekeeping_seconds else None
         yield

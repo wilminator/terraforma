@@ -22,10 +22,24 @@ class Npc(Located, Timestamps, Base):
     counter: Mapped[list] = mapped_column(JSON, default=list)
 
 
+class Dialog(Timestamps, Base):
+    """A dialog tree of its own, shared by whoever includes it (``include,key``, see ``npcs.script``): an NPC's dialog, a map object's
+    script or another tree. ``key`` is the game's own name for it, stable across releases. A tree is at most ``script.MAX_TEXT``
+    characters, so a long dialog (a quest board) is split into trees that include each other."""
+
+    __tablename__ = "dialogs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String(64), unique=True)
+    text: Mapped[str] = mapped_column(Text)
+
+
 class NpcTalk(Timestamps, Base):
     """A hero in the middle of a conversation: at most one each, with an NPC (``npc_id``) or with a map object, whose script runs
     the same way (``object_id``; exactly one of the two is set). ``pos`` is where the text goes on from, ``prompt`` what the hero
-    was last asked (None when it was not waiting on anything)."""
+    was last asked (None when it was not waiting on anything). When it stands in an included tree, ``tree`` is the key of that
+    tree (``pos`` is a place in it, None: in the NPC's or object's own text) and ``stack`` the places to go back to, outermost
+    first, as ``{"tree": key or None, "pos": n}``."""
 
     __tablename__ = "npc_talks"
 
@@ -35,3 +49,5 @@ class NpcTalk(Timestamps, Base):
     object_id: Mapped[int | None] = mapped_column(ForeignKey("map_objects.id"), index=True, nullable=True)
     pos: Mapped[int] = mapped_column(Integer, default=0)
     prompt: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    tree: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    stack: Mapped[list] = mapped_column(JSON, default=list)

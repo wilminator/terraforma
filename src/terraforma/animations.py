@@ -11,7 +11,7 @@ from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BeforeValidator, Field, ValidationError, model_validator
 
-from .content.schema import Strict
+from .content.schema import ContentError, Strict
 
 NAME = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
@@ -122,3 +122,32 @@ def check_animation_folder(folder: Path) -> None:
             check_animations(data, frames if isinstance(frames, int) else None)
         except AnimationError as error:
             raise AnimationError(f"{path.name}: {error}") from error
+
+
+#: The animation a hero's fight art must have a back view of (the fight plays ``base`` for everyone standing in it).
+BACK_VIEW = "base_up"
+
+
+def check_hero_back_views(seed: dict[str, list[dict]], assets_dir: Path) -> None:
+    """Raises ContentError unless every personality that player heroes use has a back view.
+
+    A hero is drawn with the personality that has its job's key; the fight shows a player's own side from behind (the animation
+    ``base_up``, see README, Art), so such a personality with a ``fight_art`` needs an animation file that has one. A plain picture,
+    a sheet with no animation file and a file with no ``base_up`` (as an animation or an alias) all fail, naming the personality.
+    $seed is a checked seed; a personality with no ``fight_art`` stays a plain card and needs nothing."""
+    jobs = {row["key"] for row in seed.get("jobs", [])}
+    problems = []
+    for row in seed.get("personalities", []):
+        art = row.get("fight_art")
+        if row["key"] not in jobs or not art:
+            continue
+        name = art.get("animations") if isinstance(art, dict) else None
+        path = Path(assets_dir) / f"{name}.anim.json" if name else None
+        try:
+            checked = check_animations(json.loads(path.read_text(encoding="utf-8"))) if path else None
+        except (OSError, ValueError, AnimationError):
+            checked = None  # (a bad file is check_animation_folder's to name, when the game starts)
+        if checked is None or BACK_VIEW not in checked.animations and BACK_VIEW not in checked.aliases:
+            problems.append(f"personalities.json {row['key']}: player heroes use it (it has its job's key), so its fight art needs an animation file with {BACK_VIEW!r}")
+    if problems:
+        raise ContentError("the seed has problems:\n  " + "\n  ".join(problems))

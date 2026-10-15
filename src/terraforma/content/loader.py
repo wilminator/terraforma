@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.dialect import upsert
 from ..maps.service import apply_maps
-from ..npcs.service import apply_npcs
+from ..npcs.service import apply_dialogs, apply_npcs
 from ..quests.rotation import apply_slots
 from ..quests.weekly import apply_templates
 from ..world.start import ensure_start
@@ -59,6 +59,8 @@ async def load_content(session: AsyncSession, seed: dict[str, list[dict]], stats
         # Maps belong to a world: the engine's, made first if this is a new database.
         hub = await ensure_start(session)
         counts["maps"] = await apply_maps(session, hub.world_id, checked["maps"])
+    if "dialogs" in seed:
+        counts["dialogs"] = await apply_dialogs(session, checked["dialogs"])
     if "npcs" in seed:
         hub = await ensure_start(session)
         counts["npcs"] = await apply_npcs(session, hub.world_id, checked["npcs"])

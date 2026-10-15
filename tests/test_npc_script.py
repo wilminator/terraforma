@@ -13,14 +13,21 @@ async def unhandled(command, parts):
     return None
 
 
-async def run(text, *answers, who=WHO, tag=unhandled, state=None):
-    """Runs the dialog, answering each prompt in turn: returns the frames (events and prompt) it went through."""
+async def run(text, *answers, who=WHO, tag=unhandled, state=None, trees=None):
+    """Runs the dialog, answering each prompt in turn: returns the frames (events and prompt) it went through. $trees maps a
+    key to the text of a dialog tree it may include."""
     script = parse(text)
-    pos, prompt, frames, pending = 0, None, [], list(answers)
+
+    async def load(key):
+        if key not in (trees or {}):
+            raise ScriptError(f"there is no dialog {key!r} to include")
+        return parse(trees[key])
+
+    pos, prompt, frames, pending, tree, stack = 0, None, [], list(answers), None, []
     while True:
-        result = await advance(script, pos, prompt, pending.pop(0) if prompt is not None and pending else None, who, tag, state)
+        result = await advance(script, pos, prompt, pending.pop(0) if prompt is not None and pending else None, who, tag, state, tree, stack, load)
         frames.append(result)
-        pos, prompt = result["pos"], result["prompt"]
+        pos, prompt, tree, stack = result["pos"], result["prompt"], result["tree"], result["stack"]
         if prompt is None or not pending:
             return frames
 
@@ -308,3 +315,97 @@ def test_add_team_takes_an_optional_token_price():
     for bad in ("`add_team,0`", "`add_team,x`", "`add_team,1,2`"):
         with pytest.raises(ScriptError, match="add_team"):
             parse(bad)
+
+
+# --- including other trees -------------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("text, problem", [
+    ("`include`", "include tag takes 1 parameter"),
+    ("`include,a,b`", "include tag takes 1 parameter"),
+    ("`include,Quest One`", "the key is 1 to 64"),
+    ("`include,`", "the key is 1 to 64"),
+    ("`end_return,now`", "end_return tag takes 0 parameters"),
+    ("`end_complete,now`", "end_complete tag takes 0 parameters"),
+])
+def test_an_include_and_the_new_endings_are_checked(text, problem):
+    with pytest.raises(ScriptError, match=problem):
+        parse(text)
+
+
+def test_a_script_knows_the_trees_it_includes_once_each_in_order():
+    assert parse("`include,b`x`include,a``include,b`").includes == ("b", "a")
+    assert parse("plain").includes == ()
+
+
+async def test_an_included_tree_that_runs_off_its_end_goes_back_to_the_caller():
+    frames = await run("One.`include,two`Three.", trees={"two": "Two."})
+    assert said(frames) == "One.Two.Three." and frames[-1]["prompt"] is None and frames[-1]["stack"] == []
+
+
+async def test_end_return_goes_back_and_end_complete_ends_everything():
+    trees = {"back": "In.`end_return`Never.", "over": "In.`end_complete`Never.", "plain": "In.`end`Never."}
+    assert said(await run("A.`include,back`B.", trees=trees)) == "A.In.B."
+    assert said(await run("A.`include,over`B.", trees=trees)) == "A.In."
+    assert said(await run("A.`include,plain`B.", trees=trees)) == "A.In.", "end is end_complete"
+    assert said(await run("A.`end_return`B.")) == "A.", "at the top, end_return ends the dialog"
+    assert said(await run("A.`end_complete`B.")) == "A."
+
+
+async def test_a_prompt_inside_an_included_tree_is_answered_there_and_then_the_caller_goes_on():
+    trees = {"quest": "Take the quest?`question,Yes,yes,No,no`\n`label,yes`Good luck.`end_return``label,no`Maybe later."}
+    text = "Board.`ack``include,quest`Back at the board.`ack`Bye."
+    frames = await run(text, None, 0, None, trees=trees)
+    assert [(frame["prompt"] or {}).get("type") for frame in frames] == ["ack", "choice", "ack", None]
+    assert frames[1]["tree"] == "quest" and frames[1]["stack"] == [{"tree": None, "pos": text.index("Back at")}]
+    assert said(frames) == "Board.Take the quest?\nGood luck.Back at the board.Bye."
+    declined = await run(text, None, 1, None, trees=trees)
+    assert said(declined).endswith("Maybe later.Back at the board.Bye."), "running off the end of the tree goes back too"
+
+
+async def test_labels_belong_to_their_own_tree():
+    trees = {"inner": "`label,x`Inner x.`jump,end`"}
+    frames = await run("`include,inner``jump,x``label,x`Outer x.", trees=trees)
+    assert said(frames) == "Inner x.Outer x."
+    with pytest.raises(ScriptError, match="no label 'x'"):
+        parse("`include,inner``jump,x`")  # (a jump never reaches into an included tree)
+
+
+async def test_the_end_label_of_an_included_tree_goes_back():
+    trees = {"quest": "Pick.`question,Leave,end`"}
+    frames = await run("A.`include,quest`B.", 0, trees=trees)
+    assert said(frames) == "A.Pick.B."
+
+
+async def test_trees_can_include_trees_and_each_goes_back_to_the_one_that_included_it():
+    trees = {"a": "A1.`include,b`A2.", "b": "B1.`include,c`B2.", "c": "C."}
+    assert said(await run("`include,a`Z.", trees=trees)) == "A1.B1.C.B2.A2.Z."
+    trees["c"] = "C.`end_complete`"
+    assert said(await run("`include,a`Z.", trees=trees)) == "A1.B1.C."
+
+
+async def test_a_tree_that_includes_itself_is_cut_off():
+    with pytest.raises(ScriptError, match="deep"):
+        await run("`include,loop`", trees={"loop": "x`include,loop`"})
+
+
+async def test_a_tree_that_is_not_there_is_a_mistake_in_the_text():
+    with pytest.raises(ScriptError, match="no dialog 'ghost'"):
+        await run("`include,ghost`")
+    with pytest.raises(ScriptError, match="nowhere to look it up"):
+        await advance(parse("`include,ghost`"), 0, None, None, WHO, unhandled)
+
+
+async def test_the_game_state_tags_work_inside_an_included_tree():
+    async def state(command, parts):
+        return "no" if command == "have_item" else ""
+
+    trees = {"gate": "`have_item,key,1,any,no`Open.`end_return``label,no`Locked."}
+    assert said(await run("`include,gate`After.", trees=trees, state=state)) == "Locked.After."
+
+
+async def test_an_activity_the_game_deals_with_goes_on_in_the_included_tree():
+    async def tag(command, parts):
+        return "" if command == "vend" else None
+
+    frames = await run("`include,shop`Back.", trees={"shop": "Buy?`vend,potion,5`Thanks."}, tag=tag)
+    assert said(frames) == "Buy?Thanks.Back." and frames[-1]["prompt"] is None
