@@ -55,3 +55,28 @@ class WeeklyQuests:
         """A quest made up for the team at $level, drawing only from $rng. None (the default) means this game makes none: a team no template
         fits then has no quest that week."""
         return None
+
+
+class RotatingQuests:
+    """What a game decides about the rotating quests (``quests.rotation``): a slot such as a guild's rank S promotion holds one quest at a
+    time and changes it after a random while. A game subclasses this and hands it to ``Game(rotating_quests=...)``. This is a public
+    interface (the license exception covers it).
+
+    The engine draws a slot's next quest from the templates tagged for the slot (``slot`` in ``quest_templates.json``); only when none is
+    active does it call ``generate``. A quest's contents (goals, reward, the dungeon) are the game's own ``spec``, never read here.
+
+        class Rotating(terraforma.quests.hooks.RotatingQuests):
+            async def penalty(self, session, team_id, slot, reason):
+                if reason == POOR_PERFORMANCE:
+                    await guild.add_points(session, team_id, slot.guild, -10)   # (a game's own rule)
+    """
+
+    def generate(self, rng: Random, slot, seq: int) -> GeneratedQuest | None:
+        """A quest made up for $slot's period number $seq (``slot`` is the ``QuestSlot`` row), drawing only from $rng. None (the default) means the
+        game makes none: the slot then offers nothing for that period."""
+        return None
+
+    async def penalty(self, session: AsyncSession, team_id: int, slot, reason: str) -> None:
+        """A team failed a quest of $slot. $reason is ``timeout`` (it ran out of time) or ``poor_performance`` (the game's dialog or dungeon said
+        it lost). Does nothing by default: the game decides what failing costs (guild points, gold, a status). Never called when the
+        world ended the quest."""

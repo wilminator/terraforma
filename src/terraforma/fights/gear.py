@@ -1,7 +1,7 @@
 """Pure rules about gear that heroes (heroes.inventory) and fights (fights.combatant) share. No database."""
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 SIDED = ("hand", "ammo", "arm")
@@ -13,6 +13,7 @@ class EquipOutcome(Enum):
     NOT_EQUIPABLE = "not_equipable"  # the item takes no slot
     NEEDS_UNEQUIPPING = "needs_unequipping"  # something is in the way: take occupying_position off first
     INCOMPATIBLE_AMMO = "incompatible_ammo"  # ammo with no weapon that takes it
+    NOT_ALLOWED = "not_allowed"  # the rules refuse it for this wearer (``Rules.equip_refusal``): .reason says why
     SUCCESS = "success"  # equipped in .slots
 
 
@@ -21,6 +22,17 @@ class EquipResult:
     outcome: EquipOutcome
     occupying_position: int | None = None
     slots: tuple[str, ...] = ()
+    reason: str = ""
+
+
+@dataclass(frozen=True)
+class Wearer:
+    """Who is asking to wear something, as ``Rules.equip_refusal`` sees them: the job's key, the level, and the base stats (before any
+    gear, so wearing something never changes whether the next may be worn)."""
+
+    job: str = ""
+    level: int = 1
+    stats: dict = field(default_factory=dict, hash=False)
 
 
 def find_slot(slot: str, side: int) -> str:
