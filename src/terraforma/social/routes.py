@@ -111,3 +111,11 @@ async def directory(request: Request, account: CurrentAccount, db: Db, prefix: A
     """Players who opted in whose handle starts with $prefix: handle, bio, whether the caller follows them, and a profile link if they switched it on."""
     await limited(request, ratelimit.DIRECTORY_BY_ACCOUNT, str(account.id))
     return {"players": await service.search(db, account, prefix)}
+
+
+@router.get("/team-directory")
+async def team_directory(request: Request, account: CurrentAccount, db: Db, prefix: Annotated[str, Query(min_length=1, max_length=24)]) -> dict:
+    """Teams whose name starts with $prefix, among those their players made visible and the caller's own: number, name and, if the
+    player is in the directory, the handle. (Alliances invite a team by the number it gives.)"""
+    await limited(request, ratelimit.DIRECTORY_BY_ACCOUNT, str(account.id))
+    return {"teams": await service.search_teams(db, account, prefix)}

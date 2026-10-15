@@ -8,6 +8,7 @@ export class Roster {
   heroes = [];
   teams = [];
   jobs = [];
+  startPlaces = []; // where a new team may start, in the game's order: [{key, title}] (empty when the game offers no choice)
   rules = { team_min: 1, team_max: 4, max_teams: 3 }; // what the game says about teams (the server's answer replaces this)
   heroId = null; // the hero the player is acting with (the nearby list is theirs)
   teamId = null; // the team the player is looking at in the party panel
@@ -37,11 +38,12 @@ export class Roster {
   }
 
   async load() {
-    [this.heroes, this.teams, this.jobs, this.rules] = await Promise.all([
+    [this.heroes, this.teams, this.jobs, this.rules, this.startPlaces] = await Promise.all([
       api.get("/api/heroes"),
       api.get("/api/teams"),
       api.get("/api/jobs"),
       api.get("/api/team-rules"),
+      api.get("/api/start-places"),
     ]);
     if (this.hero(this.heroId) === null) this.heroId = this.heroes[0]?.id ?? null;
     if (this.team(this.teamId) === null) this.teamId = this.teams[0]?.id ?? null;
@@ -77,8 +79,9 @@ export class Roster {
     await this.load();
   }
 
-  async addHero(teamId, name, job) {
-    await api.post(`/api/teams/${teamId}/heroes`, { name, job });
+  /** Adds a hero. $start (a key of ``startPlaces``) is for the first hero of an empty team: it says where the team starts. */
+  async addHero(teamId, name, job, start = null) {
+    await api.post(`/api/teams/${teamId}/heroes`, { name, job, ...(start ? { start } : {}) });
     await this.load();
   }
 
