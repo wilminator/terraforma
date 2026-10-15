@@ -339,3 +339,13 @@ def test_a_fighter_whose_personality_has_art_is_drawn_with_it(page, live_server)
             canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data.some((value, at) => at % 4 === 3 && value > 0))"""
     )
     assert all(painted), "every sprite's canvas has pixels on it"
+
+
+def test_the_viewers_side_is_drawn_from_behind_and_the_other_from_the_front(page, live_server):
+    """The viewer's own side plays the "_up" animations (the back view) and the other side the "_down" ones: the example's hero has a back view."""
+    into_the_marsh(page, live_server)
+    stage = page.locator("#stage")
+    expect(stage).to_have_attribute("data-sprites", str(page.locator(".fighter").count()), timeout=SLOW)
+    views = page.evaluate("() => [...document.querySelectorAll('.fighter')].map((card) => [card.dataset.side, card.dataset.view])")
+    assert views and all(view == ("up" if side == "left" else "down") for side, view in views)
+    assert {side for side, _ in views} == {"left", "right"}

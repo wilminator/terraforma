@@ -11,6 +11,10 @@ nothing: not in the banner's follower count, never shared back) and takes the sh
 The **directory** is a search by the start of a handle among the players who opted in (``PlayerProfile.directory``). A result shows the
 handle and bio, whether the searcher follows them, and the profile link only if that player switched it on (``directory_link``).
 A player who banned the searcher is not in their results.
+
+The **team directory** is the same search by the start of a team's name, so an alliance can invite a team without knowing its number.
+It lists the teams their players made visible (``TeamProfile.visible``; a hidden team is found nowhere) and the searcher's own teams,
+whatever their visibility. A result shows the team's number and name, and the player's handle only if that player is in the directory.
 """
 
 from sqlalchemy import delete, func, select
@@ -18,10 +22,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..accounts.service import handle_key
 from ..fights.rules import Rules
+from ..heroes.models import Team
+from ..heroes.service import name_key
 from ..models import Account
 from ..playtime import service as playtime
 from ..playtime.models import PlayTime
-from ..profiles.models import PlayerProfile
+from ..profiles.models import PlayerProfile, TeamProfile
 from .models import Follow, ProfileBan
 
 RESULTS = 20
@@ -167,4 +173,29 @@ async def search(session: AsyncSession, me: Account, prefix: str) -> list[dict]:
     return [
         {"handle": handle, "bio": bio, "following": id_ in followed, "profile": token if link else None}
         for id_, handle, bio, token, link in rows
+    ]
+
+
+async def search_teams(session: AsyncSession, me: Account, prefix: str) -> list[dict]:
+    """Teams whose name starts with $prefix (case and spacing aside) and that are visible or the searcher's own, at most ``RESULTS``, by name.
+    A team whose player banned the searcher is left out."""
+    text = name_key(prefix)
+    if not text:
+        return []
+    barred = select(ProfileBan.owner_id).where(ProfileBan.banned_id == me.id)
+    rows = (await session.execute(
+        select(Team.id, Team.name, Team.account_id, Account.handle, PlayerProfile.directory)
+        .join(Account, Account.id == Team.account_id)
+        .outerjoin(TeamProfile, TeamProfile.team_id == Team.id)
+        .outerjoin(PlayerProfile, PlayerProfile.account_id == Team.account_id)
+        .where(
+            Team.name_key.startswith(text, autoescape=True),
+            (TeamProfile.visible.is_(True)) | (Team.account_id == me.id),
+            Team.account_id.not_in(barred),
+        )
+        .order_by(Team.name_key, Team.id).limit(RESULTS)
+    )).all()
+    return [
+        {"id": id_, "name": name, "mine": owner == me.id, "handle": handle if listed else None}
+        for id_, name, owner, handle, listed in rows
     ]

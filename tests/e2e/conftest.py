@@ -99,9 +99,15 @@ class LiveServer:
 
 
 @pytest.fixture
-def live_server(database_url, mailbox, tmp_path):
+def live_game(request):
+    """The game the live server plays: the example game. A test that needs another parametrizes this fixture (indirect=True)."""
+    return getattr(request, "param", GAME)
+
+
+@pytest.fixture
+def live_server(database_url, mailbox, tmp_path, live_game):
     new_key(tmp_path / "keys")
-    server = LiveServer(database_url, tmp_path / "keys", mailbox).start()
+    server = LiveServer(database_url, tmp_path / "keys", mailbox, live_game).start()
     yield server
     server.stop()
 

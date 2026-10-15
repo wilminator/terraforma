@@ -3,13 +3,17 @@
 import json
 
 import pytest
-from sqlalchemy import update
+from sqlalchemy import select, update
 
 from terraforma.accounts import ratelimit
 from terraforma.accounts.service import create_account, set_handle
 from terraforma.fights.rules import Rules
 from terraforma.game import Game
+from terraforma.heroes.models import Team
+from terraforma.models import Account
 from terraforma.playtime.models import PlayTime
+from terraforma.profiles.models import TeamProfile
+from terraforma.social import service as social
 from terraforma.testing import in_app_db
 
 from .helpers import expect
@@ -291,6 +295,79 @@ def test_the_directory_is_rate_limited_and_needs_a_prefix(crowd):
     for _ in range(ratelimit.DIRECTORY_BY_ACCOUNT.attempts):
         expect(crowd.get("/api/directory?prefix=a", headers=headers), 200)
     refused = expect(crowd.get("/api/directory?prefix=a", headers=headers), 429)
+    assert int(refused.headers["Retry-After"]) > 0
+
+
+# --- the team directory ------------------------------------------------------------------------------------------------
+
+def make_team(client, who, name, visible=False):
+    team = call(client, who, "POST", "/api/teams", {"name": name, "heroes": [{"name": f"{name} hero", "job": "fighter"}]}, status=201)
+    if visible:
+        call(client, who, "PUT", "/api/profile/team-visible", {"team_id": team["id"], "visible": True})
+    return team
+
+
+def find_teams(client, who, prefix, status=200):
+    answer = call(client, who, "GET", f"/api/team-directory?prefix={prefix}", status=status)
+    return answer["teams"] if status == 200 else answer
+
+
+def test_the_team_directory_lists_visible_teams_by_the_start_of_their_name_and_never_hidden_ones(crowd):
+    shown = make_team(crowd, "Ann", "Iron Wolves", visible=True)
+    make_team(crowd, "Ann", "Iron Hidden")
+    make_team(crowd, "Bob", "Silver Fox", visible=True)
+    assert find_teams(crowd, "Mike", "iron") == [{"id": shown["id"], "name": "Iron Wolves", "mine": False, "handle": None}]
+    assert [entry["name"] for entry in find_teams(crowd, "Mike", "IRON%20w")] == ["Iron Wolves"], "case and spacing do not matter"
+    assert find_teams(crowd, "Mike", "wolves") == [], "the start of a name, not the middle"
+    assert find_teams(crowd, "Mike", "iron%20h") == [], "a hidden team is found nowhere"
+
+
+def test_a_team_result_names_its_player_only_when_the_player_is_in_the_directory(crowd):
+    make_team(crowd, "Ann", "Iron Wolves", visible=True)
+    assert find_teams(crowd, "Mike", "iron")[0]["handle"] is None
+    call(crowd, "Ann", "PUT", "/api/profile/directory", {"enabled": True})
+    assert find_teams(crowd, "Mike", "iron")[0]["handle"] == "Ann Bold"
+    call(crowd, "Ann", "PUT", "/api/profile/directory", {"enabled": False})
+    assert find_teams(crowd, "Mike", "iron")[0]["handle"] is None
+
+
+def test_the_searchers_own_teams_are_found_hidden_or_not_and_a_player_who_banned_them_hides_theirs(crowd):
+    own = make_team(crowd, "Mike", "Iron Bulwark")
+    make_team(crowd, "Ann", "Iron Wolves", visible=True)
+    make_team(crowd, "Bob", "Iron Fist", visible=True)
+    assert [(entry["name"], entry["mine"]) for entry in find_teams(crowd, "Mike", "iron")] == [("Iron Bulwark", True), ("Iron Fist", False), ("Iron Wolves", False)]
+    assert find_teams(crowd, "Mike", "iron")[0]["id"] == own["id"]
+    call(crowd, "Ann", "POST", "/api/bans", {"handle": "Mike Bold"})
+    assert [entry["name"] for entry in find_teams(crowd, "Mike", "iron")] == ["Iron Bulwark", "Iron Fist"]
+
+
+def test_a_team_prefix_is_text_not_a_pattern_and_a_search_gives_at_most_twenty_teams(crowd):
+    make_team(crowd, "Ann", "Ab_c", visible=True)
+    make_team(crowd, "Ann", "Abxc", visible=True)
+    assert [entry["name"] for entry in find_teams(crowd, "Mike", "ab_")] == ["Ab_c"], "an underscore is not a wildcard"
+    assert find_teams(crowd, "Mike", "%25") == []
+    # a player may make only a few teams, so the cap is exercised with rows added directly
+    async def many(db):
+        owner = await db.scalar(select(Account).where(Account.username == "Bob"))
+        for number in range(23):
+            team = Team(account_id=owner.id, name=f"Tag {number:02}", name_key=f"tag {number:02}")
+            db.add(team)
+            await db.flush()
+            db.add(TeamProfile(team_id=team.id, token=f"tok{number}", visible=True))
+        me = await db.scalar(select(Account).where(Account.username == "Mike"))
+        return [entry["name"] for entry in await social.search_teams(db, me, "tag")]
+
+    found = in_app_db(crowd, many)
+    assert len(found) == 20 and found == sorted(found)
+
+
+def test_the_team_directory_needs_a_login_is_rate_limited_and_needs_a_prefix(crowd):
+    expect(crowd.get("/api/team-directory?prefix=a"), 401)
+    find_teams(crowd, "Mike", "", 422)
+    headers = login(crowd, "Mike")
+    for _ in range(ratelimit.DIRECTORY_BY_ACCOUNT.attempts):
+        expect(crowd.get("/api/team-directory?prefix=a", headers=headers), 200)
+    refused = expect(crowd.get("/api/team-directory?prefix=a", headers=headers), 429)
     assert int(refused.headers["Retry-After"]) > 0
 
 

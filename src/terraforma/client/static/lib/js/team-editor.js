@@ -125,6 +125,11 @@ export function teamEditor(shell, roster, teamId, onGone) {
   function adder(team) {
     const name = h("input", { id: "new-hero", name: "new-hero", maxlength: "24", "aria-label": t("teams.add_name", { team: team.name }), autocomplete: "off", required: true });
     const job = jobSelect("new-hero-job", t("teams.add_job", { team: team.name }), roster.jobs[0]?.key);
+    // the first hero of an empty team decides where the whole team starts, when the game offers places to pick from
+    const picking = team.members.length === 0 && roster.startPlaces.length > 0;
+    const start = picking
+      ? h("select", { id: "new-hero-start", "aria-label": t("teams.start_label", { team: team.name }) }, roster.startPlaces.map((each) => h("option", { value: each.key }, each.title)))
+      : null;
     return h(
       "form",
       {
@@ -133,13 +138,14 @@ export function teamEditor(shell, roster, teamId, onGone) {
         onsubmit: (event) => {
           event.preventDefault();
           attempt(shell, problem, async () => {
-            await roster.addHero(team.id, name.value.trim(), job.value);
+            await roster.addHero(team.id, name.value.trim(), job.value, start?.value);
             name.value = "";
           });
         },
       },
       h("h3", {}, t("teams.add_title")),
       h("div", { class: "inline" }, name, job, h("button", { type: "submit", class: "primary" }, t("teams.add"))),
+      start ? h("div", { class: "field" }, h("label", { for: "new-hero-start" }, t("teams.start")), start, h("p", { class: "muted small" }, t("teams.start_hint"))) : null,
     );
   }
 

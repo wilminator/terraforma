@@ -45,6 +45,32 @@
    ],
    "ms": 90
   },
+  "base_up": {
+   "frames": [
+    8,
+    9
+   ],
+   "ms": 450
+  },
+  "hit_up": {
+   "frames": [
+    11,
+    11,
+    8
+   ],
+   "ms": 120,
+   "loop": false
+  },
+  "attack_close_up": {
+   "frames": [
+    {
+     "frame": 10,
+     "ms": 260
+    },
+    8
+   ],
+   "loop": false
+  },
   "spell": {
    "frames": [
     {
@@ -80,6 +106,9 @@
   "flee": {
    "of": "run",
    "flip_x": true
+  },
+  "die_up": {
+   "of": "die"
   },
   "skill": {
    "of": "attack_close",

@@ -187,6 +187,35 @@ def test_a_slow_answer_does_not_draw_the_page_over_a_newer_one(page, new_page, l
     expect(page.locator("[data-team='Wanderers']")).to_have_count(0)
 
 
+def test_a_leader_finds_a_team_by_name_and_invites_it_without_its_number(page, new_page, live_server):
+    live_server.make_account("Mike")
+    mike = sign_in(page, "Mike")
+    vanguard = make_team(mike, "Vanguard")
+    alliance = mike.post("/api/alliances", {"team_id": vanguard["id"], "name": "Iron Pact"})
+    zed_page, zed = second_player(new_page, live_server, "Zed")
+    make_team(zed, "Strangers")
+    wanderers = make_team(zed, "Wanderers")
+    zed_page.request.put("/api/profile/team-visible", data={"team_id": wanderers["id"], "visible": True}, headers=zed.csrf)
+
+    page.goto(f"/alliance/{alliance['id']}")
+    search = page.locator("#team-search-form")
+    search.get_by_label("Start of the team's name").fill("str")
+    search.get_by_role("button", name="Search").click()
+    expect(search.get_by_text("No team by that name.")).to_be_visible()  # Strangers is hidden: found nowhere
+    expect(page.locator("[data-found]")).to_have_count(0)
+
+    search.get_by_label("Start of the team's name").fill("wan")
+    search.get_by_role("button", name="Search").click()
+    expect(page.locator("[data-found='Wanderers']")).to_be_visible()
+    page.get_by_role("button", name="Invite Wanderers").click()
+    expect(page.locator("[data-invited='Wanderers']")).to_be_visible()
+
+    search = page.locator("#team-search-form")
+    search.get_by_label("Start of the team's name").fill("van")
+    search.get_by_role("button", name="Search").click()
+    expect(page.locator("[data-found='Vanguard']")).to_contain_text("yours")  # one's own teams are always found
+
+
 def test_a_leader_sets_roles_hands_over_removes_and_the_others_leave(page, new_page, live_server, console):
     console.allow("status of 409")  # the founder can't leave while others remain
     live_server.make_account("Mike")
