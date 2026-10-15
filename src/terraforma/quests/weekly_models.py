@@ -7,8 +7,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db.base import Base, Timestamps
 
-#: Where a template came from: the game's seed file, or a generated quest an admin promoted.
-SEEDED, PROMOTED = "seed", "promoted"
+#: Where a template came from: the game's seed file, a generated quest an admin promoted, or a quest the engine made for a gap (``quests.needs``).
+SEEDED, PROMOTED, NEEDS = "seed", "promoted", "needs"
 #: Where a weekly quest came from: a template (scaled to the team), or made up from nothing.
 FROM_TEMPLATE, GENERATED = "template", "generated"
 #: Where a weekly quest stands: offered (not taken), active (taken: the dungeon is open), completed or failed (one try only).
@@ -36,6 +36,10 @@ class QuestTemplate(Timestamps, Base):
     # The rotating quest slot (``quests.rotation``) this template belongs to, or None for a weekly quest: a slot's templates are never
     # drawn for the weekly quest, and the levels above mean nothing to a slot (its quest is the same for every team).
     slot: Mapped[str | None] = mapped_column(String(64), index=True)
+    # The party strength (PXP) the quest is meant for; 0 and 0 when the template does not say. A slot's quest fits a band of teams when
+    # these overlap it (``quests.needs``); 0 for the ceiling means none.
+    pxp_min: Mapped[int] = mapped_column(Integer, default=0)
+    pxp_max: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class WeeklyQuest(Timestamps, Base):

@@ -56,6 +56,7 @@ from .fighttags.routes import router as fighttags_router
 from .fightpages.routes import router as fightpages_router
 from .profiles.routes import router as profiles_router
 from .social.routes import router as social_router
+from .quests.needs_routes import router as needs_router
 from .quests.rotation_routes import router as rotation_router
 from .quests.weekly_routes import router as weekly_quests_router
 from .relations.rating_routes import router as ratings_router
@@ -92,7 +93,8 @@ async def housekeeping_timer(app: FastAPI, seconds: float) -> None:
     """Runs the housekeeping jobs every $seconds, for as long as the app runs."""
     while True:
         await asyncio.sleep(seconds)
-        await housekeeping.run(app.state.sessionmaker, app.state.settings, app.state.game.rules if app.state.game else None)
+        game = app.state.game
+        await housekeeping.run(app.state.sessionmaker, app.state.settings, game.rules if game else None, game.needs if game else None)
 
 
 def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer | None = None) -> FastAPI:
@@ -161,6 +163,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(social_router)
     app.include_router(weekly_quests_router)
     app.include_router(rotation_router)
+    app.include_router(needs_router)
     app.include_router(fighttags_router)
     app.include_router(fightpages_router)
     app.include_router(challenge_router)
