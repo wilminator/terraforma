@@ -51,20 +51,27 @@ its command, followed by comma separated parameters. Text outside tags is shown.
     pause,ms             wait this long (the browser does)
     sound,clip  music,clip  mute        sound cues (the browser plays them)
     ack                  wait until the player says to go on
-    end                  leave the dialog here (the same as jumping to the end label)
+    end                  leave the whole dialog here (the same as ``end_complete``)
+    include,key          run the dialog tree with that key (the ``dialogs`` table) from its start, like a subroutine: where it goes on
+                         from depends on how the tree ends
+    end_complete         the whole dialog is over, however deep in included trees it stands
+    end_return           this tree is over: go back to just after the ``include`` that entered it (at the top, the dialog is over)
 
 The scope of have_item, quests, quest_marker, guild_points and guild_rank is ``any`` (it holds for any team of the party; for have_item, any hero of it),
 ``lead`` (for the party's leading team) or ``each`` (for every team of the party; for have_item, a hero of every team). The
 level of ``quests`` is a whole number, or ``any`` to count every level. A comparison ``op`` is ``eq``, ``ne``, ``lt``,
 ``le``, ``gt`` or ``ge``. A party is the one the team acts in right now (``towns.service.acting_party``).
 
-There is always an implicit ``end`` label that leaves the dialog, and running past the last text leaves it too. A label that
+There is always an implicit ``end`` label that goes to the end of the tree, and running past the last text is the same: the dialog
+is over at the top, and in an included tree control returns to the caller (``end_return``). Labels belong to their own tree, so two
+trees may use the same names and a jump never leaves its tree. A label that
 is neither defined nor ``end`` is refused when the text is checked (DragonStar would silently leave). The tags the engine
 does not act on itself (vend, hawk, shop, inn's Yes, services, heal, recharge, select_team, add_team, find_party, party_requests, resurrect, cure, uncurse) are
 handed to the game's ``Npcs.tag``; one it does not handle is passed to the browser as an *activity* to run, which it
 finishes by calling ``next`` again.
 """
 
+import re
 from dataclasses import dataclass
 
 SCOPES = ("any", "lead", "each")
@@ -72,6 +79,10 @@ OPS = ("eq", "ne", "lt", "le", "gt", "ge")
 #: The tags that read or change the game's state, which the engine itself runs (through ``advance``'s $state).
 STATE_TAGS = ("have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker", "add_guild_points", "set_guild_rank", "guild_points", "guild_rank", "party_gate", "open_party", "add_status", "has_status", "have_tokens", "spend_tokens", "add_tokens", "add_gold", "warp", "enter_instance", "complete_instance", "leave_instance", "instance_won", "weekly_quest")
 MAX_TEXT = 20000
+#: A dialog tree's key (``Dialog.key``): the same shape as a content key, so it cannot hold a comma or a backtick.
+TREE_KEY = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+#: How many trees may be waiting on the trees they included at once: a tree that includes itself is cut off here.
+MAX_DEPTH = 8
 MAX_STEPS = 10000  # tags run in one call: a text that jumps in a circle with nothing to show or ask is cut off
 
 
@@ -162,7 +173,11 @@ def check_tag(parts: list[str]) -> list[str]:
         for price in args[1::3]:
             _whole(command, price, "a price")
         return args[2::3]
-    elif command in ("mute", "ack", "end", "heal", "recharge", "select_team", "find_party", "party_requests"):
+    elif command == "include":
+        count(1)
+        if not TREE_KEY.fullmatch(args[0]):
+            raise ScriptError("include tag: the key is 1 to 64 lowercase letters, digits, _ or -, starting with a letter or digit")
+    elif command in ("mute", "ack", "end", "end_complete", "end_return", "heal", "recharge", "select_team", "find_party", "party_requests"):
         count(0)
     elif command == "add_team":
         if len(args) > 1:
@@ -302,6 +317,7 @@ class BadAnswer(ScriptError):
 class Script:
     text: str
     labels: dict[str, int]  # label -> the position just after its tag
+    includes: tuple[str, ...] = ()  # the keys of the trees it includes, in order of first use
 
 
 def parse(text: str) -> Script:
@@ -309,6 +325,7 @@ def parse(text: str) -> Script:
     if len(text) > MAX_TEXT:
         raise ScriptError(f"a dialog is at most {MAX_TEXT} characters")
     labels: dict[str, int] = {}
+    included: dict[str, None] = {}
     wanted: list[tuple[int, str]] = []
     pos = 0
     while True:
@@ -323,6 +340,8 @@ def parse(text: str) -> Script:
             wanted += [(start, label) for label in check_tag(parts)]
         except ScriptError as error:
             raise ScriptError(f"at position {start}: {error}") from error
+        if parts[0] == "include":
+            included[parts[1]] = None
         if parts[0] == "label":
             if parts[1] in labels:
                 raise ScriptError(f"at position {start}: label {parts[1]!r} is defined twice")
@@ -331,7 +350,7 @@ def parse(text: str) -> Script:
     for start, label in wanted:
         if label not in labels and label not in ("", "end"):
             raise ScriptError(f"at position {start}: there is no label {label!r}")
-    return Script(text, labels)
+    return Script(text, labels, tuple(included))
 
 
 @dataclass(frozen=True)
@@ -361,16 +380,59 @@ def _activity(command: str, args: list[str]) -> dict:
     return {"type": "activity", "command": command, "parts": args, "cancel": cancel}
 
 
-async def advance(script: Script, pos: int, prompt: dict | None, choice: int | None, who: Who, tag, state=None) -> dict:
+async def _tree(load, key: str) -> Script:
+    if load is None:
+        raise ScriptError(f"this dialog includes another ({key}), and there is nowhere to look it up")
+    return await load(key)
+
+
+async def advance(script: Script, pos: int, prompt: dict | None, choice: int | None, who: Who, tag, state=None,
+                  tree: str | None = None, stack=(), load=None) -> dict:
     """Runs the dialog on from $pos, which is where the last call stopped, answering the $prompt it stopped at with $choice
     (the index of an option, or None for Next or cancelling). $tag is the game's ``Npcs.tag`` (command, parts) -> a label,
     "" to go on, or None for not handled. $state is the engine's own (command, parts) -> label for the tags that read or change the
-    game's state (``STATE_TAGS``): the label to go to when a test fails or a change cannot be made, "" to go on. Returns ``{"events", "prompt", "pos"}``: what happened (text to show and cues to
-    play, in order), and the prompt the dialog stopped at (None when it ended). ``pos`` is where to resume."""
-    text, events = script.text, []
+    game's state (``STATE_TAGS``): the label to go to when a test fails or a change cannot be made, "" to go on.
+
+    $script is the text of whoever the hero talks to. The ``include`` tag runs another tree (``load``: key -> Script, which raises
+    ScriptError for one that is not there) as a subroutine: $tree is the key of the included tree $pos is in (None: in $script
+    itself), and $stack the places to go back to, outermost first, as ``{"tree": key or None, "pos": n}``.
+
+    Returns ``{"events", "prompt", "pos", "tree", "stack"}``: what happened (text to show and cues to play, in order), the prompt
+    the dialog stopped at (None when it ended), and where to resume."""
+    root, events = script, []
+    stack = [dict(frame) for frame in stack]
+    if tree is not None:
+        script = await _tree(load, tree)
+    text = script.text
 
     def go(label: str) -> int:
         return script.labels.get(label, len(text)) if label else pos
+
+    def stopped(at_prompt: dict | None, at: int) -> dict:
+        return {"events": events, "prompt": at_prompt, "pos": at, "tree": tree, "stack": stack}
+
+    def over() -> dict:
+        return {"events": events, "prompt": None, "pos": len(text), "tree": None, "stack": []}
+
+    async def back() -> bool:
+        """Goes back to the tree that included this one (False: none did)."""
+        nonlocal script, text, tree, pos
+        if not stack:
+            return False
+        frame = stack.pop()
+        tree = frame["tree"]
+        script = root if tree is None else await _tree(load, tree)
+        text, pos = script.text, frame["pos"]
+        return True
+
+    async def ask() -> dict:
+        """A vend or hawk goes to the game first (it may deal with it); everything else is shown as the prompt."""
+        if pending["type"] == "activity":
+            handled = await tag(pending["command"], pending["parts"])
+            if handled is not None:  # it was dealt with: go where it says, or on with the text for ""
+                rest = await advance(root, go(handled) if handled else pos, None, None, who, tag, state, tree, stack, load)
+                return {**rest, "events": events + rest["events"]}
+        return stopped(pending, pos)
 
     pending = None  # a prompt that waits for the end of its text block
     if prompt is not None:
@@ -388,7 +450,7 @@ async def advance(script: Script, pos: int, prompt: dict | None, choice: int | N
             if prompt["kind"] == "inn" and label == "":  # Yes: the game rests the party
                 handled = await tag("inn", prompt["parts"])
                 if handled is None:
-                    return {"events": events, "prompt": {"type": "activity", "command": "inn", "parts": prompt["parts"], "cancel": None}, "pos": pos}
+                    return stopped({"type": "activity", "command": "inn", "parts": prompt["parts"], "cancel": None}, pos)
                 label = handled
             pos = go(label) if label else pos
         else:  # an activity the browser ran
@@ -396,7 +458,11 @@ async def advance(script: Script, pos: int, prompt: dict | None, choice: int | N
                 raise BadAnswer("an activity is finished with Next, there is nothing to choose")
             pos = go(prompt["cancel"]) if prompt["cancel"] else pos
     steps = 0
-    while pos < len(text):
+    while True:
+        if pos >= len(text):
+            if pending is None and await back():  # the end of an included tree: on in the one that included it
+                continue
+            break
         steps += 1
         if steps > MAX_STEPS:
             raise ScriptError("the dialog goes in circles")
@@ -410,9 +476,9 @@ async def advance(script: Script, pos: int, prompt: dict | None, choice: int | N
             _show(events, text[pos:end])
             pos = end
         if pending is not None:
-            return await _ask(pending, events, pos, tag, script, who, state)
+            return await ask()
         if start == -1:
-            break
+            continue
         end_tag = text.find("`", start + 1)
         parts = text[start + 1:end_tag].split(",")
         command, args = parts[0], parts[1:]
@@ -436,8 +502,17 @@ async def advance(script: Script, pos: int, prompt: dict | None, choice: int | N
                        "cancel": args[1], "parts": args}
         elif command in ("vend", "hawk", "shop"):
             pending = _activity(command, args)
-        elif command == "end":
-            return {"events": events, "prompt": None, "pos": len(text)}
+        elif command == "include":
+            if len(stack) >= MAX_DEPTH:
+                raise ScriptError(f"dialog trees are included more than {MAX_DEPTH} deep (does {args[0]} include itself?)")
+            included = await _tree(load, args[0])
+            stack.append({"tree": tree, "pos": pos})
+            tree, script, text, pos = args[0], included, included.text, 0
+        elif command in ("end", "end_complete"):
+            return over()
+        elif command == "end_return":
+            if not await back():  # at the top there is no one to go back to: the dialog is over
+                return over()
         elif command in STATE_TAGS:
             if state is None:
                 raise ScriptError(f"this dialog reads the game's state ({command}), and there is no one to ask")
@@ -445,9 +520,9 @@ async def advance(script: Script, pos: int, prompt: dict | None, choice: int | N
             if failed:
                 pos = go(failed)
             elif command in ("warp", "enter_instance", "leave_instance") and not (command == "enter_instance" and args[1] == "public"):  # the hero is somewhere else now: the dialog is over
-                return {"events": events, "prompt": None, "pos": len(text)}
+                return over()
         elif command == "ack":
-            return {"events": events, "prompt": {"type": "ack"}, "pos": pos}
+            return stopped({"type": "ack"}, pos)
         elif command == "pause":
             events.append({"type": "pause", "ms": int(args[0])})
         elif command in ("sound", "music"):
@@ -457,22 +532,12 @@ async def advance(script: Script, pos: int, prompt: dict | None, choice: int | N
         else:  # the game's: heal, recharge, select_team, services, resurrect, cure, uncurse
             handled = await tag(command, args)
             if handled is None:
-                return {"events": events, "prompt": _activity(command, args), "pos": pos}
+                return stopped(_activity(command, args), pos)
             if handled:
                 pos = go(handled)
     if pending is not None:
-        return await _ask(pending, events, pos, tag, script, who, state)
-    return {"events": events, "prompt": None, "pos": len(text)}
-
-
-async def _ask(pending: dict, events: list, pos: int, tag, script: Script, who: Who, state) -> dict:
-    """A vend or hawk goes to the game first (it may deal with it); everything else is shown as the prompt."""
-    if pending["type"] == "activity":
-        handled = await tag(pending["command"], pending["parts"])
-        if handled is not None:  # it was dealt with: go where it says, or on with the text for ""
-            rest = await advance(script, script.labels.get(handled, len(script.text)) if handled else pos, None, None, who, tag, state)
-            return {**rest, "events": events + rest["events"]}
-    return {"events": events, "prompt": pending, "pos": pos}
+        return await ask()
+    return over()
 
 
 def _show(events: list, text: str) -> None:

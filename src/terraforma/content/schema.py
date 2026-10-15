@@ -380,6 +380,20 @@ class MapObjectSeed(Strict):
         return self
 
 
+class DialogSeed(Strict):
+    """A dialog tree of its own (``dialogs.json``): ``text`` is the dialog language (``npcs.script``), at most ``MAX_TEXT`` characters.
+    NPCs, objects, edges and other trees run it with ``include,key``, so a long dialog is split into trees, and one tree can be
+    shared. A tree ends with ``end_return`` (back to the one that included it) or ``end_complete`` (the whole dialog is over)."""
+
+    key: Key
+    text: str = Field(min_length=1, max_length=MAX_TEXT)
+
+    @model_validator(mode="after")
+    def _the_text_is_dialog(self):
+        _check_script(self.text, "text")
+        return self
+
+
 class NpcSeed(Strict):
     """An NPC standing on a map: ``map`` is the key of one of the game's maps (or the default ``hub``), ``x`` and ``y`` the tile, ``dialog`` what they
     say (the dialog language, see ``npcs.script``: a shop, an inn and the rest are tags in it) and ``counter`` the tiles of their counter."""
@@ -581,9 +595,31 @@ KINDS: dict[str, type[Strict]] = {
     "monsters": Monster,
     "statuses": Status,
     "maps": MapSeed,
+    "dialogs": DialogSeed,
     "npcs": NpcSeed,
     "quest_templates": QuestTemplateSeed,
 }
+
+
+def _loops(includes: dict[str, set[str]]) -> list[list[str]]:
+    """The dialog trees that, through the trees they include, include themselves (one cycle per tree that starts one, key order)."""
+    found: list[list[str]] = []
+    done: set[str] = set()
+
+    def walk(key: str, path: list[str]) -> None:
+        if key in path:
+            if not any(set(loop) == set(path[path.index(key):]) for loop in found):
+                found.append([*path[path.index(key):], key])
+            return
+        if key in done:
+            return
+        for target in sorted(includes.get(key, ())):
+            walk(target, [*path, key])
+        done.add(key)
+
+    for key in sorted(includes):
+        walk(key, [])
+    return found
 
 
 def check_seed(seed: dict[str, list[dict]], stats: tuple[str, ...] = STATS, resources: tuple[str, ...] = RESOURCES, drop_scale: int = DROP_SCALE) -> dict[str, list[Strict]]:
@@ -642,6 +678,20 @@ def check_seed(seed: dict[str, list[dict]], stats: tuple[str, ...] = STATS, reso
                 if name not in keys["drop_tables"]:
                     problems.append(f"maps.json {row.key}: zone {number} drops name {name!r}, which drop_tables.json doesn't have")
     drawn = {row.key: row for row in checked["maps"]}
+    owners = ([(f"dialogs.json {row.key}", "the text", row.text) for row in checked["dialogs"]]
+              + [(f"npcs.json {row.key}", "the dialog", row.dialog) for row in checked["npcs"]]
+              + [(f"maps.json {row.key}", f"the {what}", script) for row in checked["maps"]
+                 for what, script in [(f"object {each.key}", each.script) for each in row.objects] + [(f"{direction} edge", script) for direction, script in row.edges.items()]])
+    includes: dict[str, set[str]] = {}
+    for owner, what, text in owners:
+        for parts in tags(text):
+            if parts[0] == "include":
+                if parts[1] not in keys["dialogs"]:
+                    problems.append(f"{owner}: {what} includes {parts[1]!r}, which dialogs.json doesn't have")
+                elif owner.startswith("dialogs.json "):
+                    includes.setdefault(owner.removeprefix("dialogs.json "), set()).add(parts[1])
+    for loop in _loops(includes):
+        problems.append(f"dialogs.json: {' -> '.join(loop)} includes itself (end a tree with end_return to go back, not another include)")
     for row in checked["maps"]:
         scripts = [(f"object {each.key}", each.script) for each in row.objects] + [(f"{direction} edge", script) for direction, script in row.edges.items()]
         for what, script in scripts:
@@ -665,6 +715,10 @@ def check_seed(seed: dict[str, list[dict]], stats: tuple[str, ...] = STATS, reso
         for parts in tags(npc.dialog):
             if parts[0] == "warp" and parts[1] not in drawn and parts[1] != "hub":
                 problems.append(f"npcs.json {npc.key}: the dialog warps to {parts[1]!r}, which maps.json doesn't have")
+    for tree in checked["dialogs"]:
+        for parts in tags(tree.text):
+            if parts[0] == "warp" and parts[1] not in drawn and parts[1] != "hub":
+                problems.append(f"dialogs.json {tree.key}: the text warps to {parts[1]!r}, which maps.json doesn't have")
     kinds = {row.key: row.kind for row in checked["statuses"]}
     effects =[(kind, row, effect) for kind, field in (("abilities", "effect"), ("items", "use_effect"))
                for row in checked[kind] if (effect := getattr(row, field)) is not None]
