@@ -265,6 +265,12 @@ export class FightScene {
     return fighter.party === 0 || fighter.yours ? "left" : "right";
   }
 
+  /** Which way a fighter faces the viewer: the viewer's own side is seen from behind ("up"), the other side from the front ("down"). A sheet
+   * with no animation for a view plays the one it has (the fallbacks of animation.js). */
+  #view(fighter) {
+    return this.#side(fighter) === "left" ? "up" : "down";
+  }
+
   #build() {
     this.#clearSprites();
     this.layer?.remove();
@@ -273,7 +279,7 @@ export class FightScene {
     for (const [key, fighter] of this.model.fighters) {
       const card = h(
         "div",
-        { class: "fighter", "data-fighter": key, "data-side": this.#side(fighter) },
+        { class: "fighter", "data-fighter": key, "data-side": this.#side(fighter), "data-view": this.#view(fighter) },
         fighter.art ? this.#spot(key) : null,
         h("span", { class: "fighter-name" }, fighter.name),
         h("span", { class: "fighter-bar" }, h("span", { class: "fighter-fill" })),
@@ -323,12 +329,13 @@ export class FightScene {
     const entries = [...this.sprites];
     await Promise.all(
       entries.map(async ([key, sprite]) => {
-        const art = this.model.fighter(key)?.art;
+        const fighter = this.model.fighter(key);
+        const art = fighter?.art;
         const loaded = await this.shell.art.load(art).catch(() => null);
         if (!loaded?.source || run !== this.run || this.sprites.get(key) !== sprite) return;
         sprite.loaded = loaded;
         sprite.frame = typeof art === "object" ? (art.frame ?? 0) : 0;
-        sprite.player = loaded.animations && art.animations && !reducedMotion() ? loaded.animations.play("base") : null;
+        sprite.player = loaded.animations && art.animations && !reducedMotion() ? loaded.animations.play("base", { direction: this.#view(fighter) }) : null;
         sprite.canvas.hidden = false;
         this.#drawSprite(sprite);
       }),

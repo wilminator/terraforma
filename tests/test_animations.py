@@ -4,7 +4,9 @@ import json
 
 import pytest
 
-from terraforma.animations import AnimationError, check_animation_folder, check_animations
+from terraforma.animations import AnimationError, check_animation_folder, check_animations, check_hero_back_views
+from terraforma.content.schema import ContentError
+from terraforma.seed import load_seed
 from terraforma.client import ClientError, check_game_client
 from terraforma.example import GAME as EXAMPLE
 from terraforma.game import Game
@@ -97,3 +99,40 @@ def test_the_example_games_animation_files_are_valid_and_fit_their_sheets():
         sheet = json.loads((EXAMPLE.assets_dir / (path.name.removesuffix(".anim.json") + ".sheet.json")).read_text())
         check_animations(json.loads(path.read_text()), frames=sheet["frames"])
     assert (EXAMPLE.assets_dir / "crystal.anim.json").is_file()
+
+
+# --- the back view player heroes need -------------------------------------------------------------------------------------
+
+def seed_of(art, job="fighter", key="fighter"):
+    return {"jobs": [{"key": job, "name": "Fighter"}], "personalities": [{"key": key, "name": "Fighter", "fight_art": art}]}
+
+
+def assets_with(tmp_path, **files):
+    for name, data in files.items():
+        (tmp_path / f"{name}.anim.json").write_text(json.dumps(data))
+    return tmp_path
+
+
+def test_the_example_games_hero_personalities_have_a_back_view():
+    check_hero_back_views(load_seed(EXAMPLE.seed_dir), EXAMPLE.assets_dir)
+
+
+def test_a_personality_with_a_job_keys_name_needs_base_up_as_an_animation_or_an_alias(tmp_path):
+    art = {"sheet": "s", "animations": "back"}
+    animated = assets_with(tmp_path, back=file_of(base=BASE, base_up=BASE))
+    check_hero_back_views(seed_of(art), animated)
+    aliased = {"animations": {"base": BASE, "turned": BASE}, "aliases": {"base_up": {"of": "turned"}}}
+    (tmp_path / "other").mkdir()
+    check_hero_back_views(seed_of(art), assets_with(tmp_path / "other", back=aliased))
+
+
+@pytest.mark.parametrize("art", ["plain.png", {"sheet": "s"}, {"sheet": "s", "animations": "front"}, {"sheet": "s", "animations": "missing"}])
+def test_player_heroes_cannot_use_a_personality_without_a_back_view(tmp_path, art):
+    assets_with(tmp_path, front=file_of(base=BASE, hit_up=BASE))  # (a back view of something else is not the idle's)
+    with pytest.raises(ContentError, match="personalities.json fighter.*base_up"):
+        check_hero_back_views(seed_of(art), tmp_path)
+
+
+def test_a_monsters_personality_and_a_personality_with_no_art_need_no_back_view(tmp_path):
+    check_hero_back_views(seed_of("plain.png", job="mage"), tmp_path)  # (no job has the personality's key: monsters only)
+    check_hero_back_views(seed_of(None), tmp_path)  # (no art: a plain card)
