@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
+from starlette.requests import HTTPConnection
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..accounts.hooks import SignIn
@@ -155,7 +156,7 @@ ActingAccount = Annotated[Account, Depends(acting_account)]
 AdminAccount = Annotated[Account, Depends(admin_account)]
 
 
-def client_address(request: Request) -> str:
+def client_address(request: HTTPConnection) -> str:
     """The caller's IP (behind the NAS's proxy, uvicorn's --proxy-headers sets it from X-Forwarded-For)."""
     return request.client.host if request.client else "unknown"
 

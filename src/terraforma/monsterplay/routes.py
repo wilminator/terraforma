@@ -3,14 +3,14 @@ A volunteer needs a login like any player; the calls that change something also 
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Path, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Path, Request, WebSocket, WebSocketDisconnect, status
 
 from ..accounts import ratelimit
 from ..accounts.routes import limited
 from ..api.deps import ActingAccount, CurrentAccount, Db, GameRules, client_address
 from ..api.security import same_origin
 from ..fights import live
-from ..fights.routes import FightCommand, play_command
+from ..fights.routes import FightCommand, play_command, rules_of
 from . import service
 from .models import MonsterSeat
 
@@ -178,7 +178,7 @@ async def _own_fight(db, fight_id: int, guest_id: int):
 
 @guest_router.get("/fights/{fight_id}")
 async def guest_fight(fight_id: FightId, guest: Guest, db: Db, rules: GameRules) -> dict:
-    """The fight the guest commands the monsters of, as the heroes' page shows it (a guest has no socket: it asks again)."""
+    """The fight the guest commands the monsters of, as the heroes' page shows it (the guest's socket, below, tells it when to ask again)."""
     record = await _own_fight(db, fight_id, guest)
     return await live.view(db, record, rules, -guest)
 
@@ -200,3 +200,48 @@ async def guest_back(fight_id: FightId, guest: ActingGuest, db: Db) -> dict:
     except service.MonsterError as error:
         raise refuse(error) from error
     return {"seat": service.view_of(seat)}
+
+
+# --- the guest's fight socket ----------------------------------------------------------------------------------------------
+#
+# A browser cannot put an Authorization header on a WebSocket, and a token in the address would end up in logs, so the guest sends its
+# token as the second of two subprotocols: ``new WebSocket(url, [GUEST_PROTOCOL, token])``. The server checks everything before it
+# accepts (this site's Origin, the rate limit, the token, that the guest commands this fight) and answers with the first only.
+
+GUEST_PROTOCOL = "terraforma.guest"
+
+
+async def guest_fight_socket(socket: WebSocket, fight_id: FightId) -> None:
+    """Pushes a fight's events to the guest who commands its monsters, as ``/ws/fights/{id}`` does for the players. Like the guest's
+    calls it needs the guest's token (see above), and it lets in only the guest the fight's monsters are seated to. The page only
+    listens: commands go through ``POST /api/monsters/guest/fights/{id}/commands``."""
+    asked = socket.scope.get("subprotocols", [])
+    guest_id = None
+    if same_origin(socket) and len(asked) == 2 and asked[0] == GUEST_PROTOCOL:
+        try:
+            await ratelimit.hit(socket.app.state.sessionmaker, ratelimit.MONSTER_GUEST_BY_ADDRESS, client_address(socket))
+        except ratelimit.RateLimited:
+            pass
+        else:
+            async with socket.app.state.sessionmaker() as session, session.begin():
+                guest = await service.guest_for(session, rules_of(socket), asked[1])
+                guest_id = guest.id if guest is not None else None
+    allowed = False
+    if guest_id is not None:
+        async with socket.app.state.sessionmaker() as session:
+            seat = await session.get(MonsterSeat, fight_id)
+            allowed = seat is not None and seat.guest_id == guest_id
+    if not allowed:
+        await socket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+    channels = socket.app.state.fights
+    await socket.accept(subprotocol=GUEST_PROTOCOL)
+    channels.join(fight_id, socket)
+    try:
+        await socket.send_json({"type": "joined", "fight": fight_id, "watching": channels.watching(fight_id)})
+        while True:
+            await socket.receive_text()  # anything it sends is ignored
+    except WebSocketDisconnect:
+        pass
+    finally:
+        channels.leave(fight_id, socket)

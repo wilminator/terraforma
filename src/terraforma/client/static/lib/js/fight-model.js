@@ -17,6 +17,7 @@ export class FightModel {
     this.over = view.over;
     this.vital = view.vital ?? "HP";
     this.deadline = view.deadline;
+    this.seat = view.seat ?? null; // only for the player who commands a party's monsters: { party, absent, admin }
     this.actor = null; // whose turn the log is on
     this.fighters = new Map(
       view.fighters.map((each) => [
@@ -53,6 +54,7 @@ export class FightModel {
   /** Takes from a fresh $view what only the server knows (what each of the player's heroes can do, who has chosen), and leaves the numbers
    * the events have brought up to date. */
   refresh(view) {
+    this.seat = view.seat ?? null;
     for (const each of view.fighters) {
       const mine = this.fighter(addressKey(each.party, each.group, each.character));
       if (!mine) continue;

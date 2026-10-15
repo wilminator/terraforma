@@ -8,7 +8,6 @@
 // fighters the command can be aimed at light up and are picked by their cards), `waiting` (every hero has chosen), `off` (a round is
 // being played, or the fight is over).
 
-import * as api from "./api.js";
 import { h, replace } from "./dom.js";
 
 export class FightMenu {
@@ -184,7 +183,7 @@ export class FightMenu {
     this.problem = "";
     scene.repaint();
     try {
-      await api.post(`/api/fights/${model.id}/commands`, { fighter: address(hero), command, using, target: address(target) });
+      await scene.source.command(model.id, { fighter: address(hero), command, using, target: address(target) });
       if (this.model === model && model.round === round) model.fighter(hero).committed = true;
       if (this.model === model) this.#to("commands");
       if (this.model === model) this.hero = null;

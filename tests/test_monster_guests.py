@@ -3,6 +3,8 @@
 import pytest
 from sqlalchemy import func, select
 
+from starlette.websockets import WebSocketDisconnect
+
 from terraforma.fights import live
 from terraforma.fights.combatant import Command
 from terraforma.fights.models import FightRecord
@@ -302,3 +304,74 @@ def test_another_guest_and_a_logged_in_player_cannot_reach_a_guests_fight(app_cl
     expect(app_client.post(f"/api/monsters/guest/fights/{fight_id}/back", headers=other), 403)
     expect(app_client.post(f"/api/fights/{fight_id}/commands", json=body, headers=mike), 403)
     expect(app_client.get("/api/monsters/guest/fights/999", headers={**_bearer(token), **ORIGIN}), 404)
+
+
+# --- the guest's fight socket ---------------------------------------------------------------------------------------------------------
+
+PROTOCOL = "terraforma.guest"
+
+
+def _socket(app_client, fight_id, token, headers=ORIGIN, protocols=None):
+    return app_client.websocket_connect(f"/ws/monsters/guest/fights/{fight_id}", headers=headers, subprotocols=protocols or [PROTOCOL, token])
+
+
+def test_the_guest_socket_hears_who_committed_and_then_the_round(app_client):
+    token, fight_id, mike = _fight_for_a_guest(app_client)
+    with _socket(app_client, fight_id, token) as socket:
+        assert socket.accepted_subprotocol == PROTOCOL, "the token is never echoed back"
+        assert socket.receive_json() == {"type": "joined", "fight": fight_id, "watching": 1}
+        body = {"fighter": {"party": 0, "group": 0, "character": 0}, "command": "defend", "target": {"party": 0, "group": 0, "character": 0}}
+        expect(app_client.post(f"/api/fights/{fight_id}/commands", json=body, headers=mike), 202)
+        assert socket.receive_json() == {"type": "committed", "fight": fight_id, "round": 1, "fighter": body["fighter"]}
+        guest = {**_bearer(token), **ORIGIN}
+        monster = {"fighter": {"party": 1, "group": 0, "character": 0}, "command": "defend", "target": {"party": 1, "group": 0, "character": 0}}
+        expect(app_client.post(f"/api/monsters/guest/fights/{fight_id}/commands", json=monster, headers=guest), 202)
+        assert socket.receive_json()["type"] == "committed"
+        played = socket.receive_json()
+        assert played["type"] == "round" and played["round"] == 1 and played["events"]
+
+
+def test_the_guest_socket_needs_this_sites_origin_and_the_token_as_its_subprotocol(app_client):
+    token, fight_id, _mike = _fight_for_a_guest(app_client)
+    refused = [
+        {"headers": {}},
+        {"headers": {"origin": "http://evil.example"}},
+        {"protocols": [PROTOCOL]},
+        {"protocols": [PROTOCOL, "nope"]},
+        {"protocols": ["other", token]},
+        {"protocols": [PROTOCOL, token, "more"]},
+    ]
+    for kwargs in refused:
+        with pytest.raises(WebSocketDisconnect):
+            with _socket(app_client, fight_id, token, **kwargs) as socket:
+                socket.receive_json()
+
+
+def test_the_guest_socket_lets_in_only_the_guest_the_monsters_are_seated_to(app_client):
+    token, fight_id, _mike = _fight_for_a_guest(app_client)
+    other = expect(_join(app_client), 200).json()["token"]
+    for kwargs in ({"token": other}, {"fight_id": 999}):
+        with pytest.raises(WebSocketDisconnect):
+            with _socket(app_client, kwargs.get("fight_id", fight_id), kwargs.get("token", token)) as socket:
+                socket.receive_json()
+
+
+def test_the_guest_socket_is_rate_limited_by_address(app_client):
+    token, fight_id, _mike = _fight_for_a_guest(app_client)
+    from terraforma.accounts import ratelimit
+
+    async def spend(db):
+        for _ in range(ratelimit.MONSTER_GUEST_BY_ADDRESS.attempts):
+            await ratelimit.hit(app_client.app.state.sessionmaker, ratelimit.MONSTER_GUEST_BY_ADDRESS, "testclient")
+
+    in_app_db(app_client, spend)
+    with pytest.raises(WebSocketDisconnect):
+        with _socket(app_client, fight_id, token) as socket:
+            socket.receive_json()
+
+
+async def test_the_example_game_takes_guests_but_not_while_they_fight(db):
+    from terraforma.example import GAME
+
+    guest, _token = await monsters.new_guest(db, GAME.rules)
+    assert (await monsters.join_guest(db, GAME.rules, guest.id)).guest_id == guest.id

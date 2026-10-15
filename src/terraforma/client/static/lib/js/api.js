@@ -22,9 +22,10 @@ function detailOf(body, status) {
   return `The server answered ${status}.`;
 }
 
-/** Calls the server and returns the answer's JSON (null when there is none). Throws ApiError when it says no. */
-export async function call(method, path, body) {
-  const headers = { Accept: "application/json" };
+/** Calls the server and returns the answer's JSON (null when there is none). Throws ApiError when it says no. $extra is more headers
+ * (a guest sends its token as the Authorization header; it has no login, so no CSRF token). */
+export async function call(method, path, body, extra = {}) {
+  const headers = { Accept: "application/json", ...extra };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (method !== "GET" && csrfToken) headers["X-CSRF-Token"] = csrfToken;
   let response;

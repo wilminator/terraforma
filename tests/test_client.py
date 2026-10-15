@@ -18,7 +18,7 @@ def game():
 
 
 def test_the_pages_are_served_with_the_security_headers(app_client):
-    for path in ("/", "/play/", "/account/", "/team/1", "/profile/", "/alliances/", "/alliance/1", "/p/abcdefgh", "/p/team/abcdefgh", "/p/alliance/abcdefgh", "/confirm-email", "/change-email", "/reset-password", "/confirm-2fa"):
+    for path in ("/", "/play/", "/account/", "/team/1", "/profile/", "/alliances/", "/alliance/1", "/monsters/", "/p/abcdefgh", "/p/team/abcdefgh", "/p/alliance/abcdefgh", "/confirm-email", "/change-email", "/reset-password", "/confirm-2fa"):
         page = expect(app_client.get(path), 200)
         assert page.headers["content-type"].startswith("text/html")
         assert "script-src" not in page.headers["content-security-policy"], "default-src 'self' covers scripts: nothing inline, nothing foreign"
@@ -39,7 +39,7 @@ def test_every_address_the_engine_mails_opens_an_account_page(app_client, mailbo
 
 
 def test_the_account_and_team_page_scripts_are_served(app_client):
-    for name in ("account", "forms", "register", "settings", "tokens", "team", "team-editor", "profile", "public", "alliances", "alliance", "alliance-page", "ballots", "relationships"):
+    for name in ("account", "forms", "register", "settings", "tokens", "team", "team-editor", "profile", "public", "alliances", "alliance", "alliance-page", "ballots", "relationships", "monsters", "fight-source"):
         expect(app_client.get(f"/client/js/{name}.js"), 200)
 
 
@@ -52,6 +52,11 @@ def test_the_engines_code_is_served_as_modules_and_styles(app_client):
 
 def test_the_art_loader_is_served(app_client):
     expect(app_client.get("/client/js/art.js"), 200)
+
+
+def test_the_monsters_page_says_to_turn_the_device_too(app_client):
+    page = expect(app_client.get("/monsters/"), 200).text
+    assert 'id="rotate"' in page and 'class="play"' in page and "/client/js/monsters.js" in page
 
 
 def test_the_play_page_says_to_turn_the_device_and_the_stylesheet_shows_it_in_portrait(app_client):
