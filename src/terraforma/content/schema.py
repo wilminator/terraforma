@@ -146,6 +146,14 @@ class Attack(Strict):
     ammo_type: str = Field(default="", max_length=32)
 
 
+class Requires(Strict):
+    """Who may wear an item (``Rules.equip_refusal``): any of these jobs, at least this level, with at least these base stats."""
+
+    jobs: list[Key] = []
+    level: int = Field(default=1, ge=1)
+    stats: Stats = {}
+
+
 class Item(Strict):
     key: Key
     name: str = Field(min_length=1, max_length=64)
@@ -157,6 +165,7 @@ class Item(Strict):
     equip_slots: list[Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{0,31}$")]] | None = None
     stat_bonus: Stats = {}
     stat_percent: Stats = {}
+    requires: Requires = Requires()
     attack: Attack | None = None
     use_presentation: Presentation = Presentation()
     fight_presentation: Presentation = Presentation()
@@ -575,6 +584,9 @@ class QuestTemplateSeed(Strict):
     max_level: int = Field(default=999, ge=1, le=999)
     weight: int = Field(default=1, ge=1, le=1000)
     spec: dict = {}
+    # The rotating quest slot (quest_slots.json) this template is for; empty for a weekly quest. A slot's quest is the same for every team,
+    # so the levels above mean nothing to it.
+    slot: Key | None = None
 
     @model_validator(mode="after")
     def _levels_run_up(self):
@@ -582,6 +594,28 @@ class QuestTemplateSeed(Strict):
             raise ValueError("min_level is above max_level")
         if len(json.dumps(self.spec)) > 16_000:
             raise ValueError("a quest's spec is at most 16000 characters of JSON")
+        return self
+
+
+class QuestSlotSeed(Strict):
+    """A place where one quest at a time is offered and the quest changes now and then (see ``quests.rotation``), such as a guild's rank S
+    promotion. A period lasts a random number of whole days from ``min_days`` to ``max_days`` (a higher tier gets a longer minimum: it needs
+    more preparation). A team that took the quest has ``limit_days`` to finish it, and no more than ``grace_days`` after the quest rotated
+    out. ``guild`` and ``rank`` are the game's own labels for its dialogs; the engine knows no guilds. Templates join a slot with their ``slot``."""
+
+    key: Key
+    name: str = Field(min_length=1, max_length=64)
+    guild: str = Field(default="", max_length=64)
+    rank: int = Field(default=0, ge=0, le=99)
+    min_days: int = Field(ge=1, le=3650)
+    max_days: int = Field(ge=1, le=3650)
+    grace_days: int = Field(default=0, ge=0, le=3650)
+    limit_days: int = Field(ge=1, le=3650)
+
+    @model_validator(mode="after")
+    def _periods_run_up(self):
+        if self.min_days > self.max_days:
+            raise ValueError("min_days is above max_days")
         return self
 
 
@@ -598,6 +632,7 @@ KINDS: dict[str, type[Strict]] = {
     "dialogs": DialogSeed,
     "npcs": NpcSeed,
     "quest_templates": QuestTemplateSeed,
+    "quest_slots": QuestSlotSeed,
 }
 
 
@@ -664,6 +699,10 @@ def check_seed(seed: dict[str, list[dict]], stats: tuple[str, ...] = STATS, reso
             for name in (entry.ability if isinstance(entry, JobAbility) else entry for entry in names):
                 if name not in keys[target]:
                     problems.append(f"{kind}.json {row.key}: {field} names {name!r}, which {target}.json doesn't have")
+    for item in checked["items"]:
+        for job in item.requires.jobs:
+            if job not in keys["jobs"]:
+                problems.append(f"items.json {item.key}: requires names job {job!r}, which jobs.json doesn't have")
     for table in checked["drop_tables"]:
         for entry in table.entries:
             if entry.item is not None and entry.item not in keys["items"]:
@@ -730,6 +769,9 @@ def check_seed(seed: dict[str, list[dict]], stats: tuple[str, ...] = STATS, reso
             problems.append(f"{kind}.json {row.key}: status names {effect.status!r}, which statuses.json doesn't have")
         elif kinds[effect.status] != wanted:
             problems.append(f"{kind}.json {row.key}: {effect.effect} names {effect.status!r}, which is a {kinds[effect.status]} status")
+    for row in checked["quest_templates"]:
+        if row.slot is not None and row.slot not in keys["quest_slots"]:
+            problems.append(f"quest_templates.json {row.key}: slot names {row.slot!r}, which quest_slots.json doesn't have")
     if problems:
         raise ContentError("the seed has problems:\n  " + "\n  ".join(problems))
     return checked

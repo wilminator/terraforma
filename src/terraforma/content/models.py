@@ -43,6 +43,8 @@ class Item(ContentRow, Base):
     equip_slots: Mapped[list | None] = mapped_column(JSON)
     stat_bonus: Mapped[dict] = mapped_column(JSON)
     stat_percent: Mapped[dict] = mapped_column(JSON)
+    # Who may wear it: {"jobs": [keys], "level": n, "stats": {stat: minimum}}; empty for anyone (``Rules.equip_refusal``).
+    requires: Mapped[dict] = mapped_column(JSON, default=dict)
     attack: Mapped[dict | None] = mapped_column(JSON)
     use_presentation: Mapped[dict] = mapped_column(JSON)
     fight_presentation: Mapped[dict] = mapped_column(JSON)

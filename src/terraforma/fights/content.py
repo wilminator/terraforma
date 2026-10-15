@@ -13,7 +13,7 @@ def item_spec(item) -> ItemSpec:
     return ItemSpec(
         key=item.key, name=item.name, equip_slots=tuple(item.equip_slots or ()), one_use=item.one_use,
         use_effect=EffectSpec.from_dict(item.use_effect), stat_bonus=dict(item.stat_bonus), stat_percent=dict(item.stat_percent),
-        attack_targets=scope_number(attack.get("targets", 0)), attack_count=attack.get("count", 1),
+        requires=dict(item.requires or {}), attack_targets=scope_number(attack.get("targets", 0)), attack_count=attack.get("count", 1),
         attack_attribute=attack.get("attribute", "none"), ammo_type=attack.get("ammo_type", ""),
     )
 

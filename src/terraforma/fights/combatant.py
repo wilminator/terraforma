@@ -10,7 +10,7 @@ both hands. Removing a stack closes the list up and renumbers the equipment.
 from dataclasses import dataclass, field
 from enum import IntEnum
 
-from .gear import AMMO_SLOTS, EquipOutcome, EquipResult, equipment_bonus, find_slot
+from .gear import AMMO_SLOTS, EquipOutcome, EquipResult, Wearer, equipment_bonus, find_slot
 from .rules import Rules
 from .specs import AbilitySpec, ItemSpec
 from .status import StatusToken, stat_bonus
@@ -60,6 +60,8 @@ class Combatant:
     # stat growth per level; ``gold`` is what a monster drops, and ``xp_debts`` what it owes others for what they did
     # to it: ``[party, group, character, ratio, pxp]``, the one owed, the share of the gauge moved, and its own PXP.
     level: int = 1
+    #: A hero's job (its key in the seed); "" for a monster. ``Rules.equip_refusal`` reads it.
+    job: str = ""
     exp: int = 0
     job_need: int = 0
     growth: dict[str, float] = field(default_factory=dict)
@@ -213,14 +215,19 @@ class Combatant:
                 self.equipment[slot] = held - 1
         return removed
 
-    def equip(self, index: int, side: int = 0):
+    def equip(self, index: int, side: int = 0, rules: Rules | None = None):
         """Wields or wears the stack at $index. Same answers as heroes.inventory.equip: success with the slots,
-        or what is in the way."""
+        or what is in the way. With $rules, ``Rules.equip_refusal`` is asked first (nothing is moved if it refuses);
+        without, nothing is checked (a monster's authored gear)."""
         if not 0 <= index < len(self.inventory):
             return EquipResult(EquipOutcome.NOT_FOUND)
         item = self.inventory[index][0]
         if not item.equip_slots:
             return EquipResult(EquipOutcome.NOT_EQUIPABLE)
+        if rules is not None:
+            reason = rules.equip_refusal(Wearer(self.job, self.level, self.base), item)
+            if reason:
+                return EquipResult(EquipOutcome.NOT_ALLOWED, reason=reason)
         slots = list(item.equip_slots)
         for slot in slots:
             held = self.equipment.get(find_slot(slot, side))

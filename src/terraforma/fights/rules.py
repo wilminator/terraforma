@@ -28,7 +28,7 @@ import random
 from dataclasses import dataclass
 
 from .events import EventType, event
-from .gear import round_half_up
+from .gear import Wearer, round_half_up
 from .specs import HEAL, RESTORE_MP, REVIVE, AbilitySpec, EffectSpec, ItemSpec
 
 
@@ -100,6 +100,23 @@ class Rules:
     nearby_limit: int = 20
     #: What an empty hand attacks with.
     unarmed: ItemSpec = ItemSpec(key="", name="Fists")
+
+    def equip_refusal(self, wearer: Wearer, item: ItemSpec) -> str | None:
+        """Why $wearer may not wear or wield $item, or None if they may. The default enforces the item's ``requires`` block:
+        the jobs that may use it, the level it needs, and the base stats (without gear) it needs. A game overrides this for
+        any other restriction (a guild rank, an alignment); call ``super()`` to keep the seed's. Heroes only: monsters' own gear
+        isn't checked. The answer is shown to the player, so it is a sentence."""
+        need = item.requires
+        jobs = need.get("jobs") or []
+        if jobs and wearer.job not in jobs:
+            return f"{item.name or item.key} is only for {', '.join(jobs)}"
+        level = need.get("level", 1)
+        if wearer.level < level:
+            return f"{item.name or item.key} needs level {level}"
+        for stat, minimum in sorted((need.get("stats") or {}).items()):
+            if minimum and wearer.stats.get(stat, 0) < minimum:
+                return f"{item.name or item.key} needs {stat} {minimum}"
+        return None
 
     def round_length(self, multiplier: float = 1.0) -> int:
         """How long a round waits, in seconds, for a fight whose longest-asked multiplier is $multiplier."""

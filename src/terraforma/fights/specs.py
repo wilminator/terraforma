@@ -116,6 +116,8 @@ class ItemSpec:
     use_effect: EffectSpec = field(default_factory=EffectSpec)
     stat_bonus: dict = field(default_factory=dict, hash=False)
     stat_percent: dict = field(default_factory=dict, hash=False)
+    #: Who may wear it (``Rules.equip_refusal``): the seed's ``requires`` block, {"jobs": [...], "level": n, "stats": {...}}.
+    requires: dict = field(default_factory=dict, hash=False)
     # When used to attack: how far it reaches, how many times it strikes, and its kind of damage.
     attack_targets: int = INDIVIDUAL
     attack_count: int = 1

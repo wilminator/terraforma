@@ -80,6 +80,7 @@ def _item(item: ItemSpec) -> dict:
         "use_effect": _effect(item.use_effect), "stat_bonus": dict(item.stat_bonus), "stat_percent": dict(item.stat_percent),
         "attack_targets": item.attack_targets, "attack_count": item.attack_count,
         "attack_attribute": item.attack_attribute, "ammo_type": item.ammo_type,
+        **({"requires": dict(item.requires)} if item.requires else {}),  # (only written when set, so a stored fight reads back as written)
     }
 
 
@@ -91,6 +92,7 @@ def _fighter(fighter: Combatant) -> dict:
     return {
         "name": fighter.name, "base": dict(fighter.base), "current": dict(fighter.current), "charid": fighter.charid,
         "monster": fighter.monster,
+        **({"job": fighter.job} if fighter.job else {}),
         "abilities": [_ability(ability) for ability in fighter.abilities],
         "inventory": [[_item(item), qty] for item, qty in fighter.inventory],
         "equipment": dict(fighter.equipment),
@@ -132,7 +134,7 @@ def _build_item(raw: dict) -> ItemSpec:
         key=raw["key"], name=raw["name"], equip_slots=tuple(raw["equip_slots"]), one_use=raw["one_use"],
         use_effect=_build_effect(raw["use_effect"]), stat_bonus=dict(raw["stat_bonus"]), stat_percent=dict(raw["stat_percent"]),
         attack_targets=raw["attack_targets"], attack_count=raw["attack_count"],
-        attack_attribute=raw["attack_attribute"], ammo_type=raw["ammo_type"],
+        attack_attribute=raw["attack_attribute"], ammo_type=raw["ammo_type"], requires=dict(raw.get("requires", {})),
     )
 
 
@@ -148,7 +150,7 @@ def _build_fighter(raw: dict, statuses: dict[str, StatusSpec]) -> Combatant:
         name=raw["name"], base=dict(raw["base"]), current=dict(raw["current"]),
         abilities=[AbilitySpec(a["key"], a["name"], a["kind"], a["mp_cost"], _build_effect(a["effect"])) for a in raw["abilities"]],
         inventory=[[_build_item(item), qty] for item, qty in raw["inventory"]],
-        equipment=dict(raw["equipment"]), charid=raw["charid"], monster=raw.get("monster"),
+        equipment=dict(raw["equipment"]), charid=raw["charid"], monster=raw.get("monster"), job=raw.get("job", ""),
         command=raw["command"], using=raw["using"], target=tuple(raw["target"]),
         **dict(zip(("ai_action", "ai_goal", "ai_target", "ai_experience"), raw.get("ai", (0, 0, 0, 0)), strict=True)),
         **_progress(raw.get("progress", {})),
