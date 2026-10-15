@@ -52,6 +52,15 @@ async def test_points_add_up_and_a_rank_is_only_what_the_dialog_sets(db):
     assert await ranks.standing(db, p.teams[0], "vanguard") == (50, 1), "a game may demote"
 
 
+async def test_points_can_be_taken_away_down_to_none(db):
+    p = await a_party(db)
+    await ranks.add_points(db, p.teams[0], "vanguard", 30)
+    assert await ranks.remove_points(db, p.teams[0], "vanguard", 12) == 18
+    assert await ranks.remove_points(db, p.teams[0], "vanguard", 100) == 0, "never below none"
+    with pytest.raises(ranks.RankError):
+        await ranks.remove_points(db, p.teams[0], "vanguard", 0)
+
+
 async def test_standing_belongs_to_the_team_and_the_guild(db):
     p = await a_party(db)
     await ranks.add_points(db, p.teams[0], "vanguard", 10)

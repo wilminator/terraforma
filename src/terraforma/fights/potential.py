@@ -32,6 +32,7 @@ from .specs import (
     REMOVE_GOOD_STATUS,
     REVIVE,
     SLAY,
+    STEAL_HP,
     EffectSpec,
 )
 
@@ -50,7 +51,7 @@ def target_rating(targets: int) -> float:
 def effect_rating(effect: EffectSpec) -> float:
     """How much an effect is worth."""
     kind, base, added = effect.effect, effect.base, effect.added
-    if kind in (HEAL, HURT):
+    if kind in (HEAL, HURT, STEAL_HP):
         return base + added / 2
     if kind in (REVIVE, SLAY):
         return base * 2.5 + added * 2.5

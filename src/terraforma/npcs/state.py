@@ -25,7 +25,7 @@ from ..quests import service as quests
 from ..quests import weekly
 from ..quests import rotation
 from ..quests.hooks import RotatingQuests, WeeklyQuests
-from ..quests.weekly_models import OFFERED
+from ..quests.weekly_models import OFFERED, QuestTemplate
 from ..standing import service as standing
 from ..towns import service as towns
 from .script import ScriptError
@@ -181,6 +181,19 @@ class DialogState:
         except rotation.RotationError as error:
             raise ScriptError(str(error)) from error
         return ""
+
+    async def slot_template(self, slot: str, template: str, label: str) -> str:
+        """The label unless the quest the slot holds now was made from the template (one drawn from the quest templates tagged for the slot;
+        a quest the game generated has no template, so the label)."""
+        hooks = self.session.info.get("rotating_quests") or RotatingQuests()
+        try:
+            held = await rotation.current(self.session, hooks, await rotation.get_slot(self.session, slot))
+        except rotation.RotationError as error:
+            raise ScriptError(str(error)) from error
+        if held is None or held.template_id is None:
+            return label
+        key = await self.session.scalar(select(QuestTemplate.key).where(QuestTemplate.id == held.template_id))
+        return "" if key == template else label
 
     # --- the guild --------------------------------------------------------------------------------------------------------
 

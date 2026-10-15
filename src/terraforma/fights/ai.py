@@ -69,6 +69,7 @@ from .specs import (
     REMOVE_GOOD_STATUS,
     REVIVE,
     SLAY,
+    STEAL_HP,
     AbilitySpec,
     EffectSpec,
 )
@@ -170,7 +171,7 @@ def specialty(abilities: Sequence[AbilitySpec]) -> int:
         spell = ability.kind == "spell"
         if effect in (HEAL, REVIVE):
             heal += 1
-        elif effect in (HURT, SLAY):
+        elif effect in (HURT, SLAY, STEAL_HP):
             hurt_spell, hurt_skill = hurt_spell + spell, hurt_skill + (not spell)
         else:
             other_spell, other_skill = other_spell + spell, other_skill + (not spell)
@@ -272,7 +273,7 @@ def _effect_damage(rules: Rules, statuses: dict, target: Combatant, effect: Effe
         return worth
     vital = rules.vital
     hp, maximum = target.current[vital], target.get_base(rules, vital)
-    if effect.effect in (HEAL, HURT):
+    if effect.effect in (HEAL, HURT, STEAL_HP):
         return 0 if hp == 0 else effect.added / 2 + effect.base
     if effect.effect == REVIVE:
         if hp == 0:
