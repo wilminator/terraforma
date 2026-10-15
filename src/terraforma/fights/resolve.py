@@ -173,7 +173,7 @@ def act(fight: Fight, rules: Rules, rng: random.Random, address: Address, fighte
             return
         log.add(EventType.ITEM, item.key)
     elif command in (Command.EQUIP, Command.EQUIP_AMMO):
-        equip_in_fight(fighter, log)
+        equip_in_fight(fighter, log, rules)
         return
     elif command in (Command.SKILL, Command.SPELL):
         ability = fighter.abilities[fighter.using]
@@ -251,13 +251,14 @@ def eject(fight: Fight, rules: Rules, rng: random.Random, effect: EffectSpec, ac
         log.add(EventType.NO_EFFECT, *target_address)
 
 
-def equip_in_fight(fighter: Combatant, log: Log) -> None:
+def equip_in_fight(fighter: Combatant, log: Log, rules: Rules | None = None) -> None:
     """Changing gear mid-fight: wield (and, for EQUIP_AMMO, load) the stack at ``using`` on the side ``target[0]``;
-    or, with ``using`` of -1, put away the stack at ``target[0]``. Whatever is in the way is taken off first."""
+    or, with ``using`` of -1, put away the stack at ``target[0]``. Whatever is in the way is taken off first. $rules may refuse
+    the wearer (``Rules.equip_refusal``), and then nothing changes."""
     location, ammo, _unused = fighter.target
     if fighter.using != -1:
         while True:
-            result = fighter.equip(fighter.using, location)
+            result = fighter.equip(fighter.using, location, rules)
             if result.outcome is EquipOutcome.SUCCESS:
                 break
             if result.outcome is EquipOutcome.NEEDS_UNEQUIPPING:
@@ -274,7 +275,7 @@ def equip_in_fight(fighter: Combatant, log: Log) -> None:
         if fighter.command == Command.EQUIP_AMMO:
             if "hand" not in item.equip_slots:
                 location = 0
-            result = fighter.equip(ammo, location)
+            result = fighter.equip(ammo, location, rules)
             if result.outcome is not EquipOutcome.SUCCESS:
                 return
             for slot in result.slots:

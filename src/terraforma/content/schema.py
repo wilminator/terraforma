@@ -146,6 +146,14 @@ class Attack(Strict):
     ammo_type: str = Field(default="", max_length=32)
 
 
+class Requires(Strict):
+    """Who may wear an item (``Rules.equip_refusal``): any of these jobs, at least this level, with at least these base stats."""
+
+    jobs: list[Key] = []
+    level: int = Field(default=1, ge=1)
+    stats: Stats = {}
+
+
 class Item(Strict):
     key: Key
     name: str = Field(min_length=1, max_length=64)
@@ -157,6 +165,7 @@ class Item(Strict):
     equip_slots: list[Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{0,31}$")]] | None = None
     stat_bonus: Stats = {}
     stat_percent: Stats = {}
+    requires: Requires = Requires()
     attack: Attack | None = None
     use_presentation: Presentation = Presentation()
     fight_presentation: Presentation = Presentation()
@@ -664,6 +673,10 @@ def check_seed(seed: dict[str, list[dict]], stats: tuple[str, ...] = STATS, reso
             for name in (entry.ability if isinstance(entry, JobAbility) else entry for entry in names):
                 if name not in keys[target]:
                     problems.append(f"{kind}.json {row.key}: {field} names {name!r}, which {target}.json doesn't have")
+    for item in checked["items"]:
+        for job in item.requires.jobs:
+            if job not in keys["jobs"]:
+                problems.append(f"items.json {item.key}: requires names job {job!r}, which jobs.json doesn't have")
     for table in checked["drop_tables"]:
         for entry in table.entries:
             if entry.item is not None and entry.item not in keys["items"]:

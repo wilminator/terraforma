@@ -34,7 +34,7 @@ async def hero_fighter(session: AsyncSession, hero: Hero, rules: Rules | None = 
         abilities=[ability_spec(ability) for ability in await inventory.known_abilities(session, hero)],
         inventory=[[item_spec(item), stack.qty] for stack, item in stacks],
         equipment={slot: position_of[stack_id] for slot, stack_id in worn.items()},
-        charid=hero.id, level=hero.level, exp=hero.xp, job_need=job.xp_needed, growth=dict(job.stat_growth),
+        charid=hero.id, level=hero.level, job=job.key, exp=hero.xp, job_need=job.xp_needed, growth=dict(job.stat_growth),
     )
 
 

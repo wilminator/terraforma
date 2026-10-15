@@ -7,6 +7,10 @@ from sqlalchemy import func, select
 
 from terraforma.accounts.service import create_account
 from terraforma.content.schema import ContentError, check_seed
+from terraforma.fights.combatant import Combatant
+from terraforma.fights.gear import EquipOutcome, Wearer
+from terraforma.fights.rules import Rules
+from terraforma.fights.specs import ItemSpec
 from terraforma.game import Game
 from terraforma.heroes import inventory
 from terraforma.heroes.models import Hero, HeroAbility, HeroEquipment, HeroItem
@@ -22,7 +26,7 @@ SEED = {
         {"key": "slash", "name": "Slash", "kind": "skill"},
         {"key": "fire", "name": "Fire", "kind": "spell", "mp_cost": 3},
     ],
-    "jobs": [{"key": "fighter", "name": "Fighter", "stat_growth": {"HP": 10}, "abilities": [
+    "jobs": [{"key": "mage", "name": "Mage", "stat_growth": {}, "abilities": []}, {"key": "fighter", "name": "Fighter", "stat_growth": {"HP": 10}, "abilities": [
         {"ability": "slash", "level": 1}, {"ability": "fire", "level": 3}]}],
     "items": [
         {"key": "potion", "name": "Potion", "one_use": True, "use_effect": {"effect": "heal", "base": 30}},
@@ -31,6 +35,8 @@ SEED = {
         {"key": "bow", "name": "Bow", "equip_slots": ["hand"], "attack": {"ammo_type": "arrow"}},
         {"key": "sword", "name": "Sword", "equip_slots": ["hand"], "stat_bonus": {"Strength": 3}},
         {"key": "greatsword", "name": "Greatsword", "equip_slots": ["lhand", "rhand"]},
+        {"key": "runeblade", "name": "Runeblade", "equip_slots": ["hand"], "requires": {"jobs": ["mage"], "level": 2, "stats": {"Strength": 5}}},
+        {"key": "plate", "name": "Plate", "equip_slots": ["body"], "requires": {"stats": {"Strength": 999}}},
         {"key": "helm", "name": "Helm", "equip_slots": ["head"], "stat_bonus": {"Block": 2}, "stat_percent": {"Block": 10}},
     ],
 }
@@ -283,3 +289,79 @@ def test_deleting_a_heros_team_removes_everything_the_hero_carried(mike):
         return [await db.scalar(select(func.count()).select_from(table)) for table in (HeroItem, HeroEquipment, HeroAbility)]
 
     assert in_app_db(client, counts) == [0, 0, 0]
+
+
+# --- who may wear what (Rules.equip_refusal) ---------------------------------------------------------------
+
+def test_gear_for_another_job_is_refused_with_the_reason_and_nothing_moves(mike):
+    client, headers, hero_id = mike
+    give(client, hero_id, "runeblade")
+    answer = equip(client, headers, hero_id, 0)
+    assert answer.status_code == 422 and answer.json() == {"outcome": "not_allowed", "reason": "Runeblade is only for mage"}
+    assert look(client, hero_id)["equipment"] == {}
+
+
+def test_gear_that_needs_more_stat_than_the_hero_has_is_refused(mike):
+    client, headers, hero_id = mike
+    give(client, hero_id, "plate")
+    answer = equip(client, headers, hero_id, 0)
+    assert answer.status_code == 422 and answer.json()["reason"] == "Plate needs Strength 999"
+
+
+def test_the_inventory_view_says_which_gear_the_hero_may_not_wear(mike):
+    client, headers, hero_id = mike
+    give(client, hero_id, "sword")
+    give(client, hero_id, "plate")
+    items = {entry["item"]: entry for entry in look(client, hero_id)["items"]}
+    assert "refused" not in items["sword"]
+    assert items["plate"]["refused"] == "Plate needs Strength 999"
+
+
+def test_a_refusal_is_asked_before_anything_is_taken_off(mike):
+    client, headers, hero_id = mike
+    give(client, hero_id, "sword")
+    give(client, hero_id, "runeblade")
+    equip(client, headers, hero_id, 0)
+    assert equip(client, headers, hero_id, 1).json()["outcome"] == "not_allowed", "not needs_unequipping"
+
+
+def test_a_game_may_change_who_can_wear_what(tmp_path):
+    from terraforma.fights.rules import Rules
+
+    class NoPlate(Rules):
+        def equip_refusal(self, wearer, item):
+            return "no plate here" if item.key == "plate" else super().equip_refusal(wearer, item)
+
+    rules = NoPlate()
+    assert rules.equip_refusal(Wearer("fighter", 1, {"Strength": 5}), ItemSpec("plate", equip_slots=("body",))) == "no plate here"
+    assert rules.equip_refusal(Wearer("fighter", 1, {}), ItemSpec("x", requires={"jobs": ["mage"]})) is not None, "the seed's still counts"
+
+
+def test_the_default_rule_checks_job_level_and_base_stats():
+    rules = Rules()
+    blade = ItemSpec("blade", "Blade", ("hand",), requires={"jobs": ["mage", "cleric"], "level": 3, "stats": {"Strength": 10, "Focus": 0}})
+    assert rules.equip_refusal(Wearer("mage", 3, {"Strength": 10}), blade) is None
+    assert rules.equip_refusal(Wearer("fighter", 3, {"Strength": 10}), blade) == "Blade is only for mage, cleric"
+    assert rules.equip_refusal(Wearer("mage", 2, {"Strength": 10}), blade) == "Blade needs level 3"
+    assert rules.equip_refusal(Wearer("mage", 3, {"Strength": 9}), blade) == "Blade needs Strength 10"
+    assert rules.equip_refusal(Wearer("", 1, {}), ItemSpec("rock")) is None, "no requirements: anyone"
+
+
+def test_a_fighter_in_a_fight_is_held_to_the_same_rule():
+    rules = Rules()
+    hero = Combatant(name="h", base={"Strength": 3}, current={}, job="fighter", level=1)
+    hero.inventory = [[ItemSpec("blade", "Blade", ("hand",), requires={"stats": {"Strength": 10}}), 1]]
+    refused = hero.equip(0, 0, rules)
+    assert refused.outcome is EquipOutcome.NOT_ALLOWED and refused.reason == "Blade needs Strength 10"
+    assert hero.equipment == {}
+    assert hero.equip(0, 0).outcome is EquipOutcome.SUCCESS, "no rules given: a monster's own gear isn't checked"
+
+
+def test_the_seed_must_name_real_jobs_and_stats():
+    seed = {"jobs": [{"key": "fighter", "name": "F", "stat_growth": {}, "abilities": []}]}
+    with pytest.raises(ContentError, match="requires names job 'wizard'"):
+        check_seed({**seed, "items": [{"key": "rod", "name": "Rod", "requires": {"jobs": ["wizard"]}}]})
+    with pytest.raises(ContentError, match="unknown stats"):
+        check_seed({**seed, "items": [{"key": "rod", "name": "Rod", "requires": {"stats": {"Luck": 3}}}]})
+    ok = check_seed({**seed, "items": [{"key": "rod", "name": "Rod", "requires": {"jobs": ["fighter"], "level": 4}}]})
+    assert ok["items"][0].requires.jobs == ["fighter"] and ok["items"][0].requires.level == 4
