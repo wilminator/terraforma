@@ -26,6 +26,8 @@ its command, followed by comma separated parameters. Text outside tags is shown.
     set_guild_rank,guild,rank   the team now holds that rank with the guild (a promotion; 0 is the lowest rank)
     guild_points,guild,op,n,scope,label  jump to the label unless the points the team has with the guild compare true with n
     guild_rank,guild,op,n,scope,label    jump to the label unless the team's rank with the guild compares true with n
+    guild_rank_any,scope,label,guild,min,...  jump to the label unless the team holds at least `min` with at least one of the guilds listed
+                         (up to 8 guild,min pairs): a gate on standing elsewhere, "rank B in a kingdom or rank A in a mercenary company"
     party_gate,guild,average,lowest,highest,pxp_min,pxp_max,label  jump to the label unless the party passes the guild's gate: its
                          teams' ranks average at least `average` (a number, 1.5 say), every team has at least `lowest`, the best
                          has at least `highest`, and the party's strength (PXP) is within pxp_min and pxp_max (0: no limit)
@@ -83,8 +85,10 @@ from dataclasses import dataclass
 SCOPES = ("any", "lead", "each")
 OPS = ("eq", "ne", "lt", "le", "gt", "ge")
 #: The tags that read or change the game's state, which the engine itself runs (through ``advance``'s $state).
-STATE_TAGS = ("have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker", "add_guild_points", "set_guild_rank", "guild_points", "guild_rank", "party_gate", "open_party", "add_status", "has_status", "have_tokens", "spend_tokens", "add_tokens", "add_gold", "warp", "enter_instance", "complete_instance", "leave_instance", "instance_won", "weekly_quest", "slot_quest", "slot_template")
+STATE_TAGS = ("have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker", "add_guild_points", "set_guild_rank", "guild_points", "guild_rank", "guild_rank_any", "party_gate", "open_party", "add_status", "has_status", "have_tokens", "spend_tokens", "add_tokens", "add_gold", "warp", "enter_instance", "complete_instance", "leave_instance", "instance_won", "weekly_quest", "slot_quest", "slot_template")
 MAX_TEXT = 20000
+#: How many guilds one ``guild_rank_any`` may list.
+MAX_GUILD_CHOICES = 8
 #: A dialog tree's key (``Dialog.key``): the same shape as a content key, so it cannot hold a comma or a backtick.
 TREE_KEY = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 #: How many trees may be waiting on the trees they included at once: a tree that includes itself is cut off here.
@@ -300,6 +304,17 @@ def check_tag(parts: list[str]) -> list[str]:
         _whole(command, args[2], "the number")
         _one_of(command, args[3], SCOPES, "a scope")
         return [args[4]]
+    elif command == "guild_rank_any":
+        if len(args) < 4 or len(args) % 2:
+            raise ScriptError(f"guild_rank_any tag takes a scope, a label and 1 to {MAX_GUILD_CHOICES} guild,min pairs, {len(args)} parameters given")
+        if len(args) > 2 + 2 * MAX_GUILD_CHOICES:
+            raise ScriptError(f"guild_rank_any tag lists at most {MAX_GUILD_CHOICES} guilds")
+        _one_of(command, args[0], SCOPES, "a scope")
+        for guild, lowest in zip(args[2::2], args[3::2]):
+            _name(command, guild, "a guild")
+            if _whole(command, lowest, "the lowest rank") > 99:
+                raise ScriptError("guild_rank_any tag: a rank is 0 to 99")
+        return [args[1]]
     elif command == "party_gate":
         count(7)
         _name(command, args[0], "a guild")
