@@ -225,6 +225,12 @@ class DialogState:
         found = [(await ranks.standing(self.session, team_id, guild))[1] for team_id in await self.teams(scope)]
         return "" if self.holds(scope, [quests.compare(op, each, int(n)) for each in found]) else label
 
+    async def guild_rank_any(self, scope: str, label: str, *choices: str) -> str:
+        """The label unless the scope's teams each (or any, or the lead) hold the asked rank with at least one of the listed guilds."""
+        requirements = [(guild, int(lowest)) for guild, lowest in zip(choices[::2], choices[1::2])]
+        found = [await ranks.meets_any(self.session, team_id, requirements) for team_id in await self.teams(scope)]
+        return "" if self.holds(scope, found) else label
+
     async def party_gate(self, guild: str, average: str, lowest: str, highest: str, pxp_min: str, pxp_max: str, label: str) -> str:
         """The label unless the party (the teams acting together) passes the guild's gate: ranks (average, lowest, best) and strength."""
         gate = ranks.Gate(Decimal(average), int(lowest), int(highest), int(pxp_min), int(pxp_max))

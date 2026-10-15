@@ -183,3 +183,44 @@ def test_the_tags_are_checked_when_the_text_is_read():
             parse(f"`{bad}`text`label,no`")
     parse("`party_gate,vanguard,1.5,0,3,100,0,no`text`label,no`")
     parse("`guild_rank,vanguard,ge,2,each,no`text`label,no`")
+
+
+# --- standing with other guilds ------------------------------------------------------------------------------------
+
+async def test_meets_any_asks_each_guild_its_own_rank(db):
+    p = await a_party(db)
+    team = p.teams[0]
+    await ranks.set_rank(db, team, "aldermere", 3)
+    await ranks.set_rank(db, team, "ironhand", 2)
+    assert await ranks.meets_any(db, team, [("aldermere", 3)])
+    assert not await ranks.meets_any(db, team, [("aldermere", 4)])
+    assert await ranks.meets_any(db, team, [("sunvale", 3), ("aldermere", 3)]), "one guild is enough"
+    assert not await ranks.meets_any(db, team, [("sunvale", 3), ("ironhand", 3)]), "a guild the team never joined is rank 0"
+    assert await ranks.meets_any(db, team, [("sunvale", 0)]), "rank 0 is what everyone has"
+    assert not await ranks.meets_any(db, team, []), "no requirements pass no one"
+
+
+async def test_guild_rank_any_lets_in_a_team_that_meets_one_guild(db):
+    p = await a_party(db)  # Vanguard (leads), Rearguard, Scouts
+    await ranks.set_rank(db, p.teams[0], "aldermere", 3)
+    await ranks.set_rank(db, p.teams[1], "ironhand", 4)
+    hero = p.heroes[1]
+    door = "guild_rank_any,{scope},no,aldermere,3,sunvale,3,ironhand,4"
+    assert await says(db, hero, check(door.format(scope="any"))) == "pass"
+    assert await says(db, hero, check(door.format(scope="lead"))) == "pass", "the leading team has the kingdom's B"
+    assert await says(db, hero, check(door.format(scope="each"))) == "no", "the Scouts meet none"
+    await ranks.set_rank(db, p.teams[2], "sunvale", 5)
+    assert await says(db, hero, check(door.format(scope="each"))) == "pass", "every team meets one, not the same one"
+    assert await says(db, hero, check("guild_rank_any,any,no,aldermere,4,sunvale,6")) == "no", "ranks too low"
+    assert await says(db, hero, check("guild_rank_any,lead,no,sunvale,5")) == "no", "the lead has nothing at Sunvale"
+
+
+async def test_guild_rank_any_is_refused_when_the_text_is_read_if_it_is_malformed():
+    for bad in ("guild_rank_any,any,no", "guild_rank_any,any,no,vanguard", "guild_rank_any,all,no,vanguard,1", "guild_rank_any,any,no,vanguard,x",
+                "guild_rank_any,any,no,vanguard,100", "guild_rank_any,any,no,,1", "guild_rank_any,any,no,a,1,b"):
+        with pytest.raises(ScriptError):
+            parse(f"`{bad}`text`label,no`")
+    with pytest.raises(ScriptError, match="at most 8"):
+        parse("`guild_rank_any,any,no," + ",".join(f"g{n},1" for n in range(9)) + "`text`label,no`")
+    parse("`guild_rank_any,any,no,aldermere,3,sunvale,3`text`label,no`")
+    parse("`guild_rank_any,each,no," + ",".join(f"g{n},1" for n in range(8)) + "`text`label,no`")
