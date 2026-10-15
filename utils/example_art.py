@@ -89,8 +89,39 @@ class Canvas:
 HERO = dict(skin="skin", hair="hair", cloth="cloth", cloth_d="cloth_d", trim="trim", boot="boot", weapon="sword", extra=None)
 
 
+def person_back(pose, look):
+    """A standing figure seen from behind (the fight shows a player's own side this way), 32 by 32. $pose is back_a, back_b, back_attack or back_hit."""
+    c = Canvas()
+    skin, hair, cloth, cloth_d, trim, boot = (look[name] for name in ("skin", "hair", "cloth", "cloth_d", "trim", "boot"))
+    lean = -2 if pose == "back_hit" else 0
+    bob = -1 if pose == "back_b" else 0
+    c.rect(12 + lean, 22, 14 + lean, 28, cloth_d)  # legs
+    c.rect(17 + lean, 22, 19 + lean, 28, cloth_d)
+    c.rect(11 + lean, 28, 14 + lean, 29, boot)
+    c.rect(17 + lean, 28, 20 + lean, 29, boot)
+    c.rect(11 + lean, 14 + bob, 20 + lean, 22, cloth)  # back, belt
+    c.rect(11 + lean, 20 + bob, 20 + lean, 20 + bob, trim)
+    c.ellipse(15.5 + lean, 9 + bob, 5, 5.5, hair or skin)  # the back of the head: hair, or bare
+    if pose == "back_attack":
+        c.rect(8, 15, 10, 21, cloth)
+        c.rect(21, 7, 23, 15, cloth)  # the sword arm goes up and over
+        c.rect(22, 5, 23, 6, skin)
+        if look["weapon"]:
+            _weapon(c, look["weapon"], 22, 5, "forward")
+    else:
+        c.rect(8 + lean, 15 + bob, 10 + lean, 21 + bob, cloth)
+        c.rect(21 + lean, 15 + bob, 23 + lean, 21 + bob, cloth)
+        c.rect(8 + lean, 22 + bob, 9 + lean, 23 + bob, skin)
+        c.rect(22 + lean, 22 + bob, 23 + lean, 23 + bob, skin)
+    if look["extra"]:
+        look["extra"](c, "idle_a", lean, bob)
+    return c.outlined()
+
+
 def person_fight(pose, look):
     """A standing figure facing right, 32 by 32. $pose is idle_a, idle_b, attack, hit, down, cast, item or shoot."""
+    if pose.startswith("back_"):
+        return person_back(pose, look)
     c = Canvas()
     skin, hair, cloth, cloth_d, trim, boot = (look[name] for name in ("skin", "hair", "cloth", "cloth_d", "trim", "boot"))
     lean = -2 if pose == "hit" else 0
@@ -214,6 +245,7 @@ SKELETON = dict(skin="bone", hair=None, cloth="bone", cloth_d="bone_d", trim="bo
 IMP = dict(skin="imp", hair=None, cloth="imp", cloth_d="imp_d", trim="imp_l", boot="imp_d", weapon=None, extra=imp_extras)
 
 FIGHT_POSES = ("idle_a", "idle_b", "attack", "hit", "down", "cast", "item", "shoot")
+BACK_POSES = ("back_a", "back_b", "back_attack", "back_hit")  # (the hero's back view: appended, so the frames above keep their numbers)
 
 
 def person_sheet(look, poses, facing_left):
@@ -388,7 +420,8 @@ def write_json(file_name, data):
 
 
 def fight_animations(order, extra_names):
-    """The animations of a fight sheet whose frames are $order (poses by name); $extra_names says if it can cast, use an item and shoot."""
+    """The animations of a fight sheet whose frames are $order (poses by name); $extra_names says if it can cast, use an item and shoot.
+    A sheet with back poses also has the back view of its idle, hit, die and close attack (``_up``; the others fall back to the front)."""
     at = {pose: number for number, pose in enumerate(order)}
     animations = {
         "base": {"frames": [at["idle_a"], at["idle_b"]], "ms": 450},
@@ -398,6 +431,13 @@ def fight_animations(order, extra_names):
         "run": {"frames": [at["idle_a"], at["idle_b"]], "ms": 90},
     }
     aliases = {"flee": {"of": "run", "flip_x": True}}
+    if "back_a" in at:
+        animations |= {
+            "base_up": {"frames": [at["back_a"], at["back_b"]], "ms": 450},
+            "hit_up": {"frames": [at["back_hit"], at["back_hit"], at["back_a"]], "ms": 120, "loop": False},
+            "attack_close_up": {"frames": [{"frame": at["back_attack"], "ms": 260}, at["back_a"]], "loop": False},
+        }
+        aliases["die_up"] = {"of": "die"}
     if extra_names:
         animations["spell"] = {"frames": [{"frame": at["cast"], "ms": 400}, at["idle_a"]], "loop": False}
         animations["item"] = {"frames": [{"frame": at["item"], "ms": 400}, at["idle_a"]], "loop": False}
@@ -435,8 +475,9 @@ HERO_COLOR_MAPS = {
 
 def main():
     ASSETS.mkdir(parents=True, exist_ok=True)
-    write_sheet("hero_fight", person_sheet(HERO, FIGHT_POSES, facing_left=False), 4)
-    write_json("hero_fight.anim.json", fight_animations(FIGHT_POSES, extra_names=True))
+    hero_poses = (*FIGHT_POSES, *BACK_POSES)
+    write_sheet("hero_fight", person_sheet(HERO, hero_poses, facing_left=False), 4)
+    write_json("hero_fight.anim.json", fight_animations(hero_poses, extra_names=True))
     hero_map = [person_map(facing, step) for facing in ("down", "up", "right") for step in (0, 1, 2)]
     write_sheet("hero_map", hero_map, 5)
     write_json("hero_map.anim.json", map_animations())
