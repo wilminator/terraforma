@@ -124,6 +124,7 @@ export const STRINGS = {
   "external.error_expired": "That sign-in ran out of time or was not started here. Please start again.",
   "external.error_email_in_use": "An account already uses that email address. Log in the way you first signed up, then link the provider from your account page.",
   "external.error_email_unverified": "The provider did not give a verified email address, so it can't be used to make an account.",
+  "external.error_no_account": "No account is linked to that sign-in yet. Log in the way you first signed up, then link it from your account page.",
   "external.error_taken": "That provider account is already linked to another player.",
   "external.error_failed": "The sign-in did not work. Please try again.",
   "external.linked": "The provider is linked. You can sign in with it from now on.",

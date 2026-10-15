@@ -6,13 +6,23 @@ provider's token address itself, over TLS, with the client secret and the PKCE v
 straight from the token endpoint, needs no signature check (OpenID Connect Core 3.1.3.7); what is checked is who issued it
 (``iss``), who it is for (``aud``), that it has not expired, that its ``nonce`` is the one this sign-in made, and that the
 provider calls the email address verified. Nothing the browser carries is trusted: it only brings the code and the state.
+
+Two providers do not speak OpenID Connect and have their own small adapters here, chosen by the provider's ``kind``:
+
+* Facebook (OAuth 2, no ID token): the code is traded for an access token at the Graph API, which is then asked who it belongs to.
+  Facebook returns an email address only when the person has a confirmed one, so a returned address counts as verified.
+* Steam (OpenID 2.0, no keys and no email address): the browser brings Steam's signed answer, and the server hands it back to
+  Steam to ask whether Steam really signed it. Only the answer's checked claimed id (the SteamID64) is used.
 """
 
 import base64
 import hashlib
+import hmac
 import json
+import re
 import secrets
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from urllib.parse import urlencode
 
 import httpx2 as httpx
@@ -22,8 +32,25 @@ from ..settings import ExternalProvider
 
 # The provider is asked once for its published settings, then each call waits no longer than this.
 TIMEOUT = 10.0
+# Facebook Login: the Graph API version is part of every address (Facebook retires old ones after about two years).
+FACEBOOK_VERSION = "v23.0"
+FACEBOOK_AUTHORIZATION = f"https://www.facebook.com/{FACEBOOK_VERSION}/dialog/oauth"
+FACEBOOK_TOKEN = f"https://graph.facebook.com/{FACEBOOK_VERSION}/oauth/access_token"
+FACEBOOK_ME = f"https://graph.facebook.com/{FACEBOOK_VERSION}/me"
+# Steam's OpenID 2.0 address (it is both where the browser goes and where the answer is checked).
+STEAM_LOGIN = "https://steamcommunity.com/openid/login"
+STEAM_NAMESPACE = "http://specs.openid.net/auth/2.0"
+STEAM_IDENTIFIER_SELECT = "http://specs.openid.net/auth/2.0/identifier_select"
+STEAM_CLAIMED_ID = re.compile(r"^https://steamcommunity\.com/openid/id/(\d{1,20})$")
+# What Steam's answer must sign, or it proves nothing about who signed in or for which sign-in.
+STEAM_MUST_SIGN = {"op_endpoint", "claimed_id", "identity", "return_to", "response_nonce"}
+# Steam's answer carries about a dozen openid.* values; more than this is not Steam.
+STEAM_MAX_PARAMS = 30
+STEAM_MAX_VALUE = 1024
 # An ID token a little past its expiry is a clock a little off, not a stolen token.
 CLOCK_LEEWAY = 60
+# Steam's answer must be this fresh, in seconds.
+STEAM_NONCE_WINDOW = 600
 
 
 class SignInError(ValueError):
@@ -93,6 +120,10 @@ def redirect_uri(public_url: str, provider: ExternalProvider) -> str:
 
 async def endpoints(http: httpx.AsyncClient, provider: ExternalProvider) -> Endpoints:
     """Where to send the browser and the code: from settings.toml if given, else the provider's published settings."""
+    if provider.kind == "facebook":
+        return Endpoints("facebook", FACEBOOK_AUTHORIZATION, FACEBOOK_TOKEN)
+    if provider.kind == "steam":
+        return Endpoints("steam", STEAM_LOGIN, STEAM_LOGIN)
     if provider.authorization_endpoint and provider.token_endpoint:
         return Endpoints(provider.issuer, provider.authorization_endpoint, provider.token_endpoint)
     address = provider.issuer.rstrip("/") + "/.well-known/openid-configuration"
@@ -105,7 +136,35 @@ async def endpoints(http: httpx.AsyncClient, provider: ExternalProvider) -> Endp
         raise SignInError("failed", f"{provider.name}: could not read the provider's settings") from error
 
 
+def steam_return_to(public_url: str, provider: ExternalProvider, flow: Flow) -> str:
+    """Steam brings the browser back here; the state rides in the address (Steam signs the whole address, so it cannot be swapped)."""
+    return redirect_uri(public_url, provider) + "?" + urlencode({"state": flow.state})
+
+
 def authorize_address(provider: ExternalProvider, where: Endpoints, public_url: str, flow: Flow) -> str:
+    if provider.kind == "steam":
+        realm = public_url.rstrip("/")
+        query = {
+            "openid.ns": STEAM_NAMESPACE,
+            "openid.mode": "checkid_setup",
+            "openid.return_to": steam_return_to(public_url, provider, flow),
+            "openid.realm": realm,
+            "openid.identity": STEAM_IDENTIFIER_SELECT,
+            "openid.claimed_id": STEAM_IDENTIFIER_SELECT,
+        }
+        return where.authorization + "?" + urlencode(query)
+    if provider.kind == "facebook":
+        # Facebook ignores PKCE today; it is sent so the code is already bound to this browser if Facebook starts checking it.
+        query = {
+            "response_type": "code",
+            "client_id": provider.client_id,
+            "redirect_uri": redirect_uri(public_url, provider),
+            "scope": "email",
+            "state": flow.state,
+            "code_challenge": challenge(flow.verifier),
+            "code_challenge_method": "S256",
+        }
+        return where.authorization + "?" + urlencode(query)
     query = {
         "response_type": "code",
         "client_id": provider.client_id,
@@ -166,6 +225,8 @@ async def complete(
     http: httpx.AsyncClient, provider: ExternalProvider, where: Endpoints, public_url: str, flow: Flow, code: str
 ) -> Identity:
     """Trades $code for the ID token and checks it. Raises SignInError when the provider refuses or the token does not check out."""
+    if provider.kind == "facebook":
+        return await _complete_facebook(http, provider, where, public_url, flow, code)
     try:
         answer = await http.post(
             where.token,
@@ -187,3 +248,99 @@ async def complete(
     if not isinstance(id_token, str):
         raise SignInError("failed", "the ID token is not readable")
     return check_claims(provider, where, _claims(id_token), flow.nonce)
+
+
+async def _complete_facebook(
+    http: httpx.AsyncClient, provider: ExternalProvider, where: Endpoints, public_url: str, flow: Flow, code: str
+) -> Identity:
+    """Trades $code for an access token, then asks the Graph API whose it is. The token never leaves this function."""
+    try:
+        answer = await http.post(
+            where.token,
+            data={
+                "code": code,
+                "redirect_uri": redirect_uri(public_url, provider),
+                "client_id": provider.client_id,
+                "client_secret": provider.client_secret,
+                "code_verifier": flow.verifier,
+            },
+            headers={"Accept": "application/json"},
+            timeout=TIMEOUT,
+        )
+        answer.raise_for_status()
+        token = answer.json()["access_token"]
+        if not isinstance(token, str) or not token:
+            raise ValueError("no access token")
+        # The proof shows the call comes from the app server that holds the secret (the app can require it).
+        proof = hmac.new(provider.client_secret.encode(), token.encode(), hashlib.sha256).hexdigest()
+        who = await http.get(
+            FACEBOOK_ME,
+            params={"fields": "id,email", "appsecret_proof": proof},
+            headers={"Accept": "application/json", "Authorization": f"Bearer {token}"},
+            timeout=TIMEOUT,
+        )
+        who.raise_for_status()
+        found = who.json()
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as error:
+        raise SignInError("failed", f"{provider.name}: the code was not accepted") from error
+    subject = found.get("id") if isinstance(found, dict) else None
+    if not isinstance(subject, str) or not 0 < len(subject) <= 255:
+        raise SignInError("failed", "Facebook gave no id")
+    email = found.get("email")
+    email = email.strip() if isinstance(email, str) else ""
+    # Facebook gives an address only when the person has a confirmed one.
+    return Identity(subject=subject, email=email, email_verified=bool(email))
+
+
+def _steam_nonce_is_fresh(nonce: str) -> bool:
+    """Steam's response_nonce starts with the time it was made (2026-10-15T06:33:36Z...); an old answer is a replayed one."""
+    stamp = re.match(r"^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)Z", nonce)
+    if stamp is None:
+        return False
+    try:
+        made = datetime(*map(int, stamp.groups()), tzinfo=UTC).timestamp()
+    except ValueError:
+        return False
+    return abs(wallclock.timestamp() - made) <= STEAM_NONCE_WINDOW
+
+
+async def complete_steam(http: httpx.AsyncClient, provider: ExternalProvider, public_url: str, flow: Flow, params: dict[str, str]) -> Identity:
+    """Checks Steam's answer ($params: the ``openid.*`` values of the redirect) and returns who signed in.
+
+    Checked here: it is an answer (not a cancel) from Steam's address, for this sign-in (``return_to`` is the address this flow
+    made, state included), it signed the parts that matter, the claimed id is a Steam id, and the nonce is fresh. Then Steam is
+    asked whether it made the signature (``check_authentication``), which also spends the nonce so a copy cannot be replayed.
+    """
+    if len(params) > STEAM_MAX_PARAMS or any(len(value) > STEAM_MAX_VALUE for value in params.values()):
+        raise SignInError("failed", "Steam's answer is not readable")
+    if params.get("openid.mode") == "cancel":
+        raise SignInError("denied", "Steam sign-in was cancelled")
+    if params.get("openid.mode") != "id_res" or params.get("openid.ns") != STEAM_NAMESPACE:
+        raise SignInError("failed", "Steam's answer is not an answer")
+    if params.get("openid.op_endpoint") != STEAM_LOGIN:
+        raise SignInError("failed", "the answer is not from Steam")
+    if params.get("openid.return_to") != steam_return_to(public_url, provider, flow):
+        raise SignInError("failed", "the answer is for another sign-in")
+    signed = set((params.get("openid.signed") or "").split(","))
+    if not STEAM_MUST_SIGN <= signed:
+        raise SignInError("failed", "Steam did not sign what it must")
+    claimed = STEAM_CLAIMED_ID.match(params.get("openid.claimed_id", ""))
+    if claimed is None or params.get("openid.identity") != params["openid.claimed_id"]:
+        raise SignInError("failed", "the answer names no Steam account")
+    if not _steam_nonce_is_fresh(params.get("openid.response_nonce", "")):
+        raise SignInError("failed", "the answer is too old")
+    try:
+        answer = await http.post(
+            STEAM_LOGIN,
+            data={**params, "openid.mode": "check_authentication"},
+            headers={"Accept": "text/plain"},
+            timeout=TIMEOUT,
+        )
+        answer.raise_for_status()
+        text = answer.text
+    except httpx.HTTPError as error:
+        raise SignInError("failed", f"{provider.name}: Steam could not be asked") from error
+    if "is_valid:true" not in text.splitlines():
+        raise SignInError("failed", "Steam did not stand behind the answer")
+    # Steam gives no email address: the player is known only by the Steam id.
+    return Identity(subject=claimed.group(1), email="", email_verified=False)

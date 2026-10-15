@@ -78,3 +78,19 @@ key_dir = "keys"
 # client_id = "..."
 # client_secret = "..."
 # scopes = ["openid", "email"]              # the default; both are required
+
+# Facebook: create an app with Facebook Login, add the redirect address above as a valid OAuth redirect URI, and use its app id
+# and secret. Facebook gives an email address only when the person has a confirmed one, and that is what the account gets.
+# [[external_providers]]
+# name = "facebook"
+# label = "Facebook"
+# kind = "facebook"
+# client_id = "the app id"
+# client_secret = "the app secret"
+
+# Steam needs no keys. It gives no email address, so a player signs in with it only after linking it (from the account page) to an
+# account made another way.
+# [[external_providers]]
+# name = "steam"
+# label = "Steam"
+# kind = "steam"

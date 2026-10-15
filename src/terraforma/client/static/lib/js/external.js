@@ -22,7 +22,7 @@ export async function providerButtons(shell, next = null, request = null) {
 
 /** The words for a failed trip (the address says a reason in one word). */
 export function errorText(shell, reason) {
-  const known = ["denied", "expired", "email_in_use", "email_unverified", "taken", "failed"];
+  const known = ["denied", "expired", "email_in_use", "email_unverified", "no_account", "taken", "failed"];
   return shell.text.get(`external.error_${known.includes(reason) ? reason : "failed"}`);
 }
 
