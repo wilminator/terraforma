@@ -377,7 +377,7 @@ Each team may be offered one quest a week (weeks run Monday 00:00 UTC to the nex
 
 ### Ranks and gates
 
-A team has **points** and a **rank** with each guild, kept per team like quests (`guild_standing`). A guild is just a name the game picks in its dialog text (`vanguard`, `crown`); the engine knows no guilds. A rank is a whole number, 0 the lowest and 99 the highest; the game names its own (Vanguard Tavern: E is 0, D 1, C 2, B 3, A 4, S 5). Points only grow, and a rank changes only when the dialog sets it, so a promotion quest is a dialog that checks the points, runs the quest and then sets the rank. Six dialog tags (see Dialog text in `npcs/script.py`) are the whole interface:
+A team has **points** and a **rank** with each guild, kept per team like quests (`guild_standing`). A guild is just a name the game picks in its dialog text (`vanguard`, `crown`); the engine knows no guilds. A rank is a whole number, 0 the lowest and 99 the highest; the game names its own (Vanguard Tavern: E is 0, D 1, C 2, B 3, A 4, S 5). Points only grow, and a rank changes only when the dialog sets it, so a promotion quest is a dialog that checks the points, runs the quest and then sets the rank. Seven dialog tags (see Dialog text in `npcs/script.py`) are the whole interface:
 
 | Tag | Does |
 |---|---|
@@ -385,9 +385,10 @@ A team has **points** and a **rank** with each guild, kept per team like quests 
 | `set_guild_rank,guild,rank` | the team now holds that rank |
 | `guild_points,guild,op,n,scope,label` | the label unless the team's points compare true with n |
 | `guild_rank,guild,op,n,scope,label` | the label unless the team's rank compares true with n |
+| `guild_rank_any,scope,label,guild,min,...` | the label unless the team holds at least `min` with at least one of the guilds listed (up to 8 pairs) |
 | `party_gate,guild,average,lowest,highest,pxp_min,pxp_max,label` | the label unless the party passes the gate |
 
-`scope` and `op` are those of `quests`. **`party_gate`** is a quest's entry rule for the party the hero acts in: the teams' ranks average at least `average` (a number such as 1.5), every team has at least `lowest`, the best team has at least `highest`, and the party's strength (`Rules.pxp` added up over the heroes of its teams) is at least `pxp_min` and at most `pxp_max` (0 for no ceiling). A D average with at least one B is `party_gate,vanguard,1,0,3,0,0,no`. A gate that asks for strength needs the game's `Rules`, which the dialog routes pass in. A team that is deleted takes its standing with it.
+`scope` and `op` are those of `quests`. **`party_gate`** is a quest's entry rule for the party the hero acts in: the teams' ranks average at least `average` (a number such as 1.5), every team has at least `lowest`, the best team has at least `highest`, and the party's strength (`Rules.pxp` added up over the heroes of its teams) is at least `pxp_min` and at most `pxp_max` (0 for no ceiling). A D average with at least one B is `party_gate,vanguard,1,0,3,0,0,no`. A gate that asks for strength needs the game's `Rules`, which the dialog routes pass in. **Standing elsewhere.** Every guild tag takes any guild's name, so a guild can gate on a team's standing with a different one: `guild_rank,aldermere,ge,3,any,no` asks for rank 3 with Aldermere's guild. Guilds do not share a rank scale (Vanguard's lowest rank is about a B or an A elsewhere, depending on the guild), so the game writes the rank each guild's door asks for. **`guild_rank_any`** takes several, and passes a team that meets one: `guild_rank_any,any,no,aldermere,3,sunvale,3,ironhand,4` lets in a team with rank 3 in either kingdom or rank 4 with the company. The scope is that of `guild_rank` (`each` needs every team of the party to meet one). A game's own code asks the same with `terraforma.guild.ranks.meets_any(session, team_id, [(guild, lowest), ...])`. A team that is deleted takes its standing with it.
 
 ## Towns
 

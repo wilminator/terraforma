@@ -29,6 +29,13 @@ async def standing(session: AsyncSession, team_id: int, guild: str) -> tuple[int
     return (0, 0) if row is None else (row.points, row.rank)
 
 
+async def meets_any(session: AsyncSession, team_id: int, requirements: list[tuple[str, int]]) -> bool:
+    """Whether the team holds at least the asked rank with at least one of the guilds in $requirements, a list of (guild, lowest
+    rank). A guild asks for the rank its own game names (kingdom B is 3, a mercenary company's A is 4), so "rank B in a kingdom
+    or A in a company" is two entries. No requirements pass no one."""
+    return any([(await standing(session, team_id, guild))[1] >= lowest for guild, lowest in requirements])
+
+
 async def _row(session: AsyncSession, team_id: int, guild: str) -> GuildStanding:
     if not guild:
         raise RankError("a guild has a name")
