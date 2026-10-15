@@ -33,6 +33,9 @@ class QuestTemplate(Timestamps, Base):
     weight: Mapped[int] = mapped_column(Integer, default=1)
     spec: Mapped[dict] = mapped_column(JSON)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # The rotating quest slot (``quests.rotation``) this template belongs to, or None for a weekly quest: a slot's templates are never
+    # drawn for the weekly quest, and the levels above mean nothing to a slot (its quest is the same for every team).
+    slot: Mapped[str | None] = mapped_column(String(64), index=True)
 
 
 class WeeklyQuest(Timestamps, Base):
