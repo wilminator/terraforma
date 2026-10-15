@@ -1,4 +1,4 @@
-"""Signing in with an external provider (Google, Microsoft, ...): the calls.
+"""Signing in with an external provider (Google, Microsoft, Facebook, Steam, ...): the calls.
 
 The flow (see accounts.oidc for the protocol): the page sends the browser to ``/api/external/<name>/start``, which sends
 it on to the provider; the provider sends it back to ``/api/external/<name>/callback``, which always ends by redirecting
@@ -9,6 +9,9 @@ to ``/account/?external=<outcome>`` where the account page carries on:
     finish    a first sign-in: the page asks for a username, a handle and (optionally) a password; the account is made then
     linked    a provider was added to the logged-in account
     error     it failed; ``reason`` says why in a word (the page words it)
+
+Steam (kind "steam") brings no email address, so a Steam sign-in with nothing linked ends in ``error`` with ``reason=no_account``:
+Steam is for signing in to an account the player already has, linked from the account page.
 
 The rules (plan doc, "Sign-in"): every login has a local account; a provider's email is used only when it says it is
 verified; an email that already has an account never creates or links anything, and the answer does not say how that account
@@ -193,12 +196,18 @@ async def callback(name: str, query: Annotated[CallbackQuery, Query()], request:
         return back("error", "expired")
     if query.error is not None:
         return back("error", "denied" if query.error == "access_denied" else "failed")
-    if query.code is None:
+    if provider.kind != "steam" and query.code is None:
         return back("error", "failed")
     try:
         http = request.app.state.http_client
-        where = await oidc.endpoints(http, provider)
-        who = await oidc.complete(http, provider, where, request.app.state.settings.public_url, flow, query.code)
+        public_url = request.app.state.settings.public_url
+        if provider.kind == "steam":
+            # Steam brings its answer as openid.* values, not a code (and no "error": a cancel is an answer too).
+            answer = {key: value for key, value in request.query_params.items() if key.startswith("openid.")}
+            who = await oidc.complete_steam(http, provider, public_url, flow, answer)
+        else:
+            where = await oidc.endpoints(http, provider)
+            who = await oidc.complete(http, provider, where, public_url, flow, query.code)
     except oidc.SignInError as error:
         return back("error", error.reason)
 
@@ -211,6 +220,9 @@ async def callback(name: str, query: Annotated[CallbackQuery, Query()], request:
             return back("error", "failed")
         return await _logged_in(request, db, account, flow.next, flow.request)
 
+    if provider.kind == "steam":
+        # Steam gives no email address, so it cannot start an account: a player links it to the one they have.
+        return back("error", "no_account")
     # A first sign-in with this provider: it needs an email the provider has verified, that no account has.
     try:
         email = service.check_email(who.email) if who.email_verified else ""

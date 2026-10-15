@@ -27,6 +27,7 @@ secrets to the container, so everything comes from one file:
 import os
 import tomllib
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -90,7 +91,12 @@ def _web_address(value: str, setting: str) -> str:
 
 
 class ExternalProvider(BaseModel):
-    """One OpenID Connect provider players may sign in with (Google, Microsoft, ...).
+    """One provider players may sign in with. ``kind`` says how it talks:
+
+    ``oidc`` (the default): any OpenID Connect provider (Google, Microsoft, ...). Needs ``issuer``, ``client_id`` and ``client_secret``.
+    ``facebook``: Facebook Login (OAuth 2 code flow, then the Graph API). Needs ``client_id`` (the app id) and ``client_secret``.
+    ``steam``: Steam (OpenID 2.0). Needs nothing else: Steam has no keys and gives no email address, so it can sign in or be
+    linked to a player who already has an account, but not make one.
 
     The address to register at the provider as the redirect address is ``<public_url>/api/external/<name>/callback``.
     """
@@ -101,19 +107,21 @@ class ExternalProvider(BaseModel):
     name: str = Field(pattern=r"^[a-z0-9_-]{1,32}$")
     # What the sign-in button says.
     label: str = Field(min_length=1, max_length=64)
-    # The provider's issuer address; its settings are found at <issuer>/.well-known/openid-configuration.
-    issuer: str
-    client_id: str = Field(min_length=1)
-    client_secret: str = Field(min_length=1)
+    kind: Literal["oidc", "facebook", "steam"] = "oidc"
+    # The provider's issuer address; its settings are found at <issuer>/.well-known/openid-configuration. Only for kind "oidc".
+    issuer: str = ""
+    client_id: str = ""
+    client_secret: str = ""
+    # Only for kind "oidc" (default: openid and email; both are required). Facebook always asks for its "email" permission.
     scopes: list[str] = ["openid", "email"]
-    # Both set: used instead of the provider's published settings (for a provider that publishes none).
+    # Both set: used instead of the provider's published settings (for a provider that publishes none). Only for kind "oidc".
     authorization_endpoint: str | None = None
     token_endpoint: str | None = None
 
     @field_validator("issuer", "authorization_endpoint", "token_endpoint")
     @classmethod
     def _is_a_web_address(cls, value: str | None, info) -> str | None:
-        return None if value is None else _web_address(value, info.field_name)
+        return value if value is None or value == "" else _web_address(value, info.field_name)
 
     @field_validator("scopes")
     @classmethod
@@ -123,9 +131,24 @@ class ExternalProvider(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def _endpoints_come_together(self) -> "ExternalProvider":
-        if (self.authorization_endpoint is None) != (self.token_endpoint is None):
-            raise ValueError("authorization_endpoint and token_endpoint are set together or not at all")
+    def _fits_its_kind(self) -> "ExternalProvider":
+        if self.kind == "oidc":
+            for setting in ("issuer", "client_id", "client_secret"):
+                if not getattr(self, setting):
+                    raise ValueError(f"{setting} is needed")
+            if (self.authorization_endpoint is None) != (self.token_endpoint is None):
+                raise ValueError("authorization_endpoint and token_endpoint are set together or not at all")
+            return self
+        # Facebook and Steam have fixed addresses, so the settings that point elsewhere are mistakes, not options.
+        for setting in ("issuer", "authorization_endpoint", "token_endpoint"):
+            if getattr(self, setting):
+                raise ValueError(f"{setting} is only for kind \"oidc\"")
+        if self.scopes != ["openid", "email"]:
+            raise ValueError('scopes is only for kind "oidc"')
+        if self.kind == "facebook" and not (self.client_id and self.client_secret):
+            raise ValueError("client_id and client_secret are needed")
+        if self.kind == "steam" and (self.client_id or self.client_secret):
+            raise ValueError("steam has no client_id or client_secret")
         return self
 
 
