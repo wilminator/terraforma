@@ -57,6 +57,16 @@ async def add_points(session: AsyncSession, team_id: int, guild: str, points: in
     return row.points
 
 
+async def remove_points(session: AsyncSession, team_id: int, guild: str, points: int) -> int:
+    """The team loses $points with the guild (a penalty for a failed quest, say), down to none at all. Returns its new total."""
+    if points < 1:
+        raise RankError("a guild takes at least 1 point at a time")
+    row = await _row(session, team_id, guild)
+    row.points = max(0, row.points - points)
+    await session.flush()
+    return row.points
+
+
 async def set_rank(session: AsyncSession, team_id: int, guild: str, rank: int) -> None:
     """The team holds this rank with the guild now (a promotion, or a demotion if the game wants one)."""
     if not 0 <= rank <= MAX_RANK:

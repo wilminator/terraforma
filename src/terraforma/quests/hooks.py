@@ -68,7 +68,7 @@ class RotatingQuests:
         class Rotating(terraforma.quests.hooks.RotatingQuests):
             async def penalty(self, session, team_id, slot, reason):
                 if reason == POOR_PERFORMANCE:
-                    await guild.add_points(session, team_id, slot.guild, -10)   # (a game's own rule)
+                    await ranks.remove_points(session, team_id, slot.guild, 10)   # (a game's own rule)
     """
 
     def generate(self, rng: Random, slot, seq: int) -> GeneratedQuest | None:
