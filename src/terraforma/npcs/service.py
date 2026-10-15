@@ -18,9 +18,9 @@ from ..models import Map
 from ..parties import service as parties
 from ..reach.hooks import TALK, Reach
 from .hooks import Npcs
-from .models import Npc, NpcTalk
+from .models import Dialog, Npc, NpcTalk
 from .state import DialogState
-from .script import MAX_TEXT, BadAnswer, Script, ScriptError, Who, advance, parse
+from .script import MAX_TEXT, TREE_KEY, BadAnswer, Script, ScriptError, Who, advance, parse
 
 MAX_COUNTER = 64
 
@@ -34,6 +34,42 @@ class NpcError(ValueError):
 
 class NoSuchNpc(NpcError):
     """There is no such NPC."""
+
+
+async def place_dialog(session: AsyncSession, key: str, text: str) -> Dialog:
+    """Stores a dialog tree other dialogs can include (``include,key``; a game's setup code calls it). The text is checked
+    (ScriptError says what is wrong with it), and the tree with this $key is rewritten if it exists, so setup can run again. The
+    trees it includes are looked up when the dialog runs, so they may be placed after it; ``missing_includes`` finds the ones
+    that never were."""
+    if not TREE_KEY.fullmatch(key):
+        raise ScriptError(f"a dialog key is 1 to 64 lowercase letters, digits, _ or -, starting with a letter or digit, got {key!r}")
+    parse(text)
+    tree = await session.scalar(select(Dialog).where(Dialog.key == key))
+    if tree is None:
+        tree = Dialog(key=key, text=text)
+        session.add(tree)
+    else:
+        tree.text = text
+    await session.flush()
+    return tree
+
+
+async def apply_dialogs(session: AsyncSession, rows: list) -> int:
+    """Stores the seed's dialog trees ($rows: ``DialogSeed``), each by ``place_dialog``. A tree the rows no longer list is left
+    in place. Returns how many."""
+    for row in rows:
+        await place_dialog(session, row.key, row.text)
+    return len(rows)
+
+
+async def missing_includes(session: AsyncSession) -> list[tuple[str, str]]:
+    """Every ``(owner, key)`` where a stored dialog (a tree, an NPC's) includes a tree that is not stored: a game checks this
+    once its setup has run."""
+    known = set((await session.scalars(select(Dialog.key))).all())
+    owners = [(f"dialog {row.key}", row.text) for row in (await session.scalars(select(Dialog))).all()]
+    owners += [(f"npc {row.key}", row.dialog) for row in (await session.scalars(select(Npc))).all()]
+    owners += [(f"object {row.key}", row.dialog) for row in (await session.scalars(select(MapObject))).all()]
+    return [(owner, key) for owner, text in owners for key in parse(text).includes if key not in known]
 
 
 async def place_npc(session: AsyncSession, key: str, name: str, map_id: int, x: int, y: int, dialog: str, counter: list[tuple[int, int]] | None = None) -> Npc:
@@ -135,6 +171,15 @@ async def may_talk(session: AsyncSession, reach: Reach, source: Npc | MapObject,
 async def _run(session: AsyncSession, hooks: Npcs, hero: Hero, npc: Npc | MapObject, talk: NpcTalk | None, choice: int | None, rest: Rest | None = None, economy: Economy | None = None, rules: Rules | None = None) -> dict:
     script: Script = parse(npc.dialog)
     who = await who_is(session, hero)
+    trees: dict[str, Script] = {}
+
+    async def load(key: str) -> Script:
+        if key not in trees:
+            found = await session.scalar(select(Dialog.text).where(Dialog.key == key))
+            if found is None:
+                raise ScriptError(f"there is no dialog {key!r} to include")
+            trees[key] = parse(found)
+        return trees[key]
 
     async def tag(command: str, parts: list[str]) -> str | None:
         handled = await hooks.tag(session, hero, command, parts)
@@ -144,7 +189,8 @@ async def _run(session: AsyncSession, hooks: Npcs, hero: Hero, npc: Npc | MapObj
 
     try:
         async with session.begin_nested():  # a step is all or nothing: a spend that fails undoes the rewards before it
-            result = await advance(script, talk.pos if talk else 0, talk.prompt if talk else None, choice, who, tag, DialogState(session, hero, economy, rules))
+            result = await advance(script, talk.pos if talk else 0, talk.prompt if talk else None, choice, who, tag, DialogState(session, hero, economy, rules),
+                                   talk.tree if talk else None, talk.stack if talk else (), load)
     except ScriptError as error:
         if talk is not None and not isinstance(error, BadAnswer):
             await session.delete(talk)
@@ -155,9 +201,9 @@ async def _run(session: AsyncSession, hooks: Npcs, hero: Hero, npc: Npc | MapObj
             await session.delete(talk)
     elif talk is None:
         by = {"object_id": npc.id} if isinstance(npc, MapObject) else {"npc_id": npc.id}
-        session.add(NpcTalk(hero_id=hero.id, pos=result["pos"], prompt=result["prompt"], **by))
+        session.add(NpcTalk(hero_id=hero.id, pos=result["pos"], prompt=result["prompt"], tree=result["tree"], stack=result["stack"], **by))
     else:
-        talk.pos, talk.prompt = result["pos"], result["prompt"]
+        talk.pos, talk.prompt, talk.tree, talk.stack = result["pos"], result["prompt"], result["tree"], result["stack"]
     await session.flush()
     return frame(npc, result["events"], result["prompt"])
 

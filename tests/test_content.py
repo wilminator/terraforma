@@ -112,6 +112,44 @@ def test_an_npc_is_checked_like_the_rest():
         assert "npcs.json row 1 (keeper)" in str(error.value) and message in str(error.value)
 
 
+def tree(key, text):
+    return {"key": key, "text": text}
+
+
+def test_dialog_trees_are_checked_and_may_be_included_by_npcs_and_by_each_other():
+    checked = check_seed(seed(dialogs=[tree("board", "Quests.`include,quest-1`"), tree("quest-1", "Slay it.`end_return`")],
+                              npcs=[{**NPC, "dialog": "Hi.`include,board`"}]))
+    assert [row.key for row in checked["dialogs"]] == ["board", "quest-1"]
+    for change, message in (({"text": "`question,a`"}, "text"), ({"text": ""}, "text"), ({"key": "Big Board"}, "key"), ({"surprise": 1}, "surprise")):
+        with pytest.raises(ContentError) as error:
+            check_seed(seed(dialogs=[{**tree("board", "Hi."), **change}]))
+        assert "dialogs.json row 1" in str(error.value) and message in str(error.value)
+
+
+def test_an_include_of_a_tree_the_seed_does_not_have_is_refused_wherever_it_is():
+    town = {"key": "town", "name": "Town", "tileset": [{}], "tiles": [[0, 0], [0, 0]],
+            "objects": [{"key": "sign", "name": "Sign", "kind": "sign", "x": 0, "y": 0, "script": "`include,ghost-sign`"}], "edges": {"north": "`include,ghost-edge`"}}
+    with pytest.raises(ContentError) as error:
+        check_seed(seed(dialogs=[tree("board", "`include,ghost-tree`")], npcs=[{**NPC, "dialog": "`include,ghost-npc`"}], maps=[town]))
+    text = str(error.value)
+    assert "dialogs.json board: the text includes 'ghost-tree', which dialogs.json doesn't have" in text
+    assert "npcs.json keeper: the dialog includes 'ghost-npc'" in text
+    assert "maps.json town: the object sign includes 'ghost-sign'" in text and "maps.json town: the north edge includes 'ghost-edge'" in text
+
+
+def test_trees_that_include_each_other_in_a_circle_are_refused_once_per_circle():
+    with pytest.raises(ContentError) as error:
+        check_seed(seed(dialogs=[tree("a", "`include,b`"), tree("b", "`include,c`"), tree("c", "`include,a`"), tree("d", "`include,d`"), tree("e", "`include,a`")]))
+    text = str(error.value)
+    assert "a -> b -> c -> a includes itself" in text and "d -> d includes itself" in text
+    assert text.count("includes itself") == 2, "e only leads into the circle"
+
+
+def test_a_tree_that_warps_to_a_map_the_game_does_not_have_is_refused():
+    with pytest.raises(ContentError, match="dialogs.json door: the text warps to 'nowhere'"):
+        check_seed(seed(dialogs=[tree("door", "`warp,nowhere,0,0,end`")]))
+
+
 def test_a_tile_kind_picks_the_frame_of_its_sheet_it_draws():
     def town(art):
         return {"key": "town", "name": "Town", "tileset": [{"art": art}], "tiles": [[0, 0], [0, 0]]}
@@ -150,6 +188,16 @@ async def test_loading_stands_the_seeds_npcs_on_their_maps_and_loading_again_mov
     await load_content(db, seed(npcs=[{**NPC, "x": 2, "counter": [[2, 1]]}]))
     npc = (await db.scalars(select(Npc))).one()
     assert (npc.x, npc.counter) == (2, [[2, 1]]), "the NPC with that key was moved, not added"
+
+@pytest.mark.anyio
+async def test_loading_stores_the_seeds_dialog_trees_and_loading_again_rewrites_them(db):
+    from terraforma.npcs.models import Dialog
+
+    assert (await load_content(db, seed(dialogs=[tree("board", "One."), tree("quest", "Two.")])))["dialogs"] == 2
+    await load_content(db, seed(dialogs=[tree("board", "Three.")]))
+    stored = {row.key: row.text for row in await rows(db, Dialog)}
+    assert stored == {"board": "Three.", "quest": "Two."}, "rewritten by key; one the file no longer lists stays"
+
 
 async def rows(db, table):
     return (await db.scalars(select(table).order_by(table.key))).all()

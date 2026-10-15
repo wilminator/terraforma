@@ -15,7 +15,7 @@ from terraforma.models import Account
 from terraforma.npcs import service
 from terraforma.npcs.hooks import Npcs
 from terraforma.reach.hooks import Reach
-from terraforma.npcs.models import Npc, NpcTalk
+from terraforma.npcs.models import Dialog, Npc, NpcTalk
 from terraforma.npcs.script import ScriptError
 from terraforma.parties import service as parties
 from terraforma import testing
@@ -231,6 +231,74 @@ async def test_a_game_can_handle_the_tags_the_engine_leaves_to_it(db):
     npc = await keeper(db, hero, dialog="`heal`You look better.")
     frame = await service.talk(db, Healer(), REACH, hero, npc.id)
     assert hero.vitals is None and frame["events"] == [{"type": "text", "text": "You look better."}] and frame["ended"]
+
+
+# --- dialog trees ----------------------------------------------------------------------------------------------------
+
+BOARD = "Board.`ack``include,quest`Back at the board.`ack`Bye."
+QUEST = "Take the quest?`question,Yes,yes,No,no`\n`label,yes`Good luck.`end_return``label,no`Maybe later."
+
+
+async def test_a_dialog_tree_is_stored_checked_and_rewritten_by_its_key(db):
+    tree = await service.place_dialog(db, "quest", QUEST)
+    again = await service.place_dialog(db, "quest", "Hello.")
+    assert again.id == tree.id and again.text == "Hello."
+    assert await db.scalar(select(func.count()).select_from(Dialog)) == 1
+    with pytest.raises(ScriptError, match="unknown tag"):
+        await service.place_dialog(db, "bad", "`dance`")
+    with pytest.raises(ScriptError, match="a dialog key is"):
+        await service.place_dialog(db, "Big Board", "Hi.")
+    assert await db.scalar(select(func.count()).select_from(Dialog)) == 1
+
+
+async def test_a_conversation_goes_into_an_included_tree_and_back_across_calls(db):
+    hero = await a_hero(db)
+    await service.place_dialog(db, "quest", QUEST)
+    npc = await keeper(db, hero, dialog=BOARD)
+    await service.talk(db, NPCS, REACH, hero, npc.id)
+    asked = await service.answer(db, NPCS, REACH, hero, None)
+    assert asked["prompt"]["kind"] == "question" and asked["events"][0]["text"] == "Take the quest?\n"
+    row = await db.scalar(select(NpcTalk))
+    assert row.tree == "quest" and row.stack == [{"tree": None, "pos": BOARD.index("Back at")}], "the way back is kept between calls"
+    assert "tree" not in asked["prompt"] and "stack" not in asked["prompt"], "where the dialog stands is the server's business"
+    back = await service.answer(db, NPCS, REACH, hero, 0)
+    assert back["events"] == [{"type": "text", "text": "Good luck.Back at the board."}] and back["prompt"]["type"] == "ack"
+    row = await db.scalar(select(NpcTalk))
+    assert row.tree is None and row.stack == []
+    done = await service.answer(db, NPCS, REACH, hero, None)
+    assert done["ended"] and await db.scalar(select(func.count()).select_from(NpcTalk)) == 0
+
+
+async def test_a_map_objects_script_can_include_a_tree_too(db):
+    from terraforma.maps.models import MapObject
+
+    hero = await a_hero(db)
+    await service.place_dialog(db, "lore", "Old words.`end_return`")
+    sign = MapObject(map_id=hero.map_id, key="sign", name="Sign", kind="sign", action="open", dialog="`include,lore`The end.", x=hero.x, y=hero.y)
+    db.add(sign)
+    await db.flush()
+    said = await service.start(db, NPCS, hero, sign)
+    assert said["events"] == [{"type": "text", "text": "Old words.The end."}] and said["ended"]
+
+
+async def test_a_tree_that_is_not_stored_ends_the_talk_with_the_reason(db):
+    hero = await a_hero(db)
+    npc = await keeper(db, hero, dialog="Hi.`ack``include,quest`")
+    await service.talk(db, NPCS, REACH, hero, npc.id)
+    with pytest.raises(service.NpcError, match="no dialog 'quest'"):
+        await service.answer(db, NPCS, REACH, hero, None)
+    assert await service.current(db, hero) == {"talking": False}
+
+
+async def test_missing_includes_names_who_includes_a_tree_that_was_never_placed(db):
+    hero = await a_hero(db)
+    await service.place_dialog(db, "board", "`include,quest-1``include,quest-2`")
+    await service.place_dialog(db, "quest-1", "One.")
+    await keeper(db, hero, dialog="`include,board``include,lost`")
+    assert await service.missing_includes(db) == [("dialog board", "quest-2"), ("npc keeper", "lost")]
+    await service.place_dialog(db, "quest-2", "Two.")
+    await service.place_dialog(db, "lost", "Found.")
+    assert await service.missing_includes(db) == []
 
 
 async def test_deleting_a_hero_in_a_conversation_works(db):
