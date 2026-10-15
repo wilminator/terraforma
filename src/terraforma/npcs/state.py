@@ -23,7 +23,8 @@ from ..models import Account, Map
 from ..parties.models import Party
 from ..quests import service as quests
 from ..quests import weekly
-from ..quests.hooks import WeeklyQuests
+from ..quests import rotation
+from ..quests.hooks import RotatingQuests, WeeklyQuests
 from ..quests.weekly_models import OFFERED
 from ..standing import service as standing
 from ..towns import service as towns
@@ -152,6 +153,33 @@ class DialogState:
         if quest is None:
             return label
         await weekly.finish(self.session, quest.id, action == "finish_win")
+        return ""
+
+    async def slot_quest(self, slot: str, action: str, label: str) -> str:
+        """The talking hero's own team's hold on a rotating quest slot (``quests.rotation``). ``offer``: the slot's quest of the moment; the label
+        if the slot holds none or the team already finished it. ``start``: takes the offered quest; the label if none is offered (a quest the
+        team never took has lapsed). ``finish_win`` and ``finish_lose``: end the quest the team took; the label if there is none in time."""
+        team_id = await self.team_id()
+        if team_id is None:
+            raise ScriptError("a hero on no team has no slot quest: put them on a team")
+        hooks = self.session.info.get("rotating_quests") or RotatingQuests()
+        try:
+            if action == "offer":
+                progress = await rotation.offer(self.session, hooks, team_id, slot)
+                return label if progress is None or progress.status not in (rotation.OFFERED, rotation.ACTIVE) else ""
+            if action == "start":
+                progress = await rotation.offer(self.session, hooks, team_id, slot)
+                if progress is None or progress.status != rotation.OFFERED:
+                    return label
+                await rotation.start(self.session, hooks, progress.id)
+                return ""
+            await rotation.settle(self.session, hooks, team_id)
+            progress = await rotation.active(self.session, team_id, slot)
+            if progress is None:
+                return label
+            await rotation.finish(self.session, hooks, progress.id, action == "finish_win")
+        except rotation.RotationError as error:
+            raise ScriptError(str(error)) from error
         return ""
 
     # --- the guild --------------------------------------------------------------------------------------------------------

@@ -69,7 +69,7 @@ async def apply_templates(session: AsyncSession, rows: list) -> int:
             raise WeeklyError(f"quest_templates.json {row.key}: an admin already promoted a quest to a template with this key")
         await upsert(session, QuestTemplate.__table__, {
             "key": row.key, "name": row.name, "source": SEEDED, "min_level": row.min_level, "max_level": row.max_level,
-            "weight": row.weight, "spec": row.spec, "active": True}, ["key"])
+            "weight": row.weight, "spec": row.spec, "slot": row.slot, "active": True}, ["key"])
     gone = await session.scalars(select(QuestTemplate).where(QuestTemplate.source == SEEDED, QuestTemplate.key.not_in([row.key for row in rows])))
     for template in gone.all():
         template.active = False
@@ -102,7 +102,7 @@ async def offer(session: AsyncSession, hooks: WeeklyQuests, team_id: int) -> Wee
     world = await session.get(World, (await ensure_start(session)).world_id)
     rng = WorldRng(world.seed).stream("weekly-quest", team_id, week)
     fitting = list((await session.scalars(select(QuestTemplate).where(
-        QuestTemplate.active.is_(True), QuestTemplate.min_level <= level, QuestTemplate.max_level >= level).order_by(QuestTemplate.id))).all())
+        QuestTemplate.active.is_(True), QuestTemplate.slot.is_(None), QuestTemplate.min_level <= level, QuestTemplate.max_level >= level).order_by(QuestTemplate.id))).all())
     if fitting and hooks.use_template(rng, len(fitting)):
         template = rng.choices(fitting, weights=[max(1, entry.weight) for entry in fitting])[0]
         quest = WeeklyQuest(team_id=team_id, week=week, source=FROM_TEMPLATE, template_id=template.id, name=template.name, level=level,
