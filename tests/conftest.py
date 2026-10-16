@@ -35,7 +35,7 @@ CATEGORIES = {
     "accounts": ["accounts", "handles", "keys", "twofa", "mail", "logscrub", "settings", "external_signin", "external_facebook_steam", "second_factors", "oidc_provider"],
     "platform": ["app", "client", "categories", "content", "database", "housekeeping", "schema", "baseline_migration", "db_commit_order", "qbtiles", "tilesheet", "heroart", "colormap", "animations", "maps", "walking", "map_events", "parallel", "seed", "world", "example_content", "monster_art", "monster_authoring"],
     "heroes": ["heroes", "inventory", "field_use", "parties", "towns", "economy", "trading", "storage", "drops", "pending_drops", "challenge_tokens", "store_grant", "pvp", "npc_script", "instance_tags", "npcs", "reach", "quests", "weekly_quests", "rotating_quests", "manual_quests", "quest_needs", "quest_boss_fights", "instances", "npc_state", "market", "inn", "guild", "guild_ranks", "standing", "token_tags", "start"],
-    "fights": ["round_time", "fight_rules", "fleeing", "monster_play", "monster_control", "monster_rewards", "monster_guests", "fight_store", "live_fights", "fight_art", "joining", "experience", "rewards", "ai", "ai_statuses", "statuses", "steal_transfer"],
+    "fights": ["round_time", "fight_rules", "fleeing", "monster_play", "monster_control", "monster_rewards", "monster_guests", "fight_store", "live_fights", "fight_art", "joining", "experience", "rewards", "ai", "ai_statuses", "statuses", "steal_transfer", "potential_effects"],
     "social": ["relations", "alliances", "ballots", "ratings", "profiles", "play_time", "follows", "fight_tags", "fight_pages", "chat", "voice"],
 }
 CATEGORY_OF_FILE = {f"test_{name}": category for category, names in CATEGORIES.items() for name in names}
