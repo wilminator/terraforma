@@ -20,7 +20,8 @@ from dataclasses import dataclass, field
 
 from sqlalchemy import update
 
-from ..addons import SWITCHABLE, Integrated
+from ..addons import SWITCHABLE, Integrated, seed_key
+from ..content import models
 from ..content.loader import TABLES
 from ..content.schema import check_seed
 from .document import Section
@@ -51,11 +52,18 @@ class Facts:
     subtrees: dict[tuple[str, str], dict[str, set[str]]] = field(default_factory=dict)
     #: A row -> the rows it cannot work without.
     needs: dict[Row, list[Row]] = field(default_factory=dict)
+    #: For a job an add-on's ``job_abilities`` rows add to: the abilities it has without them, as stored (the game's and its own)...
+    base_abilities: dict[str, list[dict]] = field(default_factory=dict)
+    #: ...and the rows' keys with what each adds, in the seed's order.
+    grants: dict[str, list[tuple[str, dict]]] = field(default_factory=dict)
 
 
 def _references(kind: str, row) -> Iterator[Row]:
     """The rows of other kinds that $row (a checked seed row) names and cannot work without."""
-    if kind == "jobs":
+    if kind == "job_abilities":
+        yield Row("jobs", row.job)
+        yield Row("abilities", row.ability)
+    elif kind == "jobs":
         yield from (Row("abilities", entry.ability) for entry in row.abilities)
     elif kind == "monsters":
         yield from (Row("abilities", key) for key in row.abilities)
@@ -100,12 +108,23 @@ class Components(Section):
         checked = check_seed(layered.rows, rules.stats, rules.resource_names, rules.drop_chance_scale)
         for kind in SWITCHABLE:
             for raw in layered.rows.get(kind, []):
-                if (addon := layered.owners.get(kind, {}).get(raw.get("key"))) is not None:
-                    facts.owned.setdefault(kind, {})[raw["key"]] = addon
-                    facts.placed[Row(kind, raw["key"])] = raw.get("section")
+                key = seed_key(kind, raw)
+                if (addon := layered.owners.get(kind, {}).get(key)) is not None:
+                    facts.owned.setdefault(kind, {})[key] = addon
+                    facts.placed[Row(kind, key)] = raw.get("section")
             for row in checked.get(kind, []):
                 if row.key in facts.owned.get(kind, {}):
                     facts.needs[Row(kind, row.key)] = list(_references(kind, row))
+        if facts.owned.get("job_abilities"):
+            ours = [raw for raw in layered.rows["job_abilities"] if seed_key("job_abilities", raw) not in facts.owned["job_abilities"]]
+            bare = check_seed({**layered.rows, "job_abilities": ours}, rules.stats, rules.resource_names, rules.drop_chance_scale)["jobs"]
+            for row in checked["job_abilities"]:
+                if row.key in facts.owned["job_abilities"]:
+                    facts.grants.setdefault(row.job, []).append((row.key, {"ability": row.ability, "level": row.level}))
+            facts.base_abilities = {row.key: [entry.model_dump() for entry in row.abilities] for row in bare if row.key in facts.grants}
+            for row in bare:  # (an add-on's job needs the abilities it has itself, not the ones another row adds to it)
+                if Row("jobs", row.key) in facts.needs:
+                    facts.needs[Row("jobs", row.key)] = list(_references("jobs", row))
         for addon in self.integrated.addons:
             for kind, nodes in addon.sections.items():
                 facts.subtrees[(addon.key, kind)] = {node.key: set(node.keys()) for top in nodes for node in _walk(top)}
@@ -202,7 +221,14 @@ class Components(Section):
     async def apply(self, db, value: dict) -> None:
         """Sets ``active`` on every add-on row: on exactly when the live states say it is on."""
         states = value.get("states", {})
-        for kind, owners in self.facts().owned.items():
+        facts = self.facts()
+        for job, grants in facts.grants.items():
+            held = states_of(states, facts.owned["job_abilities"], "job_abilities")
+            abilities = [*facts.base_abilities[job], *(grant for key, grant in grants if key in held)]
+            await db.execute(update(models.Job).where(models.Job.key == job).values(abilities=abilities).execution_options(synchronize_session=False))
+        for kind, owners in facts.owned.items():
+            if kind == "job_abilities":
+                continue  # (no table: it changed the job's abilities above)
             table = TABLES[kind]
             on = sorted(key for key, addon in owners.items() if states.get(addon, {}).get(kind, {}).get(key) == ON)
             off = sorted(set(owners) - set(on))
@@ -210,6 +236,11 @@ class Components(Section):
                 for start in range(0, len(keys), CHUNK):
                     await db.execute(update(table).where(table.key.in_(keys[start:start + CHUNK])).values(active=active)
                                      .execution_options(synchronize_session=False))
+
+
+def states_of(states: dict, owners: dict[str, str], kind: str) -> set[str]:
+    """The keys of the $owners' rows of $kind that the live $states say are on."""
+    return {key for key, addon in owners.items() if states.get(addon, {}).get(kind, {}).get(key) == ON}
 
 
 def _walk(node) -> Iterator:
