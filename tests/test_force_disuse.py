@@ -122,6 +122,7 @@ def test_disused_is_a_state_a_bulk_switch_can_set_and_a_row_that_needs_it_may_no
     assert both["states"]["pack"]["items"] == {"pack_tonic": "disused", "pack_elixir": "on", "pack_plain": "on"}
     assert section.switch(both, "pack", False, "items", "tonics")["states"]["pack"]["items"] == {"pack_elixir": "on", "pack_plain": "on"}
     assert section.check(section.switch(section.switch(section.default(), "pack", True), "pack", "disused", "abilities"), {}) == [
+        "pack: job_abilities 'scout:pack_fire' is on, but it needs abilities 'pack_fire', which is not on",
         "pack: jobs 'pack_mage' is on, but it needs abilities 'pack_fire', which is not on",
         "pack: monsters 'pack_slime' is on, but it needs abilities 'pack_fire', which is not on"]
     with pytest.raises(ValueError, match="switched on"):

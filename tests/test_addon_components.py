@@ -9,11 +9,12 @@ from sqlalchemy import select
 
 from terraforma.addons import AddOn, AddOnError, SectionNode, integrate, layer_seeds
 from terraforma.challenge import service as challenge
+from terraforma.content.loader import load_content
 from terraforma.content.models import Ability, DropTable, Item, Job, Monster
 from terraforma.example import GAME as EXAMPLE
 from terraforma.fights.build import known_drop_tables
 from terraforma.gamestate import service as state_service
-from terraforma.gamestate.components import Components
+from terraforma.gamestate.components import Components, Row
 from terraforma.gamestate.document import hash_of
 from terraforma.heroes.service import list_jobs
 from terraforma.market.hooks import Market
@@ -39,17 +40,21 @@ SLIME = {"key": "pack_slime", "name": "Pack slime", "personality": "slime", "xp_
 MAGE = {"key": "pack_mage", "name": "Pack mage", "xp_needed": 20, "stat_growth": {"HP": 10}, "section": "classes",
         "abilities": [{"ability": "pack_fire", "level": 1}]}
 
+# Teaches the game's own scout (a job in jobs.json of the example game) the pack's spell.
+SCOUT_FIRE = {"job": "scout", "ability": "pack_fire", "level": 2, "section": "scouting"}
+
 SECTIONS = {
     "abilities": (SectionNode("magic", "Magic"),),
     "items": (SectionNode("potions", "Potions", (SectionNode("tonics", "Tonics"),)),),
     "drop_tables": (SectionNode("beasts", "Beasts"),),
     "monsters": (SectionNode("beasts", "Beasts"),),
     "jobs": (SectionNode("classes", "Classes"),),
+    "job_abilities": (SectionNode("scouting", "Scouting"),),
 }
 
 
 def pack(tmp_path, **changes):
-    rows = {"abilities": [ABILITY], "items": [TONIC, ELIXIR, PLAIN], "drop_tables": [DROPS], "monsters": [SLIME], "jobs": [MAGE]}
+    rows = {"abilities": [ABILITY], "items": [TONIC, ELIXIR, PLAIN], "drop_tables": [DROPS], "monsters": [SLIME], "jobs": [MAGE], "job_abilities": [SCOUT_FIRE]}
     return AddOn(key="pack", name="Pack", seed_dir=make_seed(tmp_path / "pack_seed", **(rows | changes.pop("rows", {}))),
                  sections=changes.pop("sections", SECTIONS), **changes)
 
@@ -103,7 +108,7 @@ def test_sections_are_for_kinds_that_can_be_switched_and_keys_are_used_once_per_
 def test_the_section_starts_empty_and_every_component_starts_off(tmp_path):
     section, _ = components(tmp_path)
     assert section.default() == {"states": {}} and section.check(section.default(), {}) == []
-    assert section.kinds("pack") == ["abilities", "items", "drop_tables", "jobs", "monsters"]
+    assert section.kinds("pack") == ["abilities", "items", "drop_tables", "jobs", "job_abilities", "monsters"]
 
 
 def test_a_bulk_switch_covers_an_addon_a_kind_or_a_section_and_the_sections_inside_it(tmp_path):
@@ -114,7 +119,7 @@ def test_a_bulk_switch_covers_an_addon_a_kind_or_a_section_and_the_sections_insi
     assert section.rows_of("pack", "items", "tonics") == ["pack_tonic"]
     assert section.switch(empty, "pack", True, "items", "tonics") == {"states": {"pack": {"items": {"pack_tonic": "on"}}}}
     everything = section.switch(empty, "pack", True)
-    assert set(everything["states"]["pack"]) == {"abilities", "items", "drop_tables", "jobs", "monsters"} and section.check(everything, {}) == []
+    assert set(everything["states"]["pack"]) == {"abilities", "items", "drop_tables", "jobs", "job_abilities", "monsters"} and section.check(everything, {}) == []
     kind = section.switch(empty, "pack", True, "items")
     assert kind == {"states": {"pack": {"items": {key: "on" for key in ("pack_tonic", "pack_elixir", "pack_plain")}}}}
     off = section.switch(kind, "pack", False, "items", "potions")
@@ -166,6 +171,7 @@ def test_a_component_that_needs_another_may_not_be_on_while_that_one_is_off(tmp_
     whole = section.switch(section.default(), "pack", True)
     assert section.check(whole, {}) == []
     assert section.check(section.switch(whole, "pack", False, "abilities"), {}) == [
+        "pack: job_abilities 'scout:pack_fire' is on, but it needs abilities 'pack_fire', which is not on",
         "pack: jobs 'pack_mage' is on, but it needs abilities 'pack_fire', which is not on",
         "pack: monsters 'pack_slime' is on, but it needs abilities 'pack_fire', which is not on"]
     assert section.check(section.switch(whole, "pack", False, "monsters"), {}) == [], "(turning off the user of a component is fine)"
@@ -309,3 +315,88 @@ def test_the_seed_file_carries_a_section_but_the_table_does_not(app_client):
     assert not hasattr(Item, "section")
     layered = integrate(app_client.app.state.game, ["pack"]).load_seed()
     assert json.loads(json.dumps(layered.rows["monsters"][-1]))["section"] == "beasts"
+
+
+# --- an add-on teaching the game's jobs new abilities ------------------------------------------------------------------
+
+async def abilities_of(db, job):
+    return [entry["ability"] for entry in (await db.scalar(select(Job).where(Job.key == job))).abilities]
+
+
+def test_a_job_ability_row_is_a_component_the_addon_brought_with_its_key_and_section(tmp_path):
+    section, _ = components(tmp_path)
+    facts = section.facts()
+    assert facts.owned["job_abilities"] == {"scout:pack_fire": "pack"}
+    assert facts.placed[Row("job_abilities", "scout:pack_fire")] == "scouting"
+    assert section.rows_of("pack", "job_abilities", "scouting") == ["scout:pack_fire"]
+    assert section.default() == {"states": {}}, "(and it starts off)"
+
+
+def test_a_job_ability_row_needs_its_ability_and_the_addons_job_if_the_job_is_one(tmp_path):
+    section, _ = components(tmp_path)
+    grant = on("scout:pack_fire", kind="job_abilities")
+    assert section.check({"states": {"pack": grant}}, {}) == [
+        "pack: job_abilities 'scout:pack_fire' is on, but it needs abilities 'pack_fire', which is not on"]
+    assert section.check({"states": {"pack": {**grant, **on("pack_fire", kind="abilities")}}}, {}) == []
+    mage = pack(tmp_path, rows={"job_abilities": [{"job": "pack_mage", "ability": "pack_fire", "level": 9}], "jobs": [{**MAGE, "abilities": []}]})
+    game = dataclasses.replace(EXAMPLE, addons=(mage,))
+    section = Components(integrate(game, ["pack"]), game)
+    assert section.check({"states": {"pack": {**on("pack_mage:pack_fire", kind="job_abilities"), **on("pack_fire", kind="abilities")}}}, {}) == [
+        "pack: job_abilities 'pack_mage:pack_fire' is on, but it needs jobs 'pack_mage', which is not on"]
+
+
+def test_a_bulk_switch_of_the_kind_or_the_section_reaches_the_job_ability_rows(tmp_path):
+    section, _ = components(tmp_path)
+    for scope in ((), ("job_abilities",), ("job_abilities", "scouting")):
+        assert "scout:pack_fire" in section.switch(section.default(), "pack", True, *scope)["states"]["pack"]["job_abilities"]
+    assert section.switch(section.switch(section.default(), "pack", True), "pack", False, "job_abilities", "scouting")["states"]["pack"].get("job_abilities") is None
+
+
+def test_the_same_grant_in_the_game_or_another_layer_is_refused_naming_both(tmp_path):
+    base = make_seed(tmp_path / "game", jobs=[{"key": "scout", "name": "Scout", "abilities": ["pack_fire"]}], abilities=[])
+    one = make_seed(tmp_path / "one", job_abilities=[{"job": "scout", "ability": "pack_fire"}])
+    two = make_seed(tmp_path / "two", job_abilities=[{"job": "scout", "ability": "pack_fire"}])
+    with pytest.raises(AddOnError, match="scout's ability 'pack_fire' is already given by the game, so the add-on one cannot give it again"):
+        layer_seeds(((None, base), ("one", one)))
+    with pytest.raises(AddOnError, match="scout:pack_fire' is in the add-on one and in the add-on two; an add-on cannot reuse a key"):
+        layer_seeds((("one", one), ("two", two)))
+    layer_seeds(((None, make_seed(tmp_path / "plain", jobs=[{"key": "scout", "name": "Scout"}])), ("one", one)))  # (adding is fine)
+
+
+def test_a_game_may_still_use_job_abilities_and_they_are_always_on(tmp_path):
+    game = make_seed(tmp_path / "game", jobs=[{"key": "scout", "name": "Scout"}], job_abilities=[{"job": "scout", "ability": "x"}])
+    layered = layer_seeds(((None, game),))
+    assert layered.owners["job_abilities"] == {"scout:x": None}
+
+
+def test_the_job_ability_starts_off_and_a_commit_teaches_and_untaches_the_job(app_client):
+    root = an_admin(app_client)
+    section = app_client.app.state.state_sections["components"]
+    assert "pack_fire" not in in_app_db(app_client, lambda db: abilities_of(db, "scout"))
+    before = in_app_db(app_client, lambda db: abilities_of(db, "scout"))
+    everything = section.switch(section.default(), "pack", True)
+    commit(app_client, root, everything, "pack on")
+    now = in_app_db(app_client, lambda db: abilities_of(db, "scout"))
+    assert now == [*before, "pack_fire"], "(the game's abilities first, then the add-on's)"
+    only_the_spell = section.switch(section.default(), "pack", True, "abilities")
+    commit(app_client, root, only_the_spell, "spell only")
+    assert in_app_db(app_client, lambda db: abilities_of(db, "scout")) == before
+    commit(app_client, root, everything, "pack on again")
+    assert in_app_db(app_client, lambda db: abilities_of(db, "scout")) == [*before, "pack_fire"]
+    assert in_app_db(app_client, lambda db: db.scalar(select(Job.abilities).where(Job.key == "scout")))[-1] == {"ability": "pack_fire", "level": 2}
+
+
+def test_a_start_puts_the_games_abilities_back_and_then_the_live_states_add_the_addons(app_client):
+    root = an_admin(app_client)
+    section = app_client.app.state.state_sections["components"]
+    before = in_app_db(app_client, lambda db: abilities_of(db, "scout"))
+    commit(app_client, root, section.switch(section.default(), "pack", True), "pack on")
+    async def restart(db):
+        layered = integrate(app_client.app.state.game, ["pack"]).load_seed()
+        await load_content(db, layered.rows, owners=layered.owners)
+        stored = await abilities_of(db, "scout")
+        await state_service.apply_live(db, app_client.app.state.state_sections)
+        return stored, await abilities_of(db, "scout")
+
+    stored, after = in_app_db(app_client, restart)
+    assert stored == before and after == [*before, "pack_fire"]
