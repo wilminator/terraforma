@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .. import wallclock
 from ..content.models import Job, Monster, Personality
+from ..disuse import gate as disuse
 from ..economy import Economy
 from ..heroes.models import Hero, Team
 from ..models import Map, World
@@ -106,6 +107,8 @@ async def start_team_fight(session: AsyncSession, team: Team, monster_keys: list
     )
     if busy is not None:
         raise Refused("a hero of that team is already in a fight")
+    if reason := await disuse.blocked(session, [hero for members in teams.values() for hero in members]):
+        raise Refused(reason)
     first = await session.get(Hero, heroes[0].charid)
     game_map = await session.get(Map, first.map_id)
     if area_drops is None:  # the area's own drops are the zone's, where the fight is
@@ -155,6 +158,8 @@ async def start_party_fight(session: AsyncSession, party_id: int, monster_keys: 
     )
     if busy is not None:
         raise Refused("a hero of that party is already in a fight")
+    if reason := await disuse.blocked(session, hero_ids):
+        raise Refused(reason)
     game_map = await session.get(Map, party.map_id)
     if area_drops is None:
         area_drops = game_map.zone(party.x, party.y)["drops"]

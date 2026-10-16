@@ -153,7 +153,7 @@ def test_a_bulk_switch_of_what_the_addon_does_not_have_is_refused(tmp_path):
     ({"states": {"pack": {"items": {}}}}, "items must be an object with the rows that are on"),
     ({"states": {"pack": {"items": {"nothing": "on"}}}}, "it brought no items row 'nothing'"),
     ({"states": {"pack": {"items": {"herb": "on"}}}}, "it brought no items row 'herb'"),
-    ({"states": {"pack": {"items": {"pack_tonic": "off"}}}}, "items 'pack_tonic' is 'off'; the only state is 'on'"),
+    ({"states": {"pack": {"items": {"pack_tonic": "off"}}}}, "items 'pack_tonic' is 'off'; the states are 'on' and 'disused'"),
 ])
 def test_the_check_names_what_is_wrong_with_the_states(tmp_path, value, why):
     section, _ = components(tmp_path)
@@ -164,16 +164,16 @@ def test_a_component_that_needs_another_may_not_be_on_while_that_one_is_off(tmp_
     section, _ = components(tmp_path)
     just = lambda kind, *keys: {"states": {"pack": on(*keys, kind=kind)}}  # noqa: E731
     assert section.check(just("monsters", "pack_slime"), {}) == [
-        "pack: monsters 'pack_slime' is on, but it needs abilities 'pack_fire', which is off",
-        "pack: monsters 'pack_slime' is on, but it needs drop_tables 'pack_drops', which is off"]
-    assert section.check(just("jobs", "pack_mage"), {}) == ["pack: jobs 'pack_mage' is on, but it needs abilities 'pack_fire', which is off"]
-    assert section.check(just("drop_tables", "pack_drops"), {}) == ["pack: drop_tables 'pack_drops' is on, but it needs items 'pack_tonic', which is off"]
+        "pack: monsters 'pack_slime' is on, but it needs abilities 'pack_fire', which is not on",
+        "pack: monsters 'pack_slime' is on, but it needs drop_tables 'pack_drops', which is not on"]
+    assert section.check(just("jobs", "pack_mage"), {}) == ["pack: jobs 'pack_mage' is on, but it needs abilities 'pack_fire', which is not on"]
+    assert section.check(just("drop_tables", "pack_drops"), {}) == ["pack: drop_tables 'pack_drops' is on, but it needs items 'pack_tonic', which is not on"]
     whole = section.switch(section.default(), "pack", True)
     assert section.check(whole, {}) == []
     assert section.check(section.switch(whole, "pack", False, "abilities"), {}) == [
-        "pack: job_abilities 'scout:pack_fire' is on, but it needs abilities 'pack_fire', which is off",
-        "pack: jobs 'pack_mage' is on, but it needs abilities 'pack_fire', which is off",
-        "pack: monsters 'pack_slime' is on, but it needs abilities 'pack_fire', which is off"]
+        "pack: job_abilities 'scout:pack_fire' is on, but it needs abilities 'pack_fire', which is not on",
+        "pack: jobs 'pack_mage' is on, but it needs abilities 'pack_fire', which is not on",
+        "pack: monsters 'pack_slime' is on, but it needs abilities 'pack_fire', which is not on"]
     assert section.check(section.switch(whole, "pack", False, "monsters"), {}) == [], "(turning off the user of a component is fine)"
 
 
@@ -276,7 +276,7 @@ def test_a_commit_with_an_unmet_need_is_refused_and_changes_nothing(app_client):
     section = app_client.app.state.state_sections["components"]
     expect(app_client.put("/api/admin/state/planned/sections/components", json={"value": {"states": {"pack": on("pack_mage", kind="jobs")}}}, headers=root), 200)
     checked = expect(app_client.post("/api/admin/state/check", headers=root), 200).json()
-    assert checked["problems"] == [{"section": "components", "message": "pack: jobs 'pack_mage' is on, but it needs abilities 'pack_fire', which is off"}]
+    assert checked["problems"] == [{"section": "components", "message": "pack: jobs 'pack_mage' is on, but it needs abilities 'pack_fire', which is not on"}]
     expect(app_client.post("/api/admin/state/commit", json={"hash": checked["hash"]}, headers=root), 422)
     assert in_app_db(app_client, what_is_on) == NOTHING and section.default() == {"states": {}}
 
@@ -336,13 +336,13 @@ def test_a_job_ability_row_needs_its_ability_and_the_addons_job_if_the_job_is_on
     section, _ = components(tmp_path)
     grant = on("scout:pack_fire", kind="job_abilities")
     assert section.check({"states": {"pack": grant}}, {}) == [
-        "pack: job_abilities 'scout:pack_fire' is on, but it needs abilities 'pack_fire', which is off"]
+        "pack: job_abilities 'scout:pack_fire' is on, but it needs abilities 'pack_fire', which is not on"]
     assert section.check({"states": {"pack": {**grant, **on("pack_fire", kind="abilities")}}}, {}) == []
     mage = pack(tmp_path, rows={"job_abilities": [{"job": "pack_mage", "ability": "pack_fire", "level": 9}], "jobs": [{**MAGE, "abilities": []}]})
     game = dataclasses.replace(EXAMPLE, addons=(mage,))
     section = Components(integrate(game, ["pack"]), game)
     assert section.check({"states": {"pack": {**on("pack_mage:pack_fire", kind="job_abilities"), **on("pack_fire", kind="abilities")}}}, {}) == [
-        "pack: job_abilities 'pack_mage:pack_fire' is on, but it needs jobs 'pack_mage', which is off"]
+        "pack: job_abilities 'pack_mage:pack_fire' is on, but it needs jobs 'pack_mage', which is not on"]
 
 
 def test_a_bulk_switch_of_the_kind_or_the_section_reaches_the_job_ability_rows(tmp_path):
