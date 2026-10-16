@@ -20,7 +20,7 @@ from .voice.hooks import Voice
 from .pvp.hooks import PvpZones
 from .market.hooks import Market
 from .guild.hooks import Guild
-from .quests.hooks import Needs, RotatingQuests, WeeklyQuests
+from .quests.hooks import ManualQuests, Needs, RotatingQuests, WeeklyQuests
 from .heroes.hooks import Roster, Start
 from .storage.hooks import NoStorage, Storage
 from .npcs.hooks import Npcs
@@ -67,6 +67,8 @@ class Game:
     weekly_quests: WeeklyQuests = field(default_factory=WeeklyQuests)
     # The rotating quests (a slot's quest changes after a random while): how one is made up when no template fits, and what failing costs.
     rotating_quests: RotatingQuests = field(default_factory=RotatingQuests)
+    # The events an admin writes by hand (a competition, a tournament): who may enter, and what failing costs.
+    manual_quests: ManualQuests = field(default_factory=ManualQuests)
     # The quests the world needs: which bands of party strength should always have one, and how a boss is picked and approved
     # (none, by default: nothing is made unless the game lists bands).
     needs: Needs = field(default_factory=Needs)

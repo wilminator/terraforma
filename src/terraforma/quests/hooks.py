@@ -141,3 +141,25 @@ class Needs:
     def name(self, rng: Random, band: Band, monsters: list[str]) -> str:
         """The new quest's name (up to 64 characters)."""
         return f"Hunt: {', '.join(monsters)}"[:64]
+
+
+class ManualQuests:
+    """What a game decides about the events its admins write (``quests.manual``): an alliance competition, a coliseum tournament. A game
+    subclasses this and hands it to ``Game(manual_quests=...)``. This is a public interface (the license exception covers it).
+
+    The engine keeps the events, the entries and the clock; who may enter and what failing costs are the game's. An event's ``kind`` and
+    ``spec`` are the game's own, stored and handed back, never read.
+
+        class Events(terraforma.quests.hooks.ManualQuests):
+            async def may_enter(self, session, team_id, quest):
+                if quest.kind == "alliance" and not await alliances.is_member(session, team_id):
+                    return "Only alliance teams may enter."
+    """
+
+    async def may_enter(self, session: AsyncSession, team_id: int, quest) -> str | None:
+        """None if the team may enter $quest (a ``ManualQuest`` row), otherwise why not. Called after the engine's own checks (the event is
+        open, has room, the team has not entered). Anyone may enter by default."""
+        return None
+
+    async def penalty(self, session: AsyncSession, team_id: int, quest, reason: str) -> None:
+        """A team failed $quest. $reason is ``timeout`` or ``poor_performance``. Does nothing by default. Never called for a cancelled event."""
