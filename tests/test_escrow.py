@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from terraforma.challenge import service as challenge
 from terraforma.economy import TeamGold
 from terraforma.escrow import service as escrow
-from terraforma.escrow.models import FORFEITED, HELD, REFUNDED, Escrow, EscrowItem
+from terraforma.escrow.models import FORFEITED, HELD, REFUNDED, RELEASED, Escrow, EscrowItem
 from terraforma.heroes import inventory, service
 from terraforma.heroes.models import Team
 from terraforma.storage.hooks import NoStorage, TeamStorage
@@ -197,3 +197,18 @@ async def test_a_team_with_no_hero_cannot_receive(db):
     assert held.state == HELD
     assert await db.scalar(select(func.count()).select_from(EscrowItem)) == 0
     assert isinstance(empty, Team)
+
+
+async def test_releasing_a_deposit_hands_its_contents_to_the_caller_and_pays_nothing(db):
+    _mike, mine, yours, aria, _cole = await two_teams(db)
+    held = await deposit(db, aria, gold=40, items=[(0, 2)])
+    escrow_id = held.id
+    assert await escrow.release(db, escrow_id, yours.id) == {"gold": 40, "tokens": 0, "items": [("potion", 2)]}
+    await db.refresh(held)
+    assert (held.state, held.settled_to) == (RELEASED, yours.id)
+    assert await holding(db, aria, "potion") == 0  # nothing was paid out: the caller sends it on
+    for settle in (escrow.release(db, escrow_id), escrow.refund(db, ECONOMY, NoStorage(), escrow_id)):
+        with pytest.raises(escrow.EscrowError, match="settled already"):
+            await settle
+    with pytest.raises(escrow.EscrowError, match="no such deposit"):
+        await escrow.release(db, 9999)
