@@ -31,6 +31,9 @@ class FightRecord(Located, Timestamps, Base):
     guid: Mapped[str] = mapped_column(String(32), unique=True)
     # The fight as it began, as fights.state.dehydrate writes it. Written once, never changed.
     initial_state: Mapped[dict] = mapped_column(ExactJSON)
+    # The hash of the settings snapshot that was live when the fight began (terraforma.gamestate), so a recording can be checked
+    # against the add-ons and rules it ran under. None: no snapshot had been made yet, which is the game on its defaults.
+    state_hash: Mapped[str | None] = mapped_column(String(64), default=None)
     # Whether the fight's gold has been paid out (it is paid once: see terraforma.economy).
     gold_paid: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # Whether what the fight did to the teams' relationships (``RelationChange`` events) has been applied (once).

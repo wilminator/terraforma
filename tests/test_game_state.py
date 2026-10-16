@@ -271,7 +271,7 @@ def test_the_first_look_by_an_admin_makes_the_live_state(app_client):
     seen = expect(app_client.get("/api/admin/state", headers=root), 200).json()
     assert (seen["live"]["note"], seen["planned"]["revision"], seen["planned"]["differs"], seen["planned"]["frozen"]) == ("first state", 0, False, False)
     live = expect(app_client.get("/api/admin/state/live", headers=root), 200).json()
-    assert live["document"] == {"format": 1, "sections": {"bonus": {}, "rates": {"xp": 1.0}}} and live["snapshot"]["hash"] == seen["live"]["hash"]
+    assert live["document"] == {"format": 1, "sections": {"bonus": {}, "components": {"states": {}}, "rates": {"xp": 1.0}}} and live["snapshot"]["hash"] == seen["live"]["hash"]
 
 
 def test_an_admin_edits_checks_and_commits_and_the_live_state_changes_only_then(app_client):

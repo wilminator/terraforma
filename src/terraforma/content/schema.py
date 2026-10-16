@@ -129,6 +129,7 @@ class Presentation(Strict):
 
 class Ability(Strict):
     key: Key
+    section: Key | None = None  # (an add-on's row: the section of the add-on's tree it sits in; the game's rows have none)
     name: str = Field(min_length=1, max_length=64)
     kind: Literal["spell", "skill"]
     mp_cost: int = Field(default=0, ge=0)
@@ -157,6 +158,7 @@ class Requires(Strict):
 
 class Item(Strict):
     key: Key
+    section: Key | None = None
     name: str = Field(min_length=1, max_length=64)
     price: int = Field(default=0, ge=0)
     one_use: bool = False
@@ -188,6 +190,7 @@ def _job_abilities(value):
 
 class Job(Strict):
     key: Key
+    section: Key | None = None
     name: str = Field(min_length=1, max_length=64)
     xp_needed: int = Field(default=0, ge=0)
     stat_growth: Growth = {}
@@ -242,6 +245,7 @@ class Personality(Strict):
     way, a list of pictures; a game with sheets leaves them out."""
 
     key: Key
+    section: Key | None = None
     name: str = Field(min_length=1, max_length=64)
     fight_art: Art | None = None
     map_art: Art | None = None
@@ -283,6 +287,7 @@ class DropTable(Strict):
     a ``weighted`` one picks an entry by weight ``rolls`` times, and an entry with no item means nothing drops."""
 
     key: Key
+    section: Key | None = None
     name: str = Field(min_length=1, max_length=64)
     weighted: bool = False
     rolls: int = Field(default=1, ge=1, le=100)
@@ -320,6 +325,7 @@ class MonsterAi(Strict):
 
 class Monster(Strict):
     key: Key
+    section: Key | None = None
     name: str = Field(min_length=1, max_length=64)
     personality: Key
     xp_reward: int = Field(default=0, ge=0)
@@ -566,6 +572,7 @@ class Status(Strict):
     PXP, at full intensity, the one who placed it is credited for each of its ticks that moves no gauge."""
 
     key: Key
+    section: Key | None = None
     name: str = Field(min_length=1, max_length=64)
     kind: Literal["good", "bad"]
     description: str = Field(default="", max_length=255)

@@ -10,7 +10,7 @@ Listing an add-on adds its seed rows and its assets to the game's, as layers: th
 """
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .animations import AnimationError, check_animation_folder
@@ -38,6 +38,24 @@ class AddOn:
     #: Its seed data (JSON, in the same formats as a game's) and assets, when it has them.
     seed_dir: Path | None = None
     assets_dir: Path | None = None
+    #: The sections the add-on groups its rows in, for each kind of seed file (``"monsters"``, ``"items"``...): a tree the admin's page
+    #: shows under the kind, with an on/off for every level. A row says which node it sits in with ``section`` (the node's ``key``); a
+    #: row with none sits directly under the kind. Only the add-on's own rows may name a section.
+    sections: dict[str, tuple["SectionNode", ...]] = field(default_factory=dict, hash=False)
+
+
+@dataclass(frozen=True)
+class SectionNode:
+    """One section in an add-on's tree of a kind: ``key`` names it in a row's ``section`` (unique within the add-on's kind), ``name`` is
+    what an admin reads, and ``children`` are the sections inside it, as deep as the add-on likes (classes, rated E, rated M...)."""
+
+    key: str
+    name: str
+    children: tuple["SectionNode", ...] = ()
+
+    def keys(self) -> list[str]:
+        """This section's key and those of every section inside it."""
+        return [self.key] + [key for child in self.children for key in child.keys()]
 
 
 @dataclass(frozen=True)
@@ -62,7 +80,7 @@ class Integrated:
     seed_dirs: tuple[tuple[str | None, Path], ...]
 
     def load_seed(self) -> LayeredSeed:
-        return layer_seeds(self.seed_dirs)
+        return layer_seeds(self.seed_dirs, {addon.key: addon.sections for addon in self.addons})
 
 
 def integrate(game, listed: list[str] | tuple[str, ...]) -> Integrated:
@@ -93,6 +111,7 @@ def integrate(game, listed: list[str] | tuple[str, ...]) -> Integrated:
                 raise AddOnError(f"add-on {addon.key}: {field} {folder} is not a folder")
         if addon.assets_dir is not None:
             check_assets_folder(addon)
+        check_sections(addon)
     asset_dirs = [(None, game.assets_dir)] if game and game.assets_dir is not None else []
     asset_dirs += [(addon.key, addon.assets_dir) for addon in chosen if addon.assets_dir is not None]
     check_asset_names(asset_dirs)
@@ -101,10 +120,42 @@ def integrate(game, listed: list[str] | tuple[str, ...]) -> Integrated:
     return Integrated(tuple(chosen), tuple(Path(folder) for _, folder in asset_dirs), tuple(seed_dirs))
 
 
+# --- the sections --------------------------------------------------------------------------------------------------
+
+SECTION_KEY = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+
+
+def check_sections(addon: AddOn) -> None:
+    """Raises AddOnError unless $addon's sections are for kinds that can be switched, and every key is well formed and used once per kind."""
+    for kind, nodes in addon.sections.items():
+        if kind not in SWITCHABLE:
+            raise AddOnError(f"add-on {addon.key}: sections for {kind!r}, which cannot be switched (it can be: {', '.join(SWITCHABLE)})")
+        seen: set[str] = set()
+        for key in (key for node in nodes for key in node.keys()):
+            if not SECTION_KEY.fullmatch(key):
+                raise AddOnError(f"add-on {addon.key}: the {kind} section {key!r} is not a key (1-64 lowercase letters, digits, _ or -)")
+            if key in seen:
+                raise AddOnError(f"add-on {addon.key}: the {kind} section {key!r} is used twice")
+            seen.add(key)
+        for node in nodes:
+            _check_names(addon, kind, node)
+
+
+def _check_names(addon: AddOn, kind: str, node: SectionNode) -> None:
+    if not node.name.strip():
+        raise AddOnError(f"add-on {addon.key}: the {kind} section {node.key!r} needs a name")
+    for child in node.children:
+        _check_names(addon, kind, child)
+
+
 # --- the seed ------------------------------------------------------------------------------------------------------
 
-def layer_seeds(layers: tuple[tuple[str | None, Path], ...]) -> LayeredSeed:
-    """The seeds of $layers (an add-on key or None for the game, and its seed folder) joined; raises AddOnError if a key is in two."""
+def layer_seeds(layers: tuple[tuple[str | None, Path], ...], sections: dict[str, dict[str, tuple[SectionNode, ...]]] | None = None) -> LayeredSeed:
+    """The seeds of $layers (an add-on key or None for the game, and its seed folder) joined; raises AddOnError if a key is in two.
+
+    $sections says, for each add-on key, the sections it declares (``AddOn.sections``): a row's ``section`` has to be one of its add-on's
+    for its kind, and a game's row has none."""
+    declared = {owner: {kind: {key for node in nodes for key in node.keys()} for kind, nodes in by_kind.items()} for owner, by_kind in (sections or {}).items()}
     rows: dict[str, list[dict]] = {}
     owners: dict[str, dict[str, str | None]] = {}
     for owner, folder in layers:
@@ -117,6 +168,11 @@ def layer_seeds(layers: tuple[tuple[str | None, Path], ...]) -> LayeredSeed:
                 raise AddOnError(f"the add-on {owner}: {name}.json cannot be used yet (an add-on's seed may have: {', '.join(SWITCHABLE)})")
             known = owners.setdefault(name, {})
             for entry in entries:
+                if (section := entry.get("section")) is not None:
+                    if owner is None:
+                        raise AddOnError(f"{name}.json: {entry.get('key')!r} is the game's and has a section; only an add-on's rows are in a section")
+                    if section not in declared.get(owner, {}).get(name, ()):
+                        raise AddOnError(f"the add-on {owner}: {name}.json {entry.get('key')!r} is in the section {section!r}, which the add-on does not declare for {name}")
                 key = entry.get("key")
                 if isinstance(key, str):
                     if key in known:

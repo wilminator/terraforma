@@ -59,6 +59,8 @@ from .social.routes import router as social_router
 from .quests.manual_routes import router as manual_quests_router
 from .content.routes import router as content_router
 from .gamestate.routes import router as gamestate_router
+from .gamestate import service as gamestate
+from .gamestate.components import Components
 from .gamestate.document import sections_by_name
 from .quests.manual_routes import router as manual_quests_router
 from .quests.needs_routes import router as needs_router
@@ -119,6 +121,9 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
                 await load_content(session, layered.rows, game.rules.stats, game.rules.resource_names, game.rules.drop_chance_scale, layered.owners)
                 if integrated.asset_dirs:
                     check_hero_back_views(layered.rows, integrated.asset_dirs)
+                if integrated.addons:
+                    # The add-ons' rows follow the live component states (the first state is made here if the database has none).
+                    await gamestate.apply_live(session, app.state.state_sections)
         timer = asyncio.create_task(fight_timer(app, settings.fight_timer_seconds)) if settings.fight_timer_seconds else None
         tidier = asyncio.create_task(housekeeping_timer(app, settings.housekeeping_seconds)) if settings.housekeeping_seconds else None
         yield
@@ -134,7 +139,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app = FastAPI(title=game.name if game else "TerraForma", lifespan=lifespan)
     app.state.settings = settings
     app.state.game = game
-    app.state.state_sections = sections_by_name(game.state_sections if game else ())
+    app.state.state_sections = sections_by_name([Components(integrated, game), *(game.state_sections if game else ())])
     app.state.addons = integrated.addons
     app.state.asset_dirs = integrated.asset_dirs
     app.state.fights = FightChannels()
