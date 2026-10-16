@@ -27,7 +27,7 @@ from .test_npc_state import a_party, check, npc_says
 from .test_towns import sign_in
 from .test_weekly_quests import SEED, a_team
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.heroes]
 
 DAY = rotation.DAY
 #: A period lasts 10 to 20 days; a team has 5 days to finish once it takes the quest, and 3 more days after the quest rotated out.

@@ -9,6 +9,8 @@ from terraforma.animations import check_animation_folder, check_animations
 from terraforma.tools import tilesheet
 from terraforma.tools.tilesheet import TilesheetError, convert, main
 
+pytestmark = pytest.mark.platform
+
 RED, GREEN, BLUE, YELLOW = (255, 0, 0, 255), (0, 255, 0, 255), (0, 0, 255, 255), (255, 255, 0, 255)
 
 

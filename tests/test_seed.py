@@ -6,6 +6,8 @@ import pytest
 
 from terraforma.seed import SeedError, load_seed
 
+pytestmark = pytest.mark.platform
+
 
 def test_the_loader_reads_each_file_by_name(tmp_path):
     (tmp_path / "monsters.json").write_text(json.dumps([{"name": "Slime", "stats": {"HP": 5}}]))

@@ -9,6 +9,8 @@ from pydantic import ValidationError
 from terraforma.__main__ import main
 from terraforma.settings import load_settings
 
+pytestmark = pytest.mark.accounts
+
 ROOT = Path(__file__).parent.parent
 
 

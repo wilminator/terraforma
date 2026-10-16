@@ -11,7 +11,7 @@ from terraforma.models import Account
 from terraforma.quests import service as quests
 from terraforma.quests.models import QuestMarker, QuestRecord
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.heroes]
 
 PASSWORD = "correct horse battery"
 SEED = {"jobs": [{"key": "fighter", "name": "Fighter", "stat_growth": {"HP": 20}}]}

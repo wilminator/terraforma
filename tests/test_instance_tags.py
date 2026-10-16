@@ -11,7 +11,7 @@ from terraforma.npcs.service import NpcError
 from .test_guild_ranks import says
 from .test_npc_state import a_party
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.heroes]
 
 
 async def crypt(db, hero):

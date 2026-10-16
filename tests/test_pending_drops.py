@@ -16,7 +16,7 @@ from terraforma.heroes.models import Hero
 from terraforma.models import Account
 from terraforma.parties import service as parties
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.heroes]
 
 from .helpers import expect
 from .test_drops import PESTS, POTION, RULES, hero_fight, kill, listing, plain, stacks

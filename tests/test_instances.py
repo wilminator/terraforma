@@ -21,7 +21,7 @@ from terraforma.world.start import ensure_start
 from .test_pvp import Everywhere, Levelled, a_party, two_parties
 from .test_reach import RULES as REACH_RULES
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.heroes]
 
 RULES = Levelled()
 

@@ -29,7 +29,7 @@ from .test_walking import party_on, seeded, walk_grass  # noqa: F401 (seeded is 
 from terraforma.towns import service as towns_service
 from terraforma.towns.hooks import Towns
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.fights]
 
 RULES = Rules()
 

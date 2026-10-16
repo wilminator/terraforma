@@ -1,6 +1,6 @@
 # Every push and pull request: the test suite as small jobs that run side by side, so a failure names
 # where it is. One dimension is the database (none, SQLite, Postgres, MySQL), the other the category
-# of test (tests/conftest.py lists which file is in which). Tests that need no database run once, in
+# of test (each test file declares its own with `pytestmark`, see tests/conftest.py). Tests that need no database run once, in
 # "no database"; each database runs only the tests that use one.
 name: tests
 

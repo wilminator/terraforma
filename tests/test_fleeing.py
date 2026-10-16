@@ -30,7 +30,7 @@ from .test_fight_rules import fighter as plain_fighter
 from .test_live_fights import RULES as LIVE_RULES
 from .test_live_fights import a_team
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.fights]
 
 RULES = Rules()
 

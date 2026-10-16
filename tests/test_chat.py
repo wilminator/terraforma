@@ -21,6 +21,8 @@ from terraforma.towns.hooks import Towns
 
 from .helpers import expect
 
+pytestmark = pytest.mark.social
+
 PASSWORD = "correct horse battery"
 SEED = {"jobs": [{"key": "fighter", "name": "Fighter", "stat_growth": {"HP": 20}}]}
 

@@ -19,6 +19,8 @@ from terraforma.testing import in_app_db
 
 from .test_fight_store import SEED
 
+pytestmark = pytest.mark.platform
+
 ORIGIN = {"origin": "http://testserver"}
 PASSWORD = "correct horse battery"
 COMMAND = {

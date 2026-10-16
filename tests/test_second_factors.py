@@ -19,6 +19,8 @@ from terraforma.testing import in_app_db
 from .authenticator import SoftKey
 from .helpers import expect
 
+pytestmark = pytest.mark.accounts
+
 PASSWORD = "correct horse battery"
 EMAIL = "mike@example.com"
 

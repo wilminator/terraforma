@@ -5,6 +5,8 @@ import pytest
 from terraforma.accounts.service import AccountError, check_handle, create_account
 from terraforma.testing import in_app_db
 
+pytestmark = pytest.mark.accounts
+
 PASSWORD = "correct horse battery"
 
 

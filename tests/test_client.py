@@ -11,6 +11,8 @@ from terraforma.game import Game
 
 from .helpers import expect
 
+pytestmark = pytest.mark.platform
+
 
 @pytest.fixture
 def game():

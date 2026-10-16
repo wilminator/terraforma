@@ -24,7 +24,7 @@ from terraforma.testing import in_app_db
 from .helpers import expect
 from .test_fight_store import a_team_fights_a_rat
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.heroes]
 
 PASSWORD = "correct horse battery"
 SEED = {"jobs": [{"key": "fighter", "name": "Fighter", "stat_growth": {"HP": 20}}]}

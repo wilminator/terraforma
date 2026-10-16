@@ -13,6 +13,8 @@ from terraforma.models import Map
 from terraforma.pvp.hooks import PvpZones
 from terraforma.testing import in_app_db
 
+pytestmark = pytest.mark.platform
+
 SEED = {
     "items": [{"key": "potion", "name": "Potion"}],
     "personalities": [{"key": "plain", "name": "Plain"}],
