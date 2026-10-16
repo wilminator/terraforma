@@ -15,14 +15,16 @@ from pathlib import Path
 
 from .animations import AnimationError, check_animation_folder
 from .colormaps import ColorMapError, check_color_map_folder
+from .content.schema import job_ability_key
 from .seed import SeedError, load_seed
 
 ADDON_KEY = re.compile(r"^[a-z][a-z0-9_]{1,31}$")
 LICENSE_FILE = "ASSETS.md"
 
 #: The kinds of seed file an add-on may have: the ones whose rows can be switched off (they have ``active``; content.loader.TABLES).
+#: (``job_abilities`` rows have no table: each is one more ability on a job, kept in step with the live states by the components section.)
 #: Components start off, so an add-on's maps, dialogs, NPCs and quests wait for a slice that can switch them.
-SWITCHABLE = ("statuses", "abilities", "items", "drop_tables", "personalities", "jobs", "monsters")
+SWITCHABLE = ("statuses", "abilities", "items", "drop_tables", "personalities", "jobs", "job_abilities", "monsters")
 
 
 class AddOnError(ValueError):
@@ -168,18 +170,44 @@ def layer_seeds(layers: tuple[tuple[str | None, Path], ...], sections: dict[str,
                 raise AddOnError(f"the add-on {owner}: {name}.json cannot be used yet (an add-on's seed may have: {', '.join(SWITCHABLE)})")
             known = owners.setdefault(name, {})
             for entry in entries:
+                key = seed_key(name, entry)
                 if (section := entry.get("section")) is not None:
                     if owner is None:
                         raise AddOnError(f"{name}.json: {entry.get('key')!r} is the game's and has a section; only an add-on's rows are in a section")
                     if section not in declared.get(owner, {}).get(name, ()):
                         raise AddOnError(f"the add-on {owner}: {name}.json {entry.get('key')!r} is in the section {section!r}, which the add-on does not declare for {name}")
-                key = entry.get("key")
                 if isinstance(key, str):
                     if key in known:
                         raise AddOnError(f"{name}.json: the key {key!r} is in {_who(known[key])} and in {_who(owner)}; an add-on cannot reuse a key")
                     known[key] = owner
             rows.setdefault(name, []).extend(entries)
+    _check_job_grants(rows, owners)
     return LayeredSeed(rows, owners)
+
+
+def seed_key(name: str, entry: dict) -> str | None:
+    """The key $entry (a row of the seed file $name) goes by: its ``key``, or for ``job_abilities`` its job and ability."""
+    if name == "job_abilities":
+        job, ability = entry.get("job"), entry.get("ability")
+        return job_ability_key(job, ability) if isinstance(job, str) and isinstance(ability, str) else None
+    key = entry.get("key")
+    return key if isinstance(key, str) else None
+
+
+def _check_job_grants(rows: dict[str, list[dict]], owners: dict[str, dict[str, str | None]]) -> None:
+    """Raises AddOnError if an add-on's ``job_abilities`` row gives a job an ability that a job row of the game or of another layer
+    already gives it: a layer adds to what is there and never overrides it, so every layer stays visible."""
+    given: dict[tuple[str, str], str | None] = {}
+    for job in rows.get("jobs", []):
+        who = owners.get("jobs", {}).get(job.get("key"))
+        for entry in job.get("abilities", []):
+            given[(job.get("key"), entry if isinstance(entry, str) else entry.get("ability"))] = who
+    for entry in rows.get("job_abilities", []):
+        who = owners["job_abilities"].get(seed_key("job_abilities", entry))
+        before = given.setdefault((entry.get("job"), entry.get("ability")), who)
+        if before != who:
+            raise AddOnError(f"job_abilities.json: {entry.get('job')}'s ability {entry.get('ability')!r} is already given by {_who(before)}, "
+                             f"so {_who(who)} cannot give it again (a layer cannot override another)")
 
 
 def _who(owner: str | None) -> str:

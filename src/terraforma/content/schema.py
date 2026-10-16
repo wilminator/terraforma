@@ -199,11 +199,23 @@ class Job(Strict):
 
 class JobAbilitySeed(Strict):
     """A row of ``job_abilities.json``: one more ability for a job that is written elsewhere (the game's, when an add-on brings the
-    ability). It joins the job's own ``abilities``; the job's row and this one may not both give the same ability."""
+    ability). It joins the job's own ``abilities``; the job's row and this one may not both give the same ability.
+
+    An add-on's row is a component of its own, switched like the rest: it goes by the key ``job:ability`` and may sit in a ``section``."""
 
     job: Key
     ability: Key
     level: int = Field(default=1, ge=1)
+    section: Key | None = None
+
+    @property
+    def key(self) -> str:
+        return job_ability_key(self.job, self.ability)
+
+
+def job_ability_key(job: str, ability: str) -> str:
+    """The key a ``job_abilities.json`` row goes by in the component states: the job, a colon and the ability."""
+    return f"{job}:{ability}"
 
 
 class ArtRef(Strict):
