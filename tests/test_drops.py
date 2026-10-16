@@ -27,7 +27,7 @@ from terraforma.models import Account
 from .test_fight_rules import RULES, Scripted, fighter, listing
 from .test_fight_store import SEED, a_hero
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.heroes]
 
 POTION = ItemSpec("potion", "Potion", one_use=True)
 SWORD = ItemSpec("sword", "Sword", equip_slots=("hand",))

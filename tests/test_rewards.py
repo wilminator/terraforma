@@ -1,5 +1,7 @@
 """The end of a fight: experience debts, who earns what, gold and level-ups, as events that replay (pure: no database)."""
 
+import pytest
+
 from terraforma.fights.combatant import Combatant, Command
 from terraforma.fights.events import EventType
 from terraforma.fights.fight import build_fight
@@ -9,6 +11,8 @@ from terraforma.fights.resolve import do_combat
 from terraforma.fights.rewards import settle
 from terraforma.fights.rules import Rules
 from terraforma.fights.state import dehydrate, hydrate
+
+pytestmark = pytest.mark.fights
 
 RULES = Rules()
 

@@ -8,7 +8,7 @@ from terraforma.app import default_mailer
 from terraforma.mail import Mail, OutboxMailer, SmtpMailer
 from terraforma.settings import MailSettings, Settings
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.accounts]
 
 
 async def test_without_mail_settings_messages_land_in_the_outbox(tmp_path):

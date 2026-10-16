@@ -17,7 +17,7 @@ from terraforma.reach.hooks import Reach
 from terraforma.npcs.inn import Inn
 from terraforma.parties import service as parties
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.heroes]
 
 PASSWORD = "correct horse battery"
 SEED = {"jobs": [{"key": "fighter", "name": "Fighter", "stat_growth": {"HP": 20}}]}

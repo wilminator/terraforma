@@ -19,6 +19,8 @@ from terraforma.testing import in_app_db
 
 from .helpers import expect
 
+pytestmark = pytest.mark.heroes
+
 PASSWORD = "correct horse battery"
 
 SEED = {

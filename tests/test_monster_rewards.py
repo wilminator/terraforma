@@ -21,7 +21,7 @@ from terraforma.monsterplay.models import MonsterLockout, MonsterSeat
 from .test_monster_control import HERO, FOE, an_admin, hero_defends, monster_attacks, played_commands, seated
 from .test_monster_play import RULES
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.fights]
 
 
 class Sure(Rules):

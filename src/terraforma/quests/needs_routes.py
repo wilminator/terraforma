@@ -52,15 +52,15 @@ async def approve(proposal_id: ProposalId, request: Request, account: ActingAcco
 
 
 @router.post("/quest-proposals/{proposal_id}/reject")
-async def reject(proposal_id: ProposalId, request: Request, account: ActingAccount, db: Db) -> dict:
+async def reject(proposal_id: ProposalId, request: Request, account: ActingAccount, db: Db, hooks: GameNeeds) -> dict:
     """Turns a proposal down."""
-    return await change(needs.reject, proposal_id, request, account, db)
+    return await change(lambda db, each: needs.reject(db, each, hooks), proposal_id, request, account, db)
 
 
 @router.post("/quest-proposals/{proposal_id}/retire")
-async def retire(proposal_id: ProposalId, request: Request, account: ActingAccount, db: Db) -> dict:
+async def retire(proposal_id: ProposalId, request: Request, account: ActingAccount, db: Db, hooks: GameNeeds) -> dict:
     """Takes a live quest out of its slot."""
-    return await change(needs.retire, proposal_id, request, account, db)
+    return await change(lambda db, each: needs.retire(db, each, hooks), proposal_id, request, account, db)
 
 
 @router.post("/quest-needs/run")

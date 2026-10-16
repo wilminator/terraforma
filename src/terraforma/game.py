@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .accounts.hooks import SignIn
+from .addons import AddOn
 from .economy import Economy, TeamGold
 from .fights.rules import Rules
 from .gamestate.document import Section
@@ -41,6 +42,9 @@ class Game:
     client_dir: Path | None = None
     client_modules: tuple[str, ...] = ()
     client_styles: tuple[str, ...] = ()
+    # The add-ons this game supports (see README, "Add-ons"). The operator picks which to use in settings.toml (``addons``); none is
+    # used unless listed there.
+    addons: tuple[AddOn, ...] = ()
     # How fights are played: the stats, the resources and every formula. Override Rules to change them.
     rules: Rules = field(default_factory=Rules)
     # Where gold lives and how it moves (on the team, DragonStar's way, unless the game says otherwise).

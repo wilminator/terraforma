@@ -30,6 +30,8 @@ from terraforma.fights.specs import (
 )
 from terraforma.world.rng import WorldRng
 
+pytestmark = pytest.mark.fights
+
 RULES = Rules()
 STATS = {
     "HP": 100, "MP": 10, "Speed": 8, "Accuracy": 100, "Strength": 100, "Dodge": 1, "Block": 0,

@@ -15,6 +15,8 @@ from terraforma.testing import in_app_db
 from .helpers import expect
 from .test_towns import sign_in
 
+pytestmark = [pytest.mark.anyio, pytest.mark.platform]
+
 
 class Rates(Section):
     """A section with a default and a check of its own."""
@@ -88,9 +90,6 @@ def test_a_document_over_the_size_limit_is_a_problem(monkeypatch):
 
 
 # --- the first state ---------------------------------------------------------------------------------------------------
-
-pytestmark = pytest.mark.anyio
-
 
 async def test_the_first_look_makes_the_empty_state_live_with_a_matching_draft(db):
     current = await service.state(db, SECTIONS)

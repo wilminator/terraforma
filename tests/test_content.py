@@ -12,6 +12,8 @@ from terraforma.content.schema import STATS, ContentError, check_seed
 from terraforma.game import Game
 from terraforma.testing import in_app_db
 
+pytestmark = pytest.mark.platform
+
 
 SEED = {
     "abilities": [
@@ -301,3 +303,33 @@ def test_the_app_refuses_to_start_on_a_bad_seed(database_url, mailbox, tmp_path,
         with TestClient(create_app(settings, game, mailer=mailbox)):
             pass
 
+
+
+def test_job_abilities_join_the_jobs_they_name():
+    data = seed()
+    data["abilities"].append({"key": "bolt", "name": "Bolt", "kind": "spell"})
+    data["job_abilities"] = [{"job": "fighter", "ability": "bolt", "level": 5}]
+    job = check_seed(data)["jobs"][0]
+    assert [(entry.ability, entry.level) for entry in job.abilities] == [("slash", 1), ("bolt", 5)]
+    assert "job_abilities" not in {kind for kind, rows in check_seed(seed()).items() if rows}
+
+
+def test_job_abilities_are_refused_for_an_unknown_job_or_ability_or_a_repeat():
+    data = seed()
+    data["job_abilities"] = [{"job": "ghost", "ability": "slash"}, {"job": "fighter", "ability": "slash"},
+                             {"job": "fighter", "ability": "nope"}, {"job": "fighter", "ability": "nope"}]
+    with pytest.raises(ContentError) as error:
+        check_seed(data)
+    text = str(error.value)
+    assert "ghost: slash is for a job that jobs.json doesn't have" in text
+    assert "fighter gets 'slash' twice" in text and "fighter gets 'nope' twice" in text
+    assert "jobs.json fighter: abilities names 'nope'" in text
+
+
+@pytest.mark.anyio
+async def test_loading_stores_job_abilities_on_the_job(db):
+    data = {**SEED, "abilities": [*SEED["abilities"], {"key": "bolt", "name": "Bolt", "kind": "spell"}],
+            "job_abilities": [{"job": "fighter", "ability": "bolt", "level": 3}]}
+    await load_content(db, data)
+    await db.commit()
+    assert (await rows(db, models.Job))[0].abilities == [{"ability": "slash", "level": 1}, {"ability": "bolt", "level": 3}]

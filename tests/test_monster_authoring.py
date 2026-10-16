@@ -16,6 +16,8 @@ from .helpers import expect
 from .test_content import SEED
 from .test_towns import sign_in
 
+pytestmark = pytest.mark.platform
+
 BOSS = {"key": "ember-drake", "name": "Ember Drake", "personality": "plain", "xp_reward": 50, "gold_reward": 20,
         "stats": {"HP": 90, "Strength": 12}, "abilities": ["fire"], "items": ["potion"], "equipment": ["sword"]}
 

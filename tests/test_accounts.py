@@ -10,6 +10,8 @@ from terraforma.accounts.service import create_account
 
 from terraforma.testing import in_app_db
 
+pytestmark = pytest.mark.accounts
+
 MIKE = {"username": "Mike", "email": "mike@example.com", "password": "correct horse battery"}
 
 

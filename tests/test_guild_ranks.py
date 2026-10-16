@@ -16,7 +16,7 @@ from terraforma.reach.hooks import Reach
 
 from .test_npc_state import a_party, npc_says
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.heroes]
 
 RULES = Rules()
 

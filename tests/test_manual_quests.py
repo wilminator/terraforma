@@ -20,7 +20,7 @@ from .test_npc_state import a_party, check, npc_says
 from .test_towns import PASSWORD, sign_in
 from .test_weekly_quests import SEED, a_team
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.heroes]
 
 DAY = 24 * 60 * 60
 

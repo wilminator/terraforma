@@ -11,6 +11,8 @@ from terraforma.client import ClientError, check_game_client
 from terraforma.example import GAME as EXAMPLE
 from terraforma.game import Game
 
+pytestmark = pytest.mark.platform
+
 
 def file_of(**animations):
     return {"animations": animations}
@@ -124,6 +126,16 @@ def test_a_personality_with_a_job_keys_name_needs_base_up_as_an_animation_or_an_
     aliased = {"animations": {"base": BASE, "turned": BASE}, "aliases": {"base_up": {"of": "turned"}}}
     (tmp_path / "other").mkdir()
     check_hero_back_views(seed_of(art), assets_with(tmp_path / "other", back=aliased))
+
+
+def test_the_back_view_may_be_in_any_of_the_assets_folders_of_the_game_and_its_addons(tmp_path):
+    art = {"sheet": "s", "animations": "back"}
+    (tmp_path / "game").mkdir()
+    (tmp_path / "pack").mkdir()
+    assets_with(tmp_path / "pack", back=file_of(base=BASE, base_up=BASE))
+    check_hero_back_views(seed_of(art), [tmp_path / "game", tmp_path / "pack"])
+    with pytest.raises(ContentError, match="base_up"):
+        check_hero_back_views(seed_of(art), [tmp_path / "game"])
 
 
 @pytest.mark.parametrize("art", ["plain.png", {"sheet": "s"}, {"sheet": "s", "animations": "front"}, {"sheet": "s", "animations": "missing"}])

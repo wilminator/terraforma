@@ -406,6 +406,8 @@ from terraforma.testing import in_app_db  # noqa: E402
 from .helpers import expect  # noqa: E402
 from .test_fight_store import SEED  # noqa: E402
 
+pytestmark = pytest.mark.social
+
 PASSWORD = "correct horse battery"
 
 

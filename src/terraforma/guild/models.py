@@ -1,6 +1,6 @@
 """A team's standing with a guild: the points it has earned there and the rank it holds. Standing belongs to the team, like quests."""
 
-from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db.base import Base, Timestamps
@@ -18,3 +18,5 @@ class GuildStanding(Timestamps, Base):
     guild: Mapped[str] = mapped_column(String(64))
     points: Mapped[int] = mapped_column(Integer, default=0)
     rank: Mapped[int] = mapped_column(Integer, default=0)
+    # When the standing began (world clock, whole seconds): the guild's obligations bind a team only for periods that began after it.
+    joined_at: Mapped[int] = mapped_column(BigInteger, default=0)

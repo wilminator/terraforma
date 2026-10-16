@@ -19,7 +19,7 @@ from terraforma.db.migrate import alembic_config
 from terraforma.db.schema import drop_everything
 from terraforma.testing import forget_schema
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.platform]
 
 
 def test_there_are_no_migration_files_yet():

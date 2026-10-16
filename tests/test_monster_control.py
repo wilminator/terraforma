@@ -23,7 +23,7 @@ from .helpers import expect
 from .test_monster_play import RULES, fight, volunteer
 from .test_towns import PASSWORD, account, sign_in, with_monsters
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.fights]
 
 HERO = (0, 0, 0)
 FOE = (1, 0, 0)

@@ -11,6 +11,8 @@ from terraforma.game import Game
 from terraforma.heroes.models import Hero, TeamMember
 from terraforma.testing import in_app_db
 
+pytestmark = pytest.mark.heroes
+
 PASSWORD = "correct horse battery"
 
 SEED = {

@@ -4,7 +4,11 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
+
 from terraforma.animations import check_animation_folder
+
+pytestmark = pytest.mark.platform
 
 SCRIPT = Path(__file__).parent.parent / "utils" / "monster_art.py"
 

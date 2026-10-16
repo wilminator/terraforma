@@ -6,6 +6,8 @@ import pytest
 
 from terraforma import logscrub
 
+pytestmark = pytest.mark.accounts
+
 
 @pytest.mark.parametrize(
     ("line", "secret"),

@@ -17,6 +17,8 @@ from terraforma.testing import in_app_db
 
 from .test_chat import call, game, one_party, players  # noqa: F401  (the fixtures and helpers chat's tests use)
 
+pytestmark = pytest.mark.social
+
 TOKEN = "x" * 59 + ".y" * 3
 
 

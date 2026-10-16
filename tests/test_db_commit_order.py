@@ -10,7 +10,7 @@ from fastapi import FastAPI
 
 from terraforma.api.deps import Db
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.platform]
 
 
 class Begin:
