@@ -58,6 +58,9 @@ from .profiles.routes import router as profiles_router
 from .social.routes import router as social_router
 from .quests.manual_routes import router as manual_quests_router
 from .content.routes import router as content_router
+from .gamestate.routes import router as gamestate_router
+from .gamestate import service as gamestate
+from .gamestate.document import sections_by_name
 from .quests.manual_routes import router as manual_quests_router
 from .quests.needs_routes import router as needs_router
 from .quests.rotation_routes import router as rotation_router
@@ -116,6 +119,9 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
                 await load_content(session, seed, game.rules.stats, game.rules.resource_names, game.rules.drop_chance_scale)
                 if game.assets_dir is not None:
                     check_hero_back_views(seed, game.assets_dir)
+        # The first, empty settings snapshot, if the database has none yet.
+        async with app.state.sessionmaker() as session, session.begin():
+            await gamestate.ensure(session, app.state.state_sections)
         timer = asyncio.create_task(fight_timer(app, settings.fight_timer_seconds)) if settings.fight_timer_seconds else None
         tidier = asyncio.create_task(housekeeping_timer(app, settings.housekeeping_seconds)) if settings.housekeeping_seconds else None
         yield
@@ -131,6 +137,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app = FastAPI(title=game.name if game else "TerraForma", lifespan=lifespan)
     app.state.settings = settings
     app.state.game = game
+    app.state.state_sections = sections_by_name(game.state_sections if game else ())
     app.state.fights = FightChannels()
     app.state.http_client = http_client
     app.state.tokens = Tokens(settings.session_secret)
@@ -169,6 +176,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(needs_router)
     app.include_router(manual_quests_router)
     app.include_router(content_router)
+    app.include_router(gamestate_router)
     app.include_router(manual_quests_router)
     app.include_router(fighttags_router)
     app.include_router(fightpages_router)

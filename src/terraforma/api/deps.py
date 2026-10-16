@@ -22,6 +22,7 @@ from ..npcs.inn import Inn
 from ..reach.hooks import Reach
 from ..towns.hooks import Towns
 from ..fights.rules import Rules
+from ..gamestate.document import Section
 from ..models import Account
 from ..playtime import service as playtime
 from .security import SESSION_ACCOUNT, SESSION_VERSION, csrf_matches
@@ -131,6 +132,14 @@ def get_manual_quests(request: Request) -> ManualQuests:
 
 
 GameManualQuests = Annotated[ManualQuests, Depends(get_manual_quests)]
+
+
+def get_state_sections(request: Request) -> dict[str, Section]:
+    """The sections of the settings document the game registered, by name (``create_app`` checked the names)."""
+    return request.app.state.state_sections
+
+
+GameStateSections = Annotated[dict[str, Section], Depends(get_state_sections)]
 
 
 def get_needs(request: Request) -> Needs:

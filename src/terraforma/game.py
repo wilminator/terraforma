@@ -13,6 +13,7 @@ from pathlib import Path
 from .accounts.hooks import SignIn
 from .economy import Economy, TeamGold
 from .fights.rules import Rules
+from .gamestate.document import Section
 from .alliances.hooks import Alliances
 from .relations.hooks import Relations
 from .chat.hooks import Chat
@@ -69,6 +70,8 @@ class Game:
     rotating_quests: RotatingQuests = field(default_factory=RotatingQuests)
     # The events an admin writes by hand (a competition, a tournament): who may enter, and what failing costs.
     manual_quests: ManualQuests = field(default_factory=ManualQuests)
+    # The parts of the settings document an admin plans and commits (``gamestate.Section``: its empty value and its checks). None, by default.
+    state_sections: tuple[Section, ...] = ()
     # The quests the world needs: which bands of party strength should always have one, and how a boss is picked and approved
     # (none, by default: nothing is made unless the game lists bands).
     needs: Needs = field(default_factory=Needs)
