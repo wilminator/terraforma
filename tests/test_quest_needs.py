@@ -23,6 +23,7 @@ from terraforma.quests.weekly_models import QuestTemplate
 from terraforma.testing import in_app_db
 from terraforma.world.start import ensure_start
 
+from .conftest import START
 from .helpers import expect
 from .test_towns import sign_in
 from .test_weekly_quests import SEED as TEAM_SEED
@@ -189,6 +190,15 @@ async def test_a_band_where_nobody_completes_quests_is_stalled_and_one_where_som
     [proposal] = await needs.run(db, Wanted(band), Flat())
     assert (proposal.reason, proposal.status) == ("stalled", "proposed")
     assert first.id != second.id
+
+
+async def test_a_rows_timestamps_follow_the_moved_wall_clock_not_the_real_one(db, later):
+    """created_at and updated_at come from wallclock.now, so a test that moves the clock moves them too (a stall check that read the real
+    date started failing on the day the real date passed the test's fixed start)."""
+    await a_world(db)
+    later(40 * DAY)
+    team, _ = await a_strength(db)
+    assert team.created_at.replace(tzinfo=None) == (START + timedelta(seconds=40 * DAY)).replace(tzinfo=None)
 
 
 async def test_stalls_are_not_looked_for_unless_the_band_says_so(db, later):

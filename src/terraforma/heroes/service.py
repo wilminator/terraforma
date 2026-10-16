@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..content.models import Job, Personality
 from ..models import Account, Map
+from ..disuse.models import DisuseTalk, SetAside
 from ..npcs.models import NpcTalk
 from ..parties.models import PartyRequest, PartyTeam
 from ..fighttags.models import FightTeam, TeamKept, TeamTag
@@ -175,6 +176,8 @@ async def delete_hero(session: AsyncSession, account: Account, hero_id: int) -> 
     for table in (HeroEquipment, HeroItem, HeroAbility):
         await session.execute(delete(table).where(table.hero_id == hero.id))
     await session.execute(delete(NpcTalk).where(NpcTalk.hero_id == hero.id))
+    for table in (DisuseTalk, SetAside):
+        await session.execute(delete(table).where(table.hero_id == hero.id))
     await standing.forget(session, "hero", hero.id)
     await pending.forget_hero(session, hero)  # their drop answers, wins and place in finished fights
     await session.delete(hero)

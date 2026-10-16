@@ -168,9 +168,8 @@ async def may_talk(session: AsyncSession, reach: Reach, source: Npc | MapObject,
         raise NpcError(reason)
 
 
-async def _run(session: AsyncSession, hooks: Npcs, hero: Hero, npc: Npc | MapObject, talk: NpcTalk | None, choice: int | None, rest: Rest | None = None, economy: Economy | None = None, rules: Rules | None = None) -> dict:
-    script: Script = parse(npc.dialog)
-    who = await who_is(session, hero)
+def tree_loader(session: AsyncSession):
+    """The ``load`` an ``advance`` takes: key -> the stored dialog tree, parsed once per call (ScriptError for one that is not stored)."""
     trees: dict[str, Script] = {}
 
     async def load(key: str) -> Script:
@@ -180,6 +179,14 @@ async def _run(session: AsyncSession, hooks: Npcs, hero: Hero, npc: Npc | MapObj
                 raise ScriptError(f"there is no dialog {key!r} to include")
             trees[key] = parse(found)
         return trees[key]
+
+    return load
+
+
+async def _run(session: AsyncSession, hooks: Npcs, hero: Hero, npc: Npc | MapObject, talk: NpcTalk | None, choice: int | None, rest: Rest | None = None, economy: Economy | None = None, rules: Rules | None = None) -> dict:
+    script: Script = parse(npc.dialog)
+    who = await who_is(session, hero)
+    load = tree_loader(session)
 
     async def tag(command: str, parts: list[str]) -> str | None:
         handled = await hooks.tag(session, hero, command, parts)

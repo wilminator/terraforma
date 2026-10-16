@@ -74,6 +74,14 @@ class DialogState:
             return False
         return all(results) if scope == "each" else any(results)
 
+    # --- force disuse (only ``disuse.state.DisuseState`` can do them) --------------------------------------------------------
+
+    async def set_job(self, job: str, label: str) -> str:
+        raise ScriptError("set_job only works in a force-disuse dialog")
+
+    async def lost(self, kind: str, label: str) -> str:
+        raise ScriptError("lost only works in a force-disuse dialog")
+
     # --- items ---------------------------------------------------------------------------------------------------------
 
     async def item(self, key: str) -> Item:

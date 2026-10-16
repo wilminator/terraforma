@@ -7,7 +7,7 @@ runs:
       id: playwright
       run: echo "version=$(python -c 'from importlib.metadata import version; print(version("playwright"))')" >> "$GITHUB_OUTPUT"
       shell: bash
-    - uses: actions/cache@v5
+    - uses: actions/cache@v6
       with:
         path: ~/.cache/ms-playwright
         key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
