@@ -42,12 +42,12 @@ from ..fights.rules import Rules
 from ..seed import load_seed
 
 HEROES, FOES = 0, 1
-#: A group holds five fighters; a bigger side is split into groups of five.
-GROUP_SIZE = 5
+#: A group of heroes holds five fighters, a group of monsters ten (Mike, for Vanguard); a bigger side is split into more groups.
+GROUP_SIZE, FOE_GROUP_SIZE = 5, 10
 #: How many monsters an encounter has, as (fewest, most) at the first level and at the last level of the sweep. Mike's rule for Vanguard:
-#: early parties field 3 to 5, and the end game anything from 4 very strong monsters to three nearly full groups. In between the
-#: bounds move in a straight line with the level. ``--foes 3-5`` fixes it for every level.
-SIZE_AT_START, SIZE_AT_END, LAST_LEVEL = (3, 5), (4, 14), 50
+#: early parties field 3 to 5, and the end game anything from 4 very strong monsters to a crowd of 25 to 30 (three groups of ten).
+#: In between the bounds move in a straight line with the level. ``--foes 3-5`` fixes it for every level.
+SIZE_AT_START, SIZE_AT_END, LAST_LEVEL = (3, 5), (4, 30), 50
 #: A monster fits a spot in the encounter if its PXP is within this share of the spot's.
 FIT = 0.3
 
@@ -145,10 +145,10 @@ def pick_encounter(content: Content, target_pxp: int, sizes: tuple[int, int], rn
 
 
 def layout(heroes: list[Combatant], foes: list[Combatant]) -> dict[int, dict[int, list[Combatant]]]:
-    def groups(side: list[Combatant]) -> dict[int, list[Combatant]]:
-        return {index: side[start:start + GROUP_SIZE] for index, start in enumerate(range(0, len(side), GROUP_SIZE))}
+    def groups(side: list[Combatant], size: int) -> dict[int, list[Combatant]]:
+        return {index: side[start:start + size] for index, start in enumerate(range(0, len(side), size))}
 
-    return {HEROES: groups(heroes), FOES: groups(foes)}
+    return {HEROES: groups(heroes, GROUP_SIZE), FOES: groups(foes, FOE_GROUP_SIZE)}
 
 
 # --- what happened -----------------------------------------------------------------------------------------------
@@ -371,7 +371,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--fights", type=int, default=100, help="fights at each level (default %(default)s)")
     parser.add_argument("--team", help="comma-separated job keys; four different jobs are drawn for each fight if left out")
     parser.add_argument("--difficulty", type=float, default=1.0, help="the encounter's strength as a multiple of the team's (default %(default)s)")
-    parser.add_argument("--foes", help="fewest-most monsters in an encounter, such as 3-5, at every level (by default 3-5 at level 1 rising to 4-14 at level 50)")
+    parser.add_argument("--foes", help="fewest-most monsters in an encounter, such as 3-5, at every level (by default 3-5 at level 1 rising to 4-30 at level 50)")
     parser.add_argument("--max-rounds", type=int, default=60, help="a fight that lasts longer is a timeout (default %(default)s)")
     parser.add_argument("--seed", type=int, default=1, help="the dice (default %(default)s)")
     parser.add_argument("--json", type=Path, help="also write the numbers here")

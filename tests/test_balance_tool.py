@@ -22,12 +22,21 @@ def content():
 
 def test_encounters_grow_with_the_level():
     assert balance.encounter_sizes(1) == (3, 5)
-    assert balance.encounter_sizes(50) == (4, 14)
+    assert balance.encounter_sizes(50) == (4, 30)
     assert balance.encounter_sizes(0) == (3, 5)  # below the first level counts as the first
-    assert balance.encounter_sizes(80) == (4, 14)  # and past the last as the last
+    assert balance.encounter_sizes(80) == (4, 30)  # and past the last as the last
     sizes = [balance.encounter_sizes(level) for level in range(1, 51)]
     assert all(low <= high for low, high in sizes)
     assert sizes == sorted(sizes), "neither bound ever goes down as the level goes up"
+
+
+def test_heroes_stand_in_groups_of_five_and_monsters_in_groups_of_ten(content):
+    heroes = [balance.hero_at_level(content, "fighter", 1, random.Random(1)) for _ in range(7)]
+    assert (balance.GROUP_SIZE, balance.FOE_GROUP_SIZE) == (5, 10)
+    for count, sizes in [(1, [1]), (5, [5]), (10, [10]), (11, [10, 1]), (25, [10, 10, 5]), (30, [10, 10, 10])]:
+        sides = balance.layout(heroes, [balance.foe(content, "slime") for _ in range(count)])
+        assert [len(group) for group in sides[balance.FOES].values()] == sizes
+        assert [len(group) for group in sides[balance.HEROES].values()] == [5, 2]
 
 
 def test_a_hero_is_made_as_the_engine_makes_one(content):
