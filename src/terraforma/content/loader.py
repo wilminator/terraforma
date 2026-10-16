@@ -10,7 +10,7 @@ from ..quests.rotation import apply_slots
 from ..quests.weekly import apply_templates
 from ..world.start import ensure_start
 from . import models
-from .schema import DROP_SCALE, RESOURCES, STATS, Strict, check_seed
+from .schema import DROP_SCALE, RESOURCES, STATS, Strict, check_seed, job_ability_key
 
 # Parents before the rows that name them.
 TABLES = {
@@ -52,6 +52,12 @@ async def load_content(session: AsyncSession, seed: dict[str, list[dict]], stats
     seed's to undo. The game's own rows follow the seed, as always.
     """
     checked = check_seed(seed, stats or STATS, resources or RESOURCES, drop_scale or DROP_SCALE)
+    brought_grants = (owners or {}).get("job_abilities", {})
+    if any(owner is not None for owner in brought_grants.values()):
+        # An add-on's job_abilities rows are components of their own: a job is stored with the game's grants only, and the live
+        # states add the ones that are on (gamestate.components). Everything was checked together above.
+        own = [raw for raw in seed["job_abilities"] if brought_grants.get(job_ability_key(raw["job"], raw["ability"])) is None]
+        checked["jobs"] = check_seed({**seed, "job_abilities": own}, stats or STATS, resources or RESOURCES, drop_scale or DROP_SCALE)["jobs"]
     counts = {}
     for kind, table in TABLES.items():
         if kind not in seed:
