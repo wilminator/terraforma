@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from starlette.testclient import TestClient
 
-from terraforma.addons import AddOn, AddOnError, integrate, layer_seeds, license_problem
+from terraforma.addons import SWITCHABLE, AddOn, AddOnError, integrate, layer_seeds, license_problem
 from terraforma.app import create_app
 from terraforma.content.models import Item
 from terraforma.example import GAME as EXAMPLE
@@ -122,8 +122,19 @@ def test_a_seed_file_that_is_not_json_names_its_owner(tmp_path):
 
 
 def test_rows_without_a_key_are_joined_without_a_clash(tmp_path):
-    layered = layer_seeds((("a", make_seed(tmp_path / "a", other=[{"n": 1}])), ("b", make_seed(tmp_path / "b", other=[{"n": 1}]))))
-    assert layered.rows["other"] == [{"n": 1}, {"n": 1}]
+    layered = layer_seeds((("a", make_seed(tmp_path / "a", items=[{"n": 1}])), ("b", make_seed(tmp_path / "b", items=[{"n": 1}]))))
+    assert layered.rows["items"] == [{"n": 1}, {"n": 1}]
+
+
+def test_an_addon_may_only_bring_kinds_of_content_that_can_be_switched_off(tmp_path):
+    from terraforma.content.loader import TABLES
+
+    assert set(SWITCHABLE) == set(TABLES), "the kinds with an active column are the ones an add-on may bring"
+    layer_seeds((("a", make_seed(tmp_path / "a", **{kind: [] for kind in SWITCHABLE})),))
+    for kind in ("maps", "dialogs", "npcs", "quest_slots", "quest_templates", "anything_else"):
+        with pytest.raises(AddOnError, match=f"the add-on a: {kind}.json cannot be used yet"):
+            layer_seeds((("a", make_seed(tmp_path / kind, **{kind: []})),))
+    layer_seeds(((None, make_seed(tmp_path / "game", maps=[], dialogs=[])),))  # (the game's own may have them all)
 
 
 # --- the assets --------------------------------------------------------------------------------------------------
@@ -215,16 +226,35 @@ def game(tmp_path):
 def test_a_listed_addons_content_and_assets_join_the_games(app_client):
     from terraforma.testing import in_app_db
 
-    async def keys(session):
-        return set((await session.execute(select(Item.key).where(Item.active))).scalars())
+    async def keys(session, active=True):
+        return set((await session.execute(select(Item.key).where(Item.active.is_(active)))).scalars())
 
-    assert in_app_db(app_client, keys) == {"herb", "tonic"}, "the unlisted add-on brings nothing"
+    assert in_app_db(app_client, keys) == {"herb"}, "an add-on's content starts off"
+    assert in_app_db(app_client, lambda session: keys(session, False)) == {"tonic"}, "(it is there, switched off; the unlisted add-on brings nothing)"
     assert [addon.key for addon in app_client.app.state.addons] == ["pack"]
     assert expect(app_client.get("/assets/base.svg"), 200).headers["content-type"].startswith("image/svg")
     expect(app_client.get("/assets/extra.svg"), 200)
     expect(app_client.get("/assets/unused.svg"), 404)
     expect(app_client.get("/assets/%2e%2e/seed/items.json"), 404)
     assert expect(app_client.get("/api/client"), 200).json()["assets"] == "/assets/"
+
+
+def test_reloading_the_seed_leaves_an_addons_switches_alone_but_the_games_rows_follow_the_seed(app_client, game):
+    from terraforma.content.loader import load_content
+    from terraforma.testing import in_app_db
+
+    layered = integrate(game, ["pack"]).load_seed()
+
+    async def switch(session):
+        (await session.scalar(select(Item).where(Item.key == "tonic"))).active = True  # (an admin switched it on, later slices)
+        (await session.scalar(select(Item).where(Item.key == "herb"))).active = False
+
+    async def reload(session):
+        await load_content(session, layered.rows, game.rules.stats, game.rules.resource_names, game.rules.drop_chance_scale, layered.owners)
+        return {item.key: item.active for item in await session.scalars(select(Item))}
+
+    in_app_db(app_client, switch)
+    assert in_app_db(app_client, reload) == {"herb": True, "tonic": True}
 
 
 def make_settings(tmp_path, *listed):

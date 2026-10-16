@@ -113,10 +113,10 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
         if game and integrated.seed_dirs:
             # A seed that doesn't check out stops the server here, naming what's wrong.
             async with app.state.sessionmaker() as session, session.begin():
-                seed = integrated.load_seed().rows
-                await load_content(session, seed, game.rules.stats, game.rules.resource_names, game.rules.drop_chance_scale)
+                layered = integrated.load_seed()
+                await load_content(session, layered.rows, game.rules.stats, game.rules.resource_names, game.rules.drop_chance_scale, layered.owners)
                 if integrated.asset_dirs:
-                    check_hero_back_views(seed, integrated.asset_dirs)
+                    check_hero_back_views(layered.rows, integrated.asset_dirs)
         timer = asyncio.create_task(fight_timer(app, settings.fight_timer_seconds)) if settings.fight_timer_seconds else None
         tidier = asyncio.create_task(housekeeping_timer(app, settings.housekeeping_seconds)) if settings.housekeeping_seconds else None
         yield
