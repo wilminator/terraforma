@@ -456,6 +456,8 @@ What an admin authors as settings is a *settings document*, kept twice: the **li
 - **The first state** (every section at its default) is made the first time anything looks at the state, by any server.
 - **No process state.** The live snapshot's id sits in one row; a server compares it and reloads on change.
 - **The calls** (admins; each its own route; the writes need the login and CSRF token and are rate-limited): `GET /api/admin/state`, `GET .../live`, `GET .../planned`, `GET .../history`, `POST .../check`, `PUT .../planned/sections/{name}`, `POST .../revert`, `POST .../commit`.
+- **Export and import.** `GET /api/admin/state/export` (`?source=live` for the live state) returns a file: `{"export_format": 1, "kind": "planned-state", "source", "hash", "modules", "document"}`. `modules` lists the add-ons installed, in layer order; `hash` is the document's. `POST /api/admin/state/import` (the same file as the body) puts the document in the **draft**, frozen, and never touches live: commit it as usual. An import is refused, with every problem named and nothing changed, if the file is not a good export, its hash does not match its document, it was made with other add-ons (the same list in the same order is required), or the document does not check out against this game's sections. Player saves are not part of it. The command line does the same: `python -m terraforma export-state FILE [--live] [GAME_APP]` and `python -m terraforma import-state FILE [GAME_APP]`.
+- **Not yet.** Seeds in the file, moving monsters, events and quest slots, and the maintenance-mode requirement come with the later slices (the draft is the only thing an import changes today).
 
 ## Manual quests (events)
 
