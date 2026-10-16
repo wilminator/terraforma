@@ -183,7 +183,7 @@ Until the first release there are no migration files: nothing is live, so the ta
 
 ## Seed data
 
-A game's starting content is JSON in its `seed/` folder (`Game(seed_dir=...)`): one file per kind of content, each a list of objects. These formats are a public interface, so changing one is deliberate and noted here.
+A game's starting content is JSON in its `seed/` folder (`Game(seed_dir=...)`): one file per kind of content, each a list of objects. A kind may also be split over several files: put them in a folder named for the kind (`seed/monsters/goblins.json`, `seed/monsters/bosses/dragons.json`; any depth, `.json` files only, names starting with `.` skipped), alone or beside `monsters.json`. The rows are joined, `monsters.json` first and then the folder's files in path order, and the result is checked as if it were one file. A `key` in two files of the same kind stops the server, naming both files. An add-on's seed folder works the same way. These formats are a public interface, so changing one is deliberate and noted here.
 
 | File | A row has |
 |---|---|
