@@ -151,6 +151,19 @@ class Needs:
         """The new quest's name (up to 64 characters)."""
         return f"Hunt: {', '.join(monsters)}"[:64]
 
+    async def dungeon(self, session: AsyncSession, rng: Random, band: Band, bosses: list[dict]) -> dict | None:
+        """Builds the place where $bosses (the promoted monsters, as stored in the quest) are fought, when the engine proposes a quest. The
+        game decides what that is: it may make a map in the database, pick one it has, or build nothing (None, the default: the quest has no dungeon
+        and the game's dialog finds somewhere to hold the fight). What it returns is a JSON object of the game's own (the map's key, say), kept
+        in the quest's ``spec["dungeon"]``, which the game's dialog reads when the quest is offered. It is called inside the transaction that records
+        the proposal, so a dungeon made here is undone with it; $rng is the same stream the bosses were drawn from, so a replayed world builds
+        the same one. A mistake raised here skips this band for the run (the others go on) and is logged."""
+        return None
+
+    async def dungeon_gone(self, session: AsyncSession, proposal_id: int, dungeon: dict) -> None:
+        """The quest holding $dungeon (as ``dungeon`` returned it) was rejected or retired, so the game may take the place down. Teams that took
+        the quest keep it, so a game that removes a map should wait until they are done. Does nothing by default."""
+
 
 class ManualQuests:
     """What a game decides about the events its admins write (``quests.manual``): an alliance competition, a coliseum tournament. A game

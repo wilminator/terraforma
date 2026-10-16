@@ -31,6 +31,10 @@ from .weekly_models import NEEDS, QuestTemplate
 log = logging.getLogger(__name__)
 
 
+class _Skip(Exception):
+    """The game's dungeon failed, so this band is left for the next run."""
+
+
 class NeedsError(service.QuestError):
     """Something the caller can fix: the message says what."""
 
@@ -98,12 +102,21 @@ async def run(session: AsyncSession, hooks: Needs, rules: Rules) -> list[QuestPr
             log.warning("quest needs: no monster the world has can be promoted for band %s", band.key)
             continue
         name = check_name(hooks.name(rng, band, [boss["monster"] for boss in found]))
-        proposal = QuestProposal(band=band.key, slot=band.slot, pxp_min=band.pxp_min, pxp_max=band.pxp_max, reason=reason, name=name,
-                                 spec=check_spec({"bosses": found, "band": band.key, "reason": reason}))
+        spec = {"bosses": found, "band": band.key, "reason": reason}
+        proposal = QuestProposal(band=band.key, slot=band.slot, pxp_min=band.pxp_min, pxp_max=band.pxp_max, reason=reason, name=name, spec=spec)
         try:
-            async with session.begin_nested():
+            async with session.begin_nested():  # (the game's dungeon is undone with the proposal if another server won the band)
+                try:
+                    if (dungeon := await hooks.dungeon(session, rng, band, found)) is not None:
+                        spec["dungeon"] = dungeon
+                    check_spec(spec)
+                except Exception:  # (a game's mistake must not stop the other bands: the nested transaction is rolled back)
+                    log.exception("quest needs: the game's dungeon for band %s failed", band.key)
+                    raise _Skip from None
                 session.add(proposal)
                 await session.flush()
+        except _Skip:
+            continue
         except IntegrityError:  # (another server made one just now)
             continue
         if not hooks.needs_approval(band):
@@ -133,17 +146,24 @@ async def approve(session: AsyncSession, proposal_id: int) -> QuestProposal:
     return proposal
 
 
-async def reject(session: AsyncSession, proposal_id: int) -> QuestProposal:
+async def _dungeon_gone(session: AsyncSession, hooks: Needs | None, proposal: QuestProposal) -> None:
+    """Tells the game its dungeon for the proposal is no longer wanted (only when there is one and the caller has the game's hooks)."""
+    if hooks is not None and isinstance(proposal.spec, dict) and proposal.spec.get("dungeon") is not None:
+        await hooks.dungeon_gone(session, proposal.id, proposal.spec["dungeon"])
+
+
+async def reject(session: AsyncSession, proposal_id: int, hooks: Needs | None = None) -> QuestProposal:
     """Turns a proposal down; the band may get a new one at the next run if the gap is still there."""
     proposal = await get(session, proposal_id)
     if proposal.status != PROPOSED:
         raise NeedsError(f"that proposal is already {proposal.status}")
     proposal.status, proposal.open = REJECTED, None
     await session.flush()
+    await _dungeon_gone(session, hooks, proposal)
     return proposal
 
 
-async def retire(session: AsyncSession, proposal_id: int) -> QuestProposal:
+async def retire(session: AsyncSession, proposal_id: int, hooks: Needs | None = None) -> QuestProposal:
     """Takes a live quest out of its slot (its template goes inactive; teams that took it keep it). The band may get a new proposal."""
     proposal = await get(session, proposal_id)
     if proposal.status != LIVE:
@@ -151,6 +171,7 @@ async def retire(session: AsyncSession, proposal_id: int) -> QuestProposal:
     (await session.get(QuestTemplate, proposal.template_id)).active = False
     proposal.status, proposal.open = RETIRED, None
     await session.flush()
+    await _dungeon_gone(session, hooks, proposal)
     return proposal
 
 
