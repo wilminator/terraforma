@@ -58,6 +58,8 @@ from .profiles.routes import router as profiles_router
 from .social.routes import router as social_router
 from .quests.manual_routes import router as manual_quests_router
 from .content.routes import router as content_router
+from .gamestate.routes import router as gamestate_router
+from .gamestate.document import sections_by_name
 from .quests.manual_routes import router as manual_quests_router
 from .quests.needs_routes import router as needs_router
 from .quests.rotation_routes import router as rotation_router
@@ -132,6 +134,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app = FastAPI(title=game.name if game else "TerraForma", lifespan=lifespan)
     app.state.settings = settings
     app.state.game = game
+    app.state.state_sections = sections_by_name(game.state_sections if game else ())
     app.state.addons = integrated.addons
     app.state.asset_dirs = integrated.asset_dirs
     app.state.fights = FightChannels()
@@ -172,6 +175,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(needs_router)
     app.include_router(manual_quests_router)
     app.include_router(content_router)
+    app.include_router(gamestate_router)
     app.include_router(manual_quests_router)
     app.include_router(fighttags_router)
     app.include_router(fightpages_router)
