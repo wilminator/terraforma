@@ -84,6 +84,8 @@ class Monster(ContentRow, Base):
     # The drop tables (keys) it rolls when it dies. (Null until the seed is loaded again, for rows older than drops.)
     drops: Mapped[list | None] = mapped_column(JSON)
     ai: Mapped[dict] = mapped_column(JSON)
+    # Written by an admin (``content.authoring``), not the seed: loading the seed never marks it inactive. A seed row with its key takes it over.
+    authored: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
 
 
 class DropTable(ContentRow, Base):

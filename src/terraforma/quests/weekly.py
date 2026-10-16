@@ -2,6 +2,9 @@
 
 ``offer`` gives a team its quest for this week (the same one if asked again); the game starts and finishes it with ``start`` and
 ``finish`` (a quest not started when the week ends simply lapses, and a team that fails one has lost it: there is no second try).
+A quest taken has a wall-clock limit, the game's ``WeeklyQuests.limit_seconds``: no clock runs anywhere, so a team's overdue quest fails
+with ``timeout`` the next time anything touches the team (``settle``). A team that fails by timeout or by poor performance costs whatever
+the game's ``WeeklyQuests.penalty`` says (nothing by default).
 ``promote`` makes a generated quest a permanent template, with or without tweaks. The quest's contents are the game's (``WeeklyQuests``)."""
 
 import json
@@ -20,6 +23,7 @@ from ..world.rng import WorldRng
 from ..world.start import ensure_start
 from . import service
 from .hooks import WeeklyQuests
+from .rotation_models import POOR_PERFORMANCE, TIMEOUT
 from .weekly_models import ACTIVE, COMPLETED, FAILED, FROM_TEMPLATE, GENERATED, OFFERED, PROMOTED, SEEDED, QuestTemplate, WeeklyQuest
 
 WEEK_SECONDS = 7 * 24 * 60 * 60
@@ -83,8 +87,28 @@ async def current(session: AsyncSession, team_id: int, week: int | None = None) 
     return await session.scalar(select(WeeklyQuest).where(WeeklyQuest.team_id == team_id, WeeklyQuest.week == week))
 
 
-async def active(session: AsyncSession, team_id: int) -> WeeklyQuest | None:
-    """The team's started, unfinished quest: the latest, which may be last week's (a quest started in time may finish late)."""
+async def settle(session: AsyncSession, hooks: WeeklyQuests, team_id: int) -> None:
+    """Fails the team's started quest if its time ran out: ``timeout``, and the game's penalty applies. Called by everything that touches a
+    team's weekly quests."""
+    quest = await _started(session, team_id)
+    if quest is not None and wallclock.timestamp() > (quest.deadline or 0):
+        await _fail(session, hooks, quest, TIMEOUT)
+
+
+async def _fail(session: AsyncSession, hooks: WeeklyQuests, quest: WeeklyQuest, reason: str) -> None:
+    quest.status, quest.failure, quest.finished_at = FAILED, reason, wallclock.now()
+    await session.flush()
+    if quest.team_id is not None:
+        await hooks.penalty(session, quest.team_id, quest, reason)
+
+
+async def active(session: AsyncSession, hooks: WeeklyQuests, team_id: int) -> WeeklyQuest | None:
+    """The team's started, unfinished quest in time: the latest, which may be last week's (a quest started in time may finish late)."""
+    await settle(session, hooks, team_id)
+    return await _started(session, team_id)
+
+
+async def _started(session: AsyncSession, team_id: int) -> WeeklyQuest | None:
     return await session.scalar(select(WeeklyQuest).where(WeeklyQuest.team_id == team_id, WeeklyQuest.status == ACTIVE).order_by(WeeklyQuest.week.desc()).limit(1))
 
 
@@ -95,6 +119,7 @@ async def offer(session: AsyncSession, hooks: WeeklyQuests, team_id: int) -> Wee
     if await session.get(Team, team_id) is None:
         raise WeeklyError("there's no such team")
     week = week_of(wallclock.timestamp())
+    await settle(session, hooks, team_id)
     existing = await current(session, team_id, week)
     if existing is not None:
         return existing
@@ -128,29 +153,48 @@ async def get(session: AsyncSession, quest_id: int) -> WeeklyQuest:
     return quest
 
 
-async def start(session: AsyncSession, quest_id: int) -> WeeklyQuest:
-    """The team takes the quest (this week's only): from now on it can be finished, and not walked away from."""
+async def start(session: AsyncSession, hooks: WeeklyQuests, quest_id: int) -> WeeklyQuest:
+    """The team takes the quest (this week's only): from now on it can be finished, and not walked away from. The clock runs: the team has
+    ``hooks.limit_seconds`` for it."""
     quest = await get(session, quest_id)
     if quest.status != OFFERED:
         raise WeeklyError(f"that quest is already {quest.status}")
     if quest.week != week_of(wallclock.timestamp()):
         raise WeeklyError("that quest was last week's and has lapsed")
-    quest.status = ACTIVE
+    limit = hooks.limit_seconds(quest.level)
+    if limit < 1:
+        raise WeeklyError("a quest's time limit is at least a second")
+    if quest.team_id is not None:
+        await settle(session, hooks, quest.team_id)
+        if await _started(session, quest.team_id) is not None:
+            raise WeeklyError("the team is already on a weekly quest")
+    quest.status, quest.started_at = ACTIVE, wallclock.timestamp()
+    quest.deadline = quest.started_at + limit
     await session.flush()
     return quest
 
 
-async def finish(session: AsyncSession, quest_id: int, won: bool) -> WeeklyQuest:
-    """A started quest ends. Won, it is added to the team's quest record (category ``weekly``, at its level); failed, it is lost for the week.
-    A quest started in time may finish after the week turns."""
+async def finish(session: AsyncSession, hooks: WeeklyQuests, quest_id: int, won: bool, reason: str = POOR_PERFORMANCE) -> WeeklyQuest:
+    """A started quest ends. Won in time, it is added to the team's quest record (category ``weekly``, at its level); lost, it is lost for the
+    week and the game's penalty applies for $reason (``poor_performance`` unless the game says otherwise). A quest started in time may finish
+    after the week turns, but not after its own deadline: it has already failed with ``timeout``, whatever the outcome."""
     quest = await get(session, quest_id)
+    was = quest.status
+    if was == ACTIVE and quest.team_id is not None:
+        await settle(session, hooks, quest.team_id)
+    if was == ACTIVE and quest.status == FAILED:
+        return quest  # (ran out of time first)
     if quest.status != ACTIVE:
         raise WeeklyError("only a quest that was started can be finished" if quest.status == OFFERED else f"that quest is already {quest.status}")
-    quest.status = COMPLETED if won else FAILED
-    quest.finished_at = wallclock.now()
-    if won and quest.team_id is not None:
-        await service.complete(session, quest.team_id, CATEGORY, quest.level)
-    await session.flush()
+    if reason not in (TIMEOUT, POOR_PERFORMANCE):
+        raise WeeklyError("a quest fails for running out of time or for poor performance")
+    if won:
+        quest.status, quest.finished_at = COMPLETED, wallclock.now()
+        if quest.team_id is not None:
+            await service.complete(session, quest.team_id, CATEGORY, quest.level)
+        await session.flush()
+    else:
+        await _fail(session, hooks, quest, reason)
     return quest
 
 
@@ -204,7 +248,7 @@ async def forget_team(session: AsyncSession, team_id: int) -> None:
 def view(quest: WeeklyQuest) -> dict:
     """What a player sees of their quest."""
     return {"id": quest.id, "week": quest.week, "ends": week_ends(quest.week).isoformat(), "name": quest.name, "level": quest.level,
-            "status": quest.status, "spec": quest.spec}
+            "status": quest.status, "spec": quest.spec, "started": quest.started_at, "deadline": quest.deadline, "failure": quest.failure}
 
 
 def admin_view(quest: WeeklyQuest) -> dict:

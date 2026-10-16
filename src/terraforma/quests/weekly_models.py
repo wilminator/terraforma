@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db.base import Base, Timestamps
@@ -62,3 +62,9 @@ class WeeklyQuest(Timestamps, Base):
     spec: Mapped[dict] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String(16), default=OFFERED)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The wall-clock limit once the quest is taken: seconds since 1970 when the team started it, and when its time runs out (the game's
+    # ``WeeklyQuests.limit_seconds`` after the start).
+    started_at: Mapped[int | None] = mapped_column(BigInteger)
+    deadline: Mapped[int | None] = mapped_column(BigInteger)
+    # Why a quest failed (``timeout`` or ``poor_performance``, as in ``rotation_models``); None for one that did not.
+    failure: Mapped[str | None] = mapped_column(String(24))
