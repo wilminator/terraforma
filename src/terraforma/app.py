@@ -56,6 +56,7 @@ from .fighttags.routes import router as fighttags_router
 from .fightpages.routes import router as fightpages_router
 from .profiles.routes import router as profiles_router
 from .social.routes import router as social_router
+from .quests.manual_routes import router as manual_quests_router
 from .content.routes import router as content_router
 from .quests.manual_routes import router as manual_quests_router
 from .quests.needs_routes import router as needs_router
@@ -166,6 +167,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(weekly_quests_router)
     app.include_router(rotation_router)
     app.include_router(needs_router)
+    app.include_router(manual_quests_router)
     app.include_router(content_router)
     app.include_router(manual_quests_router)
     app.include_router(fighttags_router)
