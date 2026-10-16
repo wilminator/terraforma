@@ -175,36 +175,133 @@ async def test_a_started_quest_won_is_added_to_the_teams_record(db):
     team = await a_team(db, level=3)
     quest = await weekly.offer(db, Maker(), team.id)
     with pytest.raises(weekly.WeeklyError):
-        await weekly.finish(db, quest.id, True)  # (not started)
-    await weekly.start(db, quest.id)
+        await weekly.finish(db, Maker(), quest.id, True)  # (not started)
+    await weekly.start(db, Maker(), quest.id)
     with pytest.raises(weekly.WeeklyError):
-        await weekly.start(db, quest.id)
-    won = await weekly.finish(db, quest.id, True)
+        await weekly.start(db, Maker(), quest.id)
+    won = await weekly.finish(db, Maker(), quest.id, True)
     assert won.status == "completed" and won.finished_at is not None
     assert await quests.completed(db, team.id, weekly.CATEGORY, 3) == 1
     with pytest.raises(weekly.WeeklyError):
-        await weekly.finish(db, quest.id, False)
+        await weekly.finish(db, Maker(), quest.id, False)
 
 
 async def test_a_failed_quest_is_lost_for_the_week_and_records_nothing(db):
     team = await a_team(db)
     quest = await weekly.offer(db, Maker(), team.id)
-    await weekly.start(db, quest.id)
-    assert (await weekly.finish(db, quest.id, False)).status == "failed"
+    await weekly.start(db, Maker(), quest.id)
+    assert (await weekly.finish(db, Maker(), quest.id, False)).status == "failed"
     assert (await weekly.offer(db, Maker(), team.id)).id == quest.id, "the same, failed quest: no second try"
     assert await quests.completed(db, team.id, weekly.CATEGORY) == 0
 
 
+class Patient(Maker):
+    """A game that gives a taken quest two weeks."""
+
+    def limit_seconds(self, level):
+        return 2 * weekly.WEEK_SECONDS
+
+
+class Penalizing(Maker):
+    """A game that records what failing costs."""
+
+    def __init__(self):
+        self.failed = []
+
+    async def penalty(self, session, team_id, quest, reason):
+        self.failed.append((team_id, quest.id, reason))
+
+
 async def test_a_quest_not_taken_in_its_week_lapses_but_one_taken_may_finish_late(db, later):
     team = await a_team(db)
-    lapsing, taken = await weekly.offer(db, Maker(), team.id), None
-    await weekly.start(db, lapsing.id)
+    lapsing, taken = await weekly.offer(db, Patient(), team.id), None
+    await weekly.start(db, Patient(), lapsing.id)
     other = await a_team(db, "Rearguard")
-    taken = await weekly.offer(db, Maker(), other.id)
+    taken = await weekly.offer(db, Patient(), other.id)
     later(weekly.WEEK_SECONDS)
     with pytest.raises(weekly.WeeklyError):
-        await weekly.start(db, taken.id)
-    assert (await weekly.finish(db, lapsing.id, True)).status == "completed"
+        await weekly.start(db, Patient(), taken.id)
+    assert (await weekly.finish(db, Patient(), lapsing.id, True)).status == "completed"
+
+
+# --- the time limit and the penalty ------------------------------------------------------------------------------------
+
+async def test_a_taken_quest_has_a_deadline_of_the_games_limit_a_day_by_default(db):
+    quest = await weekly.offer(db, Maker(), (await a_team(db)).id)
+    started = await weekly.start(db, Maker(), quest.id)
+    assert started.deadline == started.started_at + 24 * 60 * 60
+    assert weekly.view(started)["deadline"] == started.deadline
+    other = await weekly.offer(db, Patient(), (await a_team(db, "Rearguard")).id)
+    taken = await weekly.start(db, Patient(), other.id)
+    assert taken.deadline == taken.started_at + 2 * weekly.WEEK_SECONDS
+
+
+async def test_a_quest_not_finished_by_its_deadline_fails_with_timeout_and_costs_the_penalty(db, later):
+    hooks, team = Penalizing(), await a_team(db)
+    quest = await weekly.offer(db, hooks, team.id)
+    await weekly.start(db, hooks, quest.id)
+    later(24 * 60 * 60)
+    assert (await weekly.active(db, hooks, team.id)) is not None, "right at the deadline there is still time"
+    later(24 * 60 * 60 + 1)
+    assert await weekly.active(db, hooks, team.id) is None
+    failed = await weekly.get(db, quest.id)
+    assert failed.status == "failed" and failed.failure == "timeout" and failed.finished_at is not None
+    assert hooks.failed == [(team.id, quest.id, "timeout")]
+    assert await weekly.active(db, hooks, team.id) is None and len(hooks.failed) == 1, "the penalty is charged once"
+    assert await quests.completed(db, team.id, weekly.CATEGORY) == 0
+
+
+async def test_a_win_reported_after_the_deadline_is_a_timeout_not_a_win(db, later):
+    hooks, team = Penalizing(), await a_team(db)
+    quest = await weekly.offer(db, hooks, team.id)
+    await weekly.start(db, hooks, quest.id)
+    later(24 * 60 * 60 + 1)
+    late = await weekly.finish(db, hooks, quest.id, True)
+    assert late.status == "failed" and late.failure == "timeout"
+    assert await quests.completed(db, team.id, weekly.CATEGORY) == 0
+    assert hooks.failed == [(team.id, quest.id, "timeout")]
+
+
+async def test_a_loss_in_time_is_poor_performance_unless_the_game_says_otherwise(db):
+    hooks, team = Penalizing(), await a_team(db)
+    quest = await weekly.offer(db, hooks, team.id)
+    await weekly.start(db, hooks, quest.id)
+    lost = await weekly.finish(db, hooks, quest.id, False)
+    assert lost.failure == "poor_performance" and hooks.failed == [(team.id, quest.id, "poor_performance")]
+    other, rival = Penalizing(), await a_team(db, "Rearguard")
+    second = await weekly.offer(db, other, rival.id)
+    await weekly.start(db, other, second.id)
+    with pytest.raises(weekly.WeeklyError):
+        await weekly.finish(db, other, second.id, False, "bored")
+    assert (await weekly.finish(db, other, second.id, False, "timeout")).failure == "timeout"
+
+
+async def test_a_win_in_time_costs_nothing_and_the_default_penalty_does_nothing(db):
+    hooks, team = Penalizing(), await a_team(db)
+    quest = await weekly.offer(db, hooks, team.id)
+    await weekly.start(db, hooks, quest.id)
+    assert (await weekly.finish(db, hooks, quest.id, True)).failure is None and hooks.failed == []
+    rival = await a_team(db, "Rearguard")
+    second = await weekly.offer(db, Maker(), rival.id)
+    await weekly.start(db, Maker(), second.id)
+    assert (await weekly.finish(db, Maker(), second.id, False)).status == "failed"
+
+
+async def test_offering_settles_an_overdue_quest_and_a_team_takes_one_quest_at_a_time(db, later):
+    hooks, team = Penalizing(), await a_team(db)
+    quest = await weekly.offer(db, hooks, team.id)
+    await weekly.start(db, hooks, quest.id)
+    later(24 * 60 * 60 + 1)
+    assert (await weekly.offer(db, hooks, team.id)).status == "failed" and len(hooks.failed) == 1
+    later(weekly.WEEK_SECONDS)
+    fresh = await weekly.offer(db, Patient(), team.id)
+    assert fresh.id != quest.id
+    await weekly.start(db, Patient(), fresh.id)
+    later(weekly.WEEK_SECONDS * 2)
+    again = await weekly.offer(db, Patient(), team.id)
+    assert again.id != fresh.id and again.status == "offered", "the last quest was still in time, so the new week's is offered beside it"
+    with pytest.raises(weekly.WeeklyError, match="already on a weekly quest"):
+        await weekly.start(db, Patient(), again.id)
 
 
 # --- recording and promoting -------------------------------------------------------------------------------------------
@@ -308,7 +405,7 @@ def test_a_player_asks_for_a_quest_and_gets_the_same_one_all_week(app_client, la
     team = make_team(app_client, mike, "Vanguard")["id"]
     assert expect(app_client.get(f"/api/teams/{team}/weekly-quest"), 200).json() == {"quest": None}
     quest = expect(app_client.post(f"/api/teams/{team}/weekly-quest/offer", headers=mike), 200).json()["quest"]
-    assert set(quest) == {"id", "week", "ends", "name", "level", "status", "spec"} and quest["status"] == "offered"
+    assert set(quest) == {"id", "week", "ends", "name", "level", "status", "spec", "started", "deadline", "failure"} and quest["status"] == "offered"
     assert expect(app_client.post(f"/api/teams/{team}/weekly-quest/offer", headers=mike), 200).json()["quest"] == quest
     assert expect(app_client.get(f"/api/teams/{team}/weekly-quest"), 200).json()["quest"] == quest
     later(timedelta(days=8).total_seconds())
@@ -395,12 +492,25 @@ async def test_a_dialog_finishing_a_win_records_it_even_after_the_week_turns(db,
     from .test_npc_state import a_party, check, npc_says
 
     p = await a_party(db)
-    db.info["weekly_quests"] = Maker()
+    db.info["weekly_quests"] = Patient()
     aria = p.heroes[0]
     assert await npc_says(db, aria, "`weekly_quest,offer,no``weekly_quest,start,no`yes`jump,end``label,no`no") == "yes"
     later(weekly.WEEK_SECONDS)
     assert await npc_says(db, aria, "`weekly_quest,finish_win,no`yes`jump,end``label,no`no") == "yes"
     assert await quests.completed(db, p.teams[0], weekly.CATEGORY) == 1
+
+
+async def test_a_dialog_finishing_after_the_deadline_finds_the_quest_already_failed(db, later):
+    from .test_npc_state import a_party, npc_says
+
+    p = await a_party(db)
+    db.info["weekly_quests"] = hooks = Penalizing()
+    aria = p.heroes[0]
+    assert await npc_says(db, aria, "`weekly_quest,offer,no``weekly_quest,start,no`yes`jump,end``label,no`no") == "yes"
+    later(24 * 60 * 60 + 1)
+    assert await npc_says(db, aria, "`weekly_quest,finish_win,no`yes`jump,end``label,no`no") == "no", "no quest in time to finish"
+    assert await quests.completed(db, p.teams[0], weekly.CATEGORY) == 0
+    assert [reason for _, _, reason in hooks.failed] == ["timeout"]
 
 
 async def test_a_game_that_makes_no_quest_sends_the_dialog_to_the_label(db):

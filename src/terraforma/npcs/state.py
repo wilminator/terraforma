@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..challenge import service as challenge
 from ..content.models import Item
 from ..economy import Economy, NotEnoughGold
+from ..fights import live
 from ..fights.rules import Rules
 from ..guild import ranks
 from ..heroes import inventory
@@ -23,7 +24,7 @@ from ..models import Account, Map
 from ..parties.models import Party
 from ..quests import service as quests
 from ..quests import weekly
-from ..quests import manual, rotation
+from ..quests import bossfight, manual, rotation
 from ..quests.manual_models import PUBLISHED, ManualQuest
 from ..quests.hooks import ManualQuests, RotatingQuests, WeeklyQuests
 from ..quests.weekly_models import OFFERED, QuestTemplate
@@ -137,23 +138,25 @@ class DialogState:
     async def weekly_quest(self, action: str, label: str) -> str:
         """The talking hero's own team's weekly quest. ``offer``: this week's (made if need be); the label if the game makes none or the team
         already finished it. ``start``: takes the quest that was offered; the label if there is none to start. ``finish_win`` and
-        ``finish_lose``: end the active quest (even one started last week); the label if none is active."""
+        ``finish_lose``: end the active quest (even one started last week, while it is in time: an overdue one has already failed with a timeout);
+        the label if none is active."""
         team_id = await self.team_id()
         if team_id is None:
             raise ScriptError("a hero on no team has no weekly quest: put them on a team")
+        hooks = self.session.info.get("weekly_quests") or WeeklyQuests()
         if action == "offer":
-            quest = await weekly.offer(self.session, self.session.info.get("weekly_quests") or WeeklyQuests(), team_id)
+            quest = await weekly.offer(self.session, hooks, team_id)
             return label if quest is None or quest.status not in (OFFERED, weekly.ACTIVE) else ""
         if action == "start":
             quest = await weekly.current(self.session, team_id)
             if quest is None or quest.status != OFFERED:
                 return label
-            await weekly.start(self.session, quest.id)
+            await weekly.start(self.session, hooks, quest.id)
             return ""
-        quest = await weekly.active(self.session, team_id)
+        quest = await weekly.active(self.session, hooks, team_id)
         if quest is None:
             return label
-        await weekly.finish(self.session, quest.id, action == "finish_win")
+        await weekly.finish(self.session, hooks, quest.id, action == "finish_win")
         return ""
 
     async def slot_quest(self, slot: str, action: str, label: str) -> str:
@@ -182,6 +185,31 @@ class DialogState:
         except rotation.RotationError as error:
             raise ScriptError(str(error)) from error
         return ""
+
+    async def slot_boss(self, slot: str, action: str, label: str) -> str:
+        """The boss fight of the slot quest the talking hero's team took (``quests.bossfight``). ``fight``: the party the hero acts in fights
+        the quest's bosses; the label if the team has no such quest, or the party cannot fight (apart in a town, a hero already in a fight).
+        ``won`` and ``lost``: finish the team's quest by how its fight ended; the label if there is no result of that kind."""
+        team_id = await self.team_id()
+        if team_id is None:
+            raise ScriptError("a hero on no team has no slot quest: put them on a team")
+        hooks = self.session.info.get("rotating_quests") or RotatingQuests()
+        try:
+            await rotation.get_slot(self.session, slot)
+            if action != "fight":
+                return "" if await bossfight.settle(self.session, hooks, team_id, slot, bossfight.WON if action == "won" else bossfight.LOST) else label
+            acting = await self.party()
+            if acting is None or acting.ethereal:
+                return label
+            if self.rules is None:
+                raise ScriptError("this dialog starts a boss fight (slot_boss), which needs the game's rules, and there are none to use")
+            try:
+                record = await bossfight.start(self.session, hooks, self.rules, acting.party_id, acting.team_ids, slot, team_id)
+            except live.Refused:
+                return label
+        except rotation.RotationError as error:
+            raise ScriptError(str(error)) from error
+        return label if record is None else ""
 
     async def manual_quest(self, event: str, action: str, label: str) -> str:
         """The talking hero's own team's entry in an admin's event (``quests.manual``). ``enter``: enters the event while it is open (the label if

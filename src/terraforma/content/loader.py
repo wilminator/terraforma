@@ -32,6 +32,8 @@ def _values(kind: str, row: Strict) -> dict:
             name: values.pop(name)
             for name in ("base", "equip", "flee", "hit", "die", "attack_close", "attack_throw", "attack_shoot", "skill", "spell", "item")
         }
+    if kind == "monsters":
+        values["authored"] = False  # a seed row with an admin-authored monster's key takes it over
     return {**values, "active": True}
 
 
@@ -51,9 +53,10 @@ async def load_content(session: AsyncSession, seed: dict[str, list[dict]], stats
         rows = checked[kind]
         for row in rows:
             await upsert(session, table.__table__, _values(kind, row), ["key"])
-        await session.execute(
-            update(table).where(table.key.not_in([row.key for row in rows])).values(active=False)
-        )
+        gone = update(table).where(table.key.not_in([row.key for row in rows]))
+        if kind == "monsters":
+            gone = gone.where(models.Monster.authored.is_(False))  # an admin's monsters are not the seed's to retire
+        await session.execute(gone.values(active=False))
         counts[kind] = len(rows)
     if "maps" in seed:
         # Maps belong to a world: the engine's, made first if this is a new database.
