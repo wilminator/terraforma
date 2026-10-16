@@ -22,6 +22,7 @@ from .chat.hooks import Chat
 from .voice.hooks import Voice
 from .pvp.hooks import PvpZones
 from .market.hooks import Market
+from .guild.fees import Fees
 from .guild.hooks import Guild
 from .quests.hooks import ManualQuests, Needs, RotatingQuests, WeeklyQuests
 from .heroes.hooks import Roster, Start
@@ -87,6 +88,8 @@ class Game:
     roster: Roster = field(default_factory=Roster)
     # Whether teams (or accounts) keep items in storage beside the heroes' packs, how much, and when it may be used (none, by default).
     storage: Storage = field(default_factory=NoStorage)
+    # What a guild charges a team for its services: the base price to everyone, by default (``guild.fees``).
+    fees: Fees = field(default_factory=Fees)
     # Two things about logging in: how long a browser that proved a second factor may skip it, and the note a player with a single
     # second factor sees (see accounts.hooks).
     sign_in: SignIn = field(default_factory=SignIn)
