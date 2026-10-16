@@ -137,23 +137,25 @@ class DialogState:
     async def weekly_quest(self, action: str, label: str) -> str:
         """The talking hero's own team's weekly quest. ``offer``: this week's (made if need be); the label if the game makes none or the team
         already finished it. ``start``: takes the quest that was offered; the label if there is none to start. ``finish_win`` and
-        ``finish_lose``: end the active quest (even one started last week); the label if none is active."""
+        ``finish_lose``: end the active quest (even one started last week, while it is in time: an overdue one has already failed with a timeout);
+        the label if none is active."""
         team_id = await self.team_id()
         if team_id is None:
             raise ScriptError("a hero on no team has no weekly quest: put them on a team")
+        hooks = self.session.info.get("weekly_quests") or WeeklyQuests()
         if action == "offer":
-            quest = await weekly.offer(self.session, self.session.info.get("weekly_quests") or WeeklyQuests(), team_id)
+            quest = await weekly.offer(self.session, hooks, team_id)
             return label if quest is None or quest.status not in (OFFERED, weekly.ACTIVE) else ""
         if action == "start":
             quest = await weekly.current(self.session, team_id)
             if quest is None or quest.status != OFFERED:
                 return label
-            await weekly.start(self.session, quest.id)
+            await weekly.start(self.session, hooks, quest.id)
             return ""
-        quest = await weekly.active(self.session, team_id)
+        quest = await weekly.active(self.session, hooks, team_id)
         if quest is None:
             return label
-        await weekly.finish(self.session, quest.id, action == "finish_win")
+        await weekly.finish(self.session, hooks, quest.id, action == "finish_win")
         return ""
 
     async def slot_quest(self, slot: str, action: str, label: str) -> str:
