@@ -20,9 +20,9 @@ const t = (key, values) => shell.text.get(key, values);
 const token = new URLSearchParams(location.search).get("token");
 if (token !== null) history.replaceState(null, "", location.pathname + location.hash);
 
-// The game's page sends a logged-out player here with ?next=play (the profile page, ?next=profile; the alliance pages, ?next=alliances); once they are in, they go
+// The game's page sends a logged-out player here with ?next=play (the profile page, ?next=profile; the alliance pages, ?next=alliances; the admin page, ?next=admin); once they are in, they go
 // back. Only those names are understood, never an address, so the link can't be used to send a player somewhere else.
-const WAYS_BACK = { play: "/play/", profile: "/profile/", alliances: "/alliances/" };
+const WAYS_BACK = { play: "/play/", profile: "/profile/", alliances: "/alliances/", admin: "/admin/" };
 const asked = new URLSearchParams(location.search);
 const next = asked.get("next");
 // The sign-in provider (oidc/routes.py) sends a player here with ?next=oidc&request=<the site's request, signed by the server>; once they are in, they
