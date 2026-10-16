@@ -23,8 +23,9 @@ from ..models import Account, Map
 from ..parties.models import Party
 from ..quests import service as quests
 from ..quests import weekly
-from ..quests import rotation
-from ..quests.hooks import RotatingQuests, WeeklyQuests
+from ..quests import manual, rotation
+from ..quests.manual_models import PUBLISHED, ManualQuest
+from ..quests.hooks import ManualQuests, RotatingQuests, WeeklyQuests
 from ..quests.weekly_models import OFFERED, QuestTemplate
 from ..standing import service as standing
 from ..towns import service as towns
@@ -179,6 +180,33 @@ class DialogState:
                 return label
             await rotation.finish(self.session, hooks, progress.id, action == "finish_win")
         except rotation.RotationError as error:
+            raise ScriptError(str(error)) from error
+        return ""
+
+    async def manual_quest(self, event: str, action: str, label: str) -> str:
+        """The talking hero's own team's entry in an admin's event (``quests.manual``). ``enter``: enters the event while it is open (the label if
+        there is no such open event, it is full or the game refuses the team). ``finish_win`` and ``finish_lose``: end the entry that is still
+        running (the label if there is none, or its time ran out)."""
+        team_id = await self.team_id()
+        if team_id is None:
+            raise ScriptError("a hero on no team has no event entry: put them on a team")
+        hooks = self.session.info.get("manual_quests") or ManualQuests()
+        try:
+            if action == "enter":
+                quest = await self.session.scalar(select(ManualQuest).where(ManualQuest.key == event, ManualQuest.status == PUBLISHED))
+                if quest is None:
+                    return label
+                try:
+                    await manual.enter(self.session, hooks, team_id, quest.id)
+                except manual.ManualError:
+                    return label
+                return ""
+            await manual.settle(self.session, hooks, team_id)
+            entry = await manual.active(self.session, team_id, event)
+            if entry is None:
+                return label
+            await manual.finish(self.session, hooks, entry.id, action == "finish_win")
+        except manual.ManualError as error:
             raise ScriptError(str(error)) from error
         return ""
 
