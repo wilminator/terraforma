@@ -6,12 +6,15 @@ A component is one row an add-on brought (an item, a monster, a job...). Compone
     {"states": {"<add-on key>": {"<kind>": {"<row key>": "on"}}}}
 
 A row that is not listed is off. That is the first degree of off, *no new use*: it is not offered, sold, dropped, spawned or picked,
-and what exists keeps working. (The second, force disuse, is a later slice and adds a state.) The document holds nothing else, so the
-same states always make the same text and hash, and an entry that says what is already true is refused.
+and what exists keeps working. The second degree is the state ``"disused"``: the row is off *and* the heroes that hold it must stop
+(``terraforma.disuse``: a job, an ability or an item a hero has; nothing else is held). A disused row is switched back on, or to off,
+by listing it so, and nothing is ever removed. The document holds nothing else, so the same states always make the same text and hash,
+and an entry that says what is already true is refused.
 
 ``Components`` is the engine's own section (``create_app`` registers it ahead of the game's). Committing, and every start, sets the
 ``active`` column of the add-on rows to match the live states, which is what every offer, shop, drop, spawn and job pick already
-reads, so none of them knows add-ons exist. The check refuses a document with an on row that needs one that is off.
+reads, so none of them knows add-ons exist, and ``disused`` on a disused row, which the heroes' force disuse reads. The check refuses a
+document with an on row that needs one that is not on.
 """
 
 import copy
@@ -27,7 +30,8 @@ from .document import Section
 
 NAME = "components"
 ON = "on"
-STATES = (ON,)
+DISUSED = "disused"
+STATES = (ON, DISUSED)
 
 #: Rows are switched in groups this big, so a statement never holds more values than a database allows.
 CHUNK = 500
@@ -131,12 +135,16 @@ class Components(Section):
 
     # --- changing a value -----------------------------------------------------------------------------------------
 
-    def switch(self, value: dict, addon: str, on: bool, kind: str | None = None, section: str | None = None) -> dict:
-        """$value with the components of $addon turned on or off, as a new value in the form the check accepts. The scope is the
+    def switch(self, value: dict, addon: str, on: bool | str, kind: str | None = None, section: str | None = None) -> dict:
+        """$value with the components of $addon turned on or off, as a new value in the form the check accepts. $on is True (on), False
+        (off: no new use) or ``"disused"`` (off, and heroes that hold them must stop: force disuse). The scope is the
         whole add-on, one $kind of it, or one $section of a kind (and the sections inside it): the bulk switches at each level of
         the admin's tree. Raises ValueError for what the add-on does not have."""
         if section is not None and kind is None:
             raise ValueError("a section belongs to a kind")
+        state = ON if on is True else DISUSED if on == DISUSED else None
+        if on not in (True, False, DISUSED):
+            raise ValueError(f"a component is switched on (True), off (False) or {DISUSED!r}, got {on!r}")
         kinds = [kind] if kind is not None else self.kinds(addon)
         if not kinds:
             raise ValueError(f"the add-on {addon!r} brought no components")
@@ -146,8 +154,8 @@ class Components(Section):
             keys = self.rows_of(addon, each, section)
             held = states.setdefault(addon, {}).setdefault(each, {})
             for key in keys:
-                if on:
-                    held[key] = ON
+                if state is not None:
+                    held[key] = state
                 else:
                     held.pop(key, None)
             if not held:
@@ -178,7 +186,7 @@ class Components(Section):
                 maker = facts.owned.get(needed.kind, {}).get(needed.key)
                 if maker is not None and needed not in on:
                     problems.append(f"{facts.owned[row.kind][row.key]}: {row.kind} {row.key!r} is on, but it needs {needed.kind} {needed.key!r}"
-                                    + (f" (of {maker})" if maker != facts.owned[row.kind][row.key] else "") + ", which is off")
+                                    + (f" (of {maker})" if maker != facts.owned[row.kind][row.key] else "") + ", which is not on")
         return problems
 
     @staticmethod
@@ -192,23 +200,23 @@ class Components(Section):
             if facts.owned[kind].get(key) != addon:
                 problems.append(f"{addon}: it brought no {kind} row {key!r}")
             elif state not in STATES:
-                problems.append(f"{addon}: {kind} {key!r} is {state!r}; the only state is 'on' (a row not listed is off)")
-            else:
+                problems.append(f"{addon}: {kind} {key!r} is {state!r}; the states are 'on' and 'disused' (a row not listed is off)")
+            elif state == ON:
                 on.add(Row(kind, key))
         return problems
 
     # --- making the database match ----------------------------------------------------------------------------------
 
     async def apply(self, db, value: dict) -> None:
-        """Sets ``active`` on every add-on row: on exactly when the live states say it is on."""
+        """Sets ``active`` on every add-on row (on exactly when the live states say it is on) and ``disused`` (exactly when they say so)."""
         states = value.get("states", {})
         for kind, owners in self.facts().owned.items():
             table = TABLES[kind]
-            on = sorted(key for key, addon in owners.items() if states.get(addon, {}).get(kind, {}).get(key) == ON)
-            off = sorted(set(owners) - set(on))
-            for active, keys in ((True, on), (False, off)):
+            held = {key: states.get(addon, {}).get(kind, {}).get(key) for key, addon in owners.items()}
+            by_state = {state: sorted(key for key, each in held.items() if each == state) for state in (ON, DISUSED, None)}
+            for state, keys in by_state.items():
                 for start in range(0, len(keys), CHUNK):
-                    await db.execute(update(table).where(table.key.in_(keys[start:start + CHUNK])).values(active=active)
+                    await db.execute(update(table).where(table.key.in_(keys[start:start + CHUNK])).values(active=state == ON, disused=state == DISUSED)
                                      .execution_options(synchronize_session=False))
 
 
