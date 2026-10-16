@@ -51,6 +51,15 @@ class WeeklyQuests:
         goals and rewards here."""
         return dict(template.spec)
 
+    def limit_seconds(self, level: int) -> int:
+        """How long a team has to finish its weekly quest of $level once it takes it, in wall-clock seconds: a day by default. Past it the
+        quest fails with ``timeout`` (``penalty`` is called). A team that never takes the quest has until the week ends to do so."""
+        return 24 * 60 * 60
+
+    async def penalty(self, session: AsyncSession, team_id: int, quest, reason: str) -> None:
+        """A team failed its weekly $quest (the ``WeeklyQuest`` row). $reason is ``timeout`` (it ran out of time) or ``poor_performance`` (the
+        game's dialog or dungeon said it lost). Does nothing by default: the game decides what failing costs (guild points, gold, a status)."""
+
     def generate(self, rng: Random, team_id: int, level: int) -> GeneratedQuest | None:
         """A quest made up for the team at $level, drawing only from $rng. None (the default) means this game makes none: a team no template
         fits then has no quest that week."""
