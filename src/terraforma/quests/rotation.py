@@ -9,6 +9,11 @@ time anything touches that team, so any server of a cluster gives the same answe
 A team that took a quest keeps it for the slot's time limit, and for no longer than the slot's grace time after the quest rotated out
 (the area may be gone by then). The world can also end a quest at once (``end_early``): no penalty, since nobody failed. A team that fails
 by running out of time, or whose game says it did badly, costs whatever the game's ``RotatingQuests.penalty`` says (nothing by default).
+
+An *obligation* slot (a guild's "F" rank) is a duty of the guild's members, teams with a standing in the slot's guild: a period's quest that
+a member leaves alone (never took, or was offered and let lapse) costs the same penalty with the reason ``ignored``, once per period and
+only for periods that began after the team joined. It is found the next time anything touches the team (a period nobody asked about has
+no quest, so owes nothing), at most ``MAX_OWED`` periods back.
 """
 
 from sqlalchemy import delete, select
@@ -18,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import wallclock
 from ..db.dialect import upsert
 from ..heroes.models import Team
+from ..guild.models import GuildStanding
 from ..models import World
 from ..world.rng import WorldRng
 from ..world.start import ensure_start
@@ -25,7 +31,7 @@ from . import service
 from .boss_models import QuestBossFight
 from .hooks import RotatingQuests
 from .rotation_models import (
-    ACTIVE, COMPLETED, ENDED, FAILED, FROM_TEMPLATE, GENERATED, LAPSED, NOTHING, OFFERED, POOR_PERFORMANCE, TIMEOUT, WORLD,
+    ACTIVE, COMPLETED, ENDED, FAILED, FROM_TEMPLATE, GENERATED, IGNORED, LAPSED, NOTHING, OFFERED, POOR_PERFORMANCE, TIMEOUT, WORLD,
     QuestSlot, SlotQuest, TeamSlotQuest,
 )
 from .weekly import check_name, check_spec
@@ -34,6 +40,8 @@ from .weekly_models import QuestTemplate
 DAY = 24 * 60 * 60
 #: The shortest period a slot may have: a slot is for things that change slowly, and every period skipped while nobody asked is counted.
 MIN_PERIOD = 60 * 60
+#: The most periods of one obligation slot a team is penalized for at once (a team gone for a year owes a season, not a lifetime).
+MAX_OWED = 12
 
 
 class RotationError(service.QuestError):
@@ -48,7 +56,7 @@ async def apply_slots(session: AsyncSession, rows: list) -> int:
         if not MIN_PERIOD <= row.min_days * DAY <= row.max_days * DAY:
             raise RotationError(f"quest_slots.json {row.key}: a period runs from at least an hour up, lowest first")
         values = {"name": row.name, "guild": row.guild, "rank": row.rank, "min_seconds": row.min_days * DAY, "max_seconds": row.max_days * DAY,
-                  "grace_seconds": row.grace_days * DAY, "limit_seconds": row.limit_days * DAY, "active": True}
+                  "grace_seconds": row.grace_days * DAY, "limit_seconds": row.limit_days * DAY, "obligation": row.obligation, "active": True}
         existing = await session.scalar(select(QuestSlot).where(QuestSlot.key == row.key))
         if existing is None:
             await upsert(session, QuestSlot.__table__, {"key": row.key, "anchor": now, **values}, ["key"])
@@ -155,9 +163,40 @@ async def settle(session: AsyncSession, hooks: RotatingQuests, team_id: int) -> 
     for progress, quest in held.all():
         if progress.status == OFFERED and now >= quest.ends_at:
             progress.status, progress.finished_at = LAPSED, now
+            slot = await session.get(QuestSlot, quest.slot_id)
+            if slot.obligation and slot.guild and not quest.ended_early and await session.scalar(select(GuildStanding.id).where(
+                    GuildStanding.team_id == team_id, GuildStanding.guild == slot.guild)) is not None:
+                progress.failure = IGNORED
+                await session.flush()
+                await hooks.penalty(session, team_id, slot, IGNORED)
         elif progress.status == ACTIVE and now > (progress.deadline or 0):
             await _fail(session, hooks, progress, quest, TIMEOUT, now)
     await session.flush()
+    await _settle_obligations(session, hooks, team_id, now)
+
+
+async def _settle_obligations(session: AsyncSession, hooks: RotatingQuests, team_id: int, now: int) -> None:
+    """Penalizes the team for each finished period of its guilds' obligation slots it left alone: no progress row at all (it never even asked),
+    for periods that began after the team joined the guild and were not ended early by the world. Each is recorded as a lapsed row, so it is
+    penalized once however many servers settle it."""
+    owed = await session.execute(select(QuestSlot, GuildStanding).join(GuildStanding, GuildStanding.guild == QuestSlot.guild).where(
+        QuestSlot.obligation.is_(True), QuestSlot.active.is_(True), GuildStanding.team_id == team_id).order_by(QuestSlot.id))
+    for slot, standing in owed.all():
+        await current(session, hooks, slot)  # (a period a member's team lives through has a quest, so it can be owed)
+        joined = standing.joined_at
+        touched = select(TeamSlotQuest.slot_quest_id).where(TeamSlotQuest.team_id == team_id)
+        missed = await session.scalars(select(SlotQuest).where(
+            SlotQuest.slot_id == slot.id, SlotQuest.ends_at <= now, SlotQuest.starts_at >= joined, SlotQuest.ended_early.is_(False),
+            SlotQuest.source != NOTHING, SlotQuest.id.not_in(touched)).order_by(SlotQuest.seq.desc()).limit(MAX_OWED))
+        for quest in reversed(missed.all()):
+            row = TeamSlotQuest(team_id=team_id, slot_quest_id=quest.id, status=LAPSED, failure=IGNORED, finished_at=now)
+            try:
+                async with session.begin_nested():
+                    session.add(row)
+                    await session.flush()
+            except IntegrityError:  # (another server settled it first, and its penalty stands)
+                continue
+            await hooks.penalty(session, team_id, slot, IGNORED)
 
 
 async def _fail(session: AsyncSession, hooks: RotatingQuests, progress: TeamSlotQuest, quest: SlotQuest, reason: str, now: int) -> None:
@@ -261,7 +300,7 @@ async def forget_team(session: AsyncSession, team_id: int) -> None:
 
 
 def slot_view(slot: QuestSlot) -> dict:
-    return {"key": slot.key, "name": slot.name, "guild": slot.guild, "rank": slot.rank}
+    return {"key": slot.key, "name": slot.name, "guild": slot.guild, "rank": slot.rank, "obligation": slot.obligation}
 
 
 def view(quest: SlotQuest, slot: QuestSlot, progress: TeamSlotQuest | None) -> dict:

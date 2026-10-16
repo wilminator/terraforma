@@ -13,6 +13,8 @@ FROM_TEMPLATE, GENERATED, NOTHING = "template", "generated", "nothing"
 OFFERED, ACTIVE, COMPLETED, FAILED, LAPSED, ENDED = "offered", "active", "completed", "failed", "lapsed", "ended"
 #: Why a quest failed: the team ran out of time, did badly (the game says so), or the world ended it (never penalized by default).
 TIMEOUT, POOR_PERFORMANCE, WORLD = "timeout", "poor_performance", "world"
+#: Why an obligation lapsed: a member team left the period's quest alone (it never took it, or it was offered and let go).
+IGNORED = "ignored"
 
 
 class QuestSlot(Timestamps, Base):
@@ -37,6 +39,8 @@ class QuestSlot(Timestamps, Base):
     # When the first period began (the moment the slot first reached the database).
     anchor: Mapped[int] = mapped_column(BigInteger)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # An obligation slot is a duty of the guild's members: a team with a standing in ``guild`` that leaves a period's quest undone is penalized.
+    obligation: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class SlotQuest(Timestamps, Base):
