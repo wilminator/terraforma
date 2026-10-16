@@ -49,6 +49,7 @@ from .monsterplay.routes import router as monsters_router
 from .oidc.routes import router as oidc_router
 from .market.routes import router as market_router
 from .npcs.routes import router as npcs_router
+from .disuse.routes import router as disuse_router
 from .reach.routes import router as reach_router
 from .parties.routes import router as parties_router
 from .playtime.routes import router as playtime_router
@@ -187,6 +188,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(challenge_router)
     app.include_router(storegrant_router)
     app.include_router(npcs_router)
+    app.include_router(disuse_router)
     app.include_router(reach_router)
     app.include_router(market_router)
     app.include_router(guild_router)

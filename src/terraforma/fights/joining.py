@@ -23,6 +23,7 @@ import random
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..disuse import gate as disuse
 from ..heroes.models import Team
 from ..parties import service as parties
 from ..relations import service as relationships
@@ -125,6 +126,8 @@ async def join(session: AsyncSession, rules: Rules, relations: Relations, fight_
         .where(FightParticipant.hero_id.in_(hero_ids), FightRecord.finished.is_(False)).limit(1)
     ) is not None:
         raise live.Refused("a hero of that party is already in a fight")
+    if reason := await disuse.blocked(session, hero_ids):
+        raise live.Refused(reason)
     fight, _played = await store.load_state(session, record, rules)
     if reason := refusal(rules, fight, record, strength(rules, fighters)):
         raise live.Refused(reason)

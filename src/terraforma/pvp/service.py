@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import wallclock
+from ..disuse import gate as disuse
 from ..fights import joining, store, timing
 from ..fights.build import known_statuses, team_party
 from ..fights.fight import build_fight
@@ -83,6 +84,8 @@ async def start_pvp_fight(session: AsyncSession, zones: PvpZones, rules: Rules, 
         .where(FightParticipant.hero_id.in_(hero_ids), FightRecord.finished.is_(False), FightParticipant.fled.is_(False)).limit(1)
     ) is not None:
         raise PvpError("a hero of one of those parties is already in a fight")
+    if reason := await disuse.blocked(session, hero_ids):
+        raise PvpError(reason)
     if reason := await refusal(session, zones, rules, sides[0], sides[1], mine.map_id, mine.x, mine.y, await instances.in_same_shared_instance(session, mine.id, theirs.id)):
         raise PvpError(reason)
     accounts = (await session.scalars(select(Hero.account_id).where(Hero.id.in_(hero_ids)).distinct())).all()

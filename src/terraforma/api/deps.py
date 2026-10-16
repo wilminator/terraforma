@@ -17,6 +17,7 @@ from ..market.hooks import Market
 from ..guild.hooks import Guild
 from ..quests.hooks import ManualQuests, Needs, RotatingQuests, WeeklyQuests
 from ..heroes.hooks import Roster, Start
+from ..disuse.hooks import Disuse
 from ..npcs.hooks import Npcs
 from ..npcs.inn import Inn
 from ..reach.hooks import Reach
@@ -206,6 +207,15 @@ def get_npcs(request: Request) -> Npcs:
 
 
 GameNpcs = Annotated[Npcs, Depends(get_npcs)]
+
+
+def get_disuse(request: Request) -> Disuse:
+    """The game's scene for a hero that holds something disused (the engine's black screen when the app runs without a game)."""
+    game = request.app.state.game
+    return game.disuse if game else Disuse()
+
+
+GameDisuse = Annotated[Disuse, Depends(get_disuse)]
 
 
 def get_reach(request: Request) -> Reach:
