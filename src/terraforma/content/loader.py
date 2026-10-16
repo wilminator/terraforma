@@ -27,6 +27,7 @@ TABLES = {
 def _values(kind: str, row: Strict, active: bool = True) -> dict:
     """The row's columns: its fields, with nested formats as plain JSON."""
     values = row.model_dump(mode="json", by_alias=True)
+    values.pop("section", None)  # (the seed's: it places an add-on's row in the admin's tree, and the tree is read from the seed)
     if kind == "personalities":
         values["animations"] = {
             name: values.pop(name)

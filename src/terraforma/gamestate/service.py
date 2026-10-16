@@ -167,9 +167,21 @@ async def commit(db: AsyncSession, sections: dict[str, Section], account_id: int
     )
     if moved.rowcount != 1:
         raise Conflict("another commit went live first; read the state again")
+    await _apply(db, sections, snapshot.document)
     # The draft is what is live now, so nothing is left to stage.
     await db.execute(update(PlannedState).where(PlannedState.id == ROW).values(frozen=False).execution_options(synchronize_session=False))
     return await state(db, sections)
+
+
+async def _apply(db: AsyncSession, sections: dict[str, Section], document: dict) -> None:
+    for name, section in sorted(sections.items()):
+        await section.apply(db, document["sections"].get(name, section.default()))
+
+
+async def apply_live(db: AsyncSession, sections: dict[str, Section]) -> None:
+    """Has every section make the database match the live snapshot: for the start of a server, so rows a section keeps in step
+    with the live state are right whatever happened while it was down (the first state is made if there is none)."""
+    await _apply(db, sections, (await state(db, sections)).live.document)
 
 
 async def history(db: AsyncSession, after: int = 0, limit: int = 50) -> list[Snapshot]:
