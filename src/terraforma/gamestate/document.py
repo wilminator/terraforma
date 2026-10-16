@@ -39,6 +39,11 @@ class Section:
         """The section when nothing has been decided: what the first, live document holds."""
         return {}
 
+    async def apply(self, db, value: dict) -> None:
+        """Makes the database match $value, the live value of this section. Called in the transaction of a commit (so a failure takes
+        the commit with it) and when the server starts (``service.apply_live``), so it has to give the same result however often it
+        runs. Nothing by default: a section the game reads straight from the live document needs no work here."""
+
     def check(self, value: dict, document: dict) -> list[str]:
         """What is wrong with $value, as sentences an admin can read (none: it is fine). $document is the whole document, for a
         section that depends on another."""

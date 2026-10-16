@@ -24,6 +24,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import wallclock
 from ..db.base import canonical_json
 from ..economy import Economy, TeamGold, credit_fight_gold
+from ..gamestate.models import LiveState, Snapshot
+from ..gamestate.service import ROW as LIVE_ROW
 from ..heroes import inventory
 from ..heroes.models import Hero
 from ..relations.hooks import Change, Ref, Relations
@@ -86,7 +88,8 @@ def command_record(address: Address, command: int, using: int = 0, target: Addre
 
 async def create_fight(session: AsyncSession, game_map: Map, fight: Fight, x: int = 0, y: int = 0) -> FightRecord:
     """Stores a new fight on $game_map: its initial state, and who is in it."""
-    record = FightRecord(guid=secrets.token_hex(16), initial_state=dehydrate(fight), map_id=game_map.id, x=x, y=y)
+    live = await session.scalar(select(Snapshot.hash).join(LiveState, LiveState.snapshot_id == Snapshot.id).where(LiveState.id == LIVE_ROW))
+    record = FightRecord(guid=secrets.token_hex(16), initial_state=dehydrate(fight), map_id=game_map.id, x=x, y=y, state_hash=live)
     session.add(record)
     await session.flush()
     for party, group, character in fight.addresses():

@@ -15,6 +15,8 @@ from terraforma.fights.models import FightActionRecord, FightParticipant, FightR
 from terraforma.fights.resolve import fight_stream
 from terraforma.fights.rules import Rules
 from terraforma.fights.state import dehydrate, hydrate
+from terraforma.gamestate import service as game_state
+from terraforma.gamestate.document import Section, sections_by_name
 from terraforma.fights.store import FightLogError, FightNotOver, FightOver, SequenceConflict, command_record
 from terraforma.heroes import inventory, service
 from terraforma.models import Account, World
@@ -336,6 +338,28 @@ async def test_a_hero_and_a_monster_fight_a_logged_verified_fight(db):
     state, played = await store.load_state(db, record, RULES)
     assert played == rounds and (state.get((0, 0, 0)).current["HP"] < 40 or state.get((1, 0, 0)).current["HP"] < 60)
     assert await db.scalar(select(func.count()).select_from(FightActionRecord).where(FightActionRecord.fight_id == record.id)) == rounds
+
+
+class Rates(Section):
+    name = "rates"
+
+    def default(self):
+        return {"xp": 1}
+
+
+async def test_a_fight_keeps_the_hash_of_the_settings_snapshot_live_when_it_began(db):
+    sections = sections_by_name([Rates()])
+    _, before = await start(db)
+    assert before.state_hash is None, "(no snapshot had been made: the game on its defaults)"
+    first = (await game_state.state(db, sections)).live
+    _, second = await start(db)
+    assert second.state_hash == first.hash
+    state = await game_state.state(db, sections)
+    await game_state.edit_section(db, sections, "rates", {"xp": 2}, None)
+    await game_state.commit(db, sections, None, (await game_state.state(db, sections)).planned_hash)
+    _, third = await start(db)
+    assert third.state_hash == (await game_state.state(db, sections)).live.hash != state.live.hash
+    assert (await db.get(FightRecord, second.id)).state_hash == first.hash, "(a fight keeps the hash it began under)"
 
 
 # --- the end of a fight: experience, gold, and saving the result ----------------------------------------------------------------
