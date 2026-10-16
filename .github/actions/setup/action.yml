@@ -16,7 +16,7 @@ runs:
     # The key changes with the Python version or pyproject.toml (the requirements).
     - name: Build the virtual environment if the requirements changed
       if: inputs.build == 'true'
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       id: built
       with:
         path: ~/.venv
@@ -29,7 +29,7 @@ runs:
       shell: bash
     - name: Restore the virtual environment
       if: inputs.build != 'true'
-      uses: actions/cache/restore@v5
+      uses: actions/cache/restore@v6
       with:
         path: ~/.venv
         key: venv-${{ runner.os }}-${{ steps.python.outputs.python-version }}-${{ hashFiles('pyproject.toml') }}

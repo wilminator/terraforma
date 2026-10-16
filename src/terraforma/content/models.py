@@ -6,7 +6,7 @@ rows (a job's abilities, a monster's items) are lists of keys inside JSON
 columns, checked when the seed is loaded.
 """
 
-from sqlalchemy import JSON, Boolean, Float, Integer, String
+from sqlalchemy import JSON, Boolean, Float, Integer, String, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db.base import Base
@@ -18,6 +18,8 @@ class ContentRow:
     key: Mapped[str] = mapped_column(String(64), unique=True)
     name: Mapped[str] = mapped_column(String(64))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Set only by the add-ons' component states (``gamestate.components``): the row is off and the heroes that hold it must stop (``terraforma.disuse``).
+    disused: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
 
 class Ability(ContentRow, Base):

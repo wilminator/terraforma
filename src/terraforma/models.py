@@ -240,6 +240,7 @@ from .delivery import models as _delivery  # noqa: E402,F401
 from .profiles import models as _profiles  # noqa: E402,F401
 from .challenge import models as _challenge  # noqa: E402,F401
 from .npcs import models as _npcs  # noqa: E402,F401
+from .disuse import models as _disuse  # noqa: E402,F401
 from .maps import models as _maps  # noqa: E402,F401
 from .quests import models as _quests  # noqa: E402,F401
 from .instances import models as _instances  # noqa: E402,F401

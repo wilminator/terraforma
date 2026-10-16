@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .accounts.hooks import SignIn
 from .addons import AddOn
+from .disuse.hooks import Disuse
 from .economy import Economy, TeamGold
 from .fights.rules import Rules
 from .gamestate.document import Section
@@ -74,6 +75,9 @@ class Game:
     rotating_quests: RotatingQuests = field(default_factory=RotatingQuests)
     # The events an admin writes by hand (a competition, a tournament): who may enter, and what failing costs.
     manual_quests: ManualQuests = field(default_factory=ManualQuests)
+    # The scene a hero goes through when its player signs in and it holds something an admin has made *disused* (see README, "Add-ons"): the dialog
+    # that tells them, and the jobs a hero may take instead. A black screen and a dream, by default.
+    disuse: Disuse = field(default_factory=Disuse)
     # The parts of the settings document an admin plans and commits (``gamestate.Section``: its empty value and its checks). None, by default.
     state_sections: tuple[Section, ...] = ()
     # The quests the world needs: which bands of party strength should always have one, and how a boss is picked and approved

@@ -11,7 +11,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, MetaData
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from .. import wallclock
+from terraforma import wallclock
 
 NAMING_CONVENTION = {
     "ix": "ix_%(column_0_label)s",
@@ -27,6 +27,7 @@ class Base(DeclarativeBase):
 
 
 def utcnow() -> datetime:
+    """The stamp for created_at and updated_at: the wall clock the rest of the engine uses, so a test that moves it moves these too."""
     return wallclock.now()
 
 
