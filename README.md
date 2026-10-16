@@ -33,6 +33,29 @@ To serve it, run `python -m terraforma serve my_game:app`. It checks the setting
 
 For tests, add `pytest_plugins = ["terraforma.testing"]` to the game's `tests/conftest.py`. Override the `game` fixture there, and `app_client` serves your game on every database under test.
 
+## Add-ons
+
+An add-on is a package that adds content to a game without being a game: a seed folder and an assets folder like the game's (`terraforma.addons.AddOn(key, name, seed_dir, assets_dir)`). The engine never imports one; the game lists the ones it supports and the operator picks which to use. `AddOn` and `Game(addons=...)` are public interfaces (the license exception covers them), and later slices add to them (component states, sections, Rules options, client code).
+
+```python
+from terraforma.addons import AddOn
+
+GAME = Game(name="My Game", seed_dir=..., assets_dir=..., addons=(AddOn(key="monster_pack", name="Monster pack", seed_dir=..., assets_dir=...),))
+```
+
+```toml
+# settings.toml
+addons = ["monster_pack"]
+```
+
+- **Keys.** An add-on's `key` is 2 to 32 lowercase letters, digits or `_`, starting with a letter. A key in `settings.toml` that the game does not support, or one listed twice, stops the server at start.
+- **Layers.** A listed add-on's seed rows and assets are added to the game's: the game's first, then each add-on in the order listed. Seed files are read like a game's (same formats), and the merged seed is checked as one, so an add-on's row may name the game's abilities and the game's may name the add-on's.
+- **No collisions.** A seed key used in two layers (`items.json` `herb`), or an asset file name used in two (`goblin.png`), stops the server, naming both owners. An add-on cannot replace what is there.
+- **Licenses.** An add-on's assets folder needs an `ASSETS.md` in the form of the example game's: a table row per file or files (the names in backticks, paths for files in folders) with its source and license. A file not recorded, a row with no source, no license, an unknown or `TBD` one, a non-commercial or no-derivatives one (`CC-BY-NC`, `CC-BY-ND`) or `CC-BY-SA` before 4.0 stops the server. The engine reads what the cell says; whether it is true is for whoever adds the asset. Its animations and color maps are checked like the game's.
+- **Serving.** `/assets/` serves a file from the first folder that has it.
+- **Listing is for good.** Listing an add-on integrates it into the game; the plan is that its keys are never deleted, so recordings keep replaying. Until the slice that adds component states, everything an add-on brings is on as soon as it is listed.
+- **Tests.** The `addons` fixture of `terraforma.testing` (none by default) is the list `app_client` puts in the settings.
+
 ## The browser client
 
 The engine serves its own browser client: plain ES modules and CSS, no build step, no bundler, no Node. The pages know nothing of any game; they draw what the server's calls send.

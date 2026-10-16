@@ -133,7 +133,13 @@ def game():
 
 
 @pytest.fixture
-def app_client(database_url, mailbox, game, tmp_path):
+def addons():
+    """The add-ons app_client turns on (the settings' ``addons``): none, unless a test or a game's conftest says."""
+    return []
+
+
+@pytest.fixture
+def app_client(database_url, mailbox, game, addons, tmp_path):
     """A TestClient for the engine app on a freshly built database (each database under test), with its own key."""
     from starlette.testclient import TestClient
 
@@ -153,6 +159,7 @@ def app_client(database_url, mailbox, game, tmp_path):
         session_secret=SECRET,
         secure_cookies=False,
         public_url="http://game.test",
+        addons=addons,
         key_dir=tmp_path / "keys",
         fight_timer_seconds=0,  # tests resolve overdue rounds themselves, on the clock they move
         housekeeping_seconds=0,  # tests run the housekeeping pass themselves

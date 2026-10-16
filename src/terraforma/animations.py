@@ -6,6 +6,7 @@ checks the files when it starts, so a typo stops the server, not a player's page
 
 import json
 import re
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -128,13 +129,15 @@ def check_animation_folder(folder: Path) -> None:
 BACK_VIEW = "base_up"
 
 
-def check_hero_back_views(seed: dict[str, list[dict]], assets_dir: Path) -> None:
+def check_hero_back_views(seed: dict[str, list[dict]], assets_dir: Path | Sequence[Path]) -> None:
     """Raises ContentError unless every personality that player heroes use has a back view.
 
     A hero is drawn with the personality that has its job's key; the fight shows a player's own side from behind (the animation
     ``base_up``, see README, Art), so such a personality with a ``fight_art`` needs an animation file that has one. A plain picture,
     a sheet with no animation file and a file with no ``base_up`` (as an animation or an alias) all fail, naming the personality.
-    $seed is a checked seed; a personality with no ``fight_art`` stays a plain card and needs nothing."""
+    $seed is a checked seed; $assets_dir is the game's assets folder, or all the folders of the game and its add-ons (a file is looked
+    for in each, in order); a personality with no ``fight_art`` stays a plain card and needs nothing."""
+    folders = [Path(assets_dir)] if isinstance(assets_dir, (str, Path)) else [Path(folder) for folder in assets_dir]
     jobs = {row["key"] for row in seed.get("jobs", [])}
     problems = []
     for row in seed.get("personalities", []):
@@ -142,7 +145,7 @@ def check_hero_back_views(seed: dict[str, list[dict]], assets_dir: Path) -> None
         if row["key"] not in jobs or not art:
             continue
         name = art.get("animations") if isinstance(art, dict) else None
-        path = Path(assets_dir) / f"{name}.anim.json" if name else None
+        path = next((found for folder in folders if (found := folder / f"{name}.anim.json").is_file()), None) if name else None
         try:
             checked = check_animations(json.loads(path.read_text(encoding="utf-8"))) if path else None
         except (OSError, ValueError, AnimationError):

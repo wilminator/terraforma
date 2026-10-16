@@ -42,6 +42,10 @@ key_dir = "keys"
 # Voice channels the bot made are removed this many hours after they were made.
 # voice_room_hours = 24
 
+# The add-ons to use, by key (the game says which it supports; see README, "Add-ons"). Listing one adds its seed and assets
+# to the game's for good.
+# addons = ["monster_pack"]
+
 # A game that sells Challenge Tokens sets this (at least 32 characters). Its own backend then credits purchases with
 # POST /api/server/challenge/purchase, sending "Authorization: Bearer <this secret>". Empty or absent: the call is off.
 # challenge_purchase_secret = ""

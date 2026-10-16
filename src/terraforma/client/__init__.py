@@ -158,17 +158,28 @@ async def manifest(request: Request, response: Response) -> dict:
         "game": game.name if game else None,
         "modules": [f"/game/{name}" for name in game.client_modules] if game else [],
         "styles": [f"/game/{name}" for name in game.client_styles] if game else [],
-        "assets": "/assets/" if game and game.assets_dir else None,
+        "assets": "/assets/" if request.app.state.asset_dirs else None,
     }
 
 
-def install(app: FastAPI, game: Game | None) -> None:
-    """Adds the client's pages and files to $app. Mounted last: the calls come first."""
+class LayeredFiles(StaticFiles):
+    """Static files from several folders: a file is served from the first folder that has it (the game's, then each add-on's)."""
+
+    def __init__(self, folders: tuple[Path, ...]) -> None:
+        self.folders = folders
+        super().__init__(directory=folders[0])
+
+    def get_directories(self, directory=None, packages=None) -> list:
+        return list(self.folders)
+
+
+def install(app: FastAPI, game: Game | None, asset_dirs: tuple[Path, ...] = ()) -> None:
+    """Adds the client's pages and files to $app (the assets from every folder of $asset_dirs). Mounted last: the calls come first."""
     if game is not None:
         check_game_client(game)
     app.include_router(router)
     app.mount("/client", StaticFiles(directory=STATIC / "lib"), name="client")
     if game and game.client_dir:
         app.mount("/game", StaticFiles(directory=game.client_dir), name="game-client")
-    if game and game.assets_dir:
-        app.mount("/assets", StaticFiles(directory=game.assets_dir), name="game-assets")
+    if asset_dirs:
+        app.mount("/assets", LayeredFiles(asset_dirs), name="game-assets")
