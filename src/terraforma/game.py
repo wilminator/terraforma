@@ -22,6 +22,7 @@ from .chat.hooks import Chat
 from .voice.hooks import Voice
 from .pvp.hooks import PvpZones
 from .market.hooks import Market
+from .contracts.hooks import Contracts
 from .guild.fees import Fees
 from .marketplace.hooks import Marketplace
 from .guild.hooks import Guild
@@ -82,6 +83,8 @@ class Game:
     disuse: Disuse = field(default_factory=Disuse)
     # The parts of the settings document an admin plans and commits (``gamestate.Section``: its empty value and its checks). None, by default.
     state_sections: tuple[Section, ...] = ()
+    # Which kinds of contract term exist, what each is worth and how it is judged, plus the minimum escrow and the fee (``contracts.hooks``). No kinds, by default.
+    contracts: Contracts = field(default_factory=Contracts)
     # The quests the world needs: which bands of party strength should always have one, and how a boss is picked and approved
     # (none, by default: nothing is made unless the game lists bands).
     needs: Needs = field(default_factory=Needs)

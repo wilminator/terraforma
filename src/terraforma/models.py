@@ -240,6 +240,7 @@ from .delivery import models as _delivery  # noqa: E402,F401
 from .escrow import models as _escrow  # noqa: E402,F401
 from .marketplace import models as _marketplace  # noqa: E402,F401
 from .profiles import models as _profiles  # noqa: E402,F401
+from .contracts import models as _contracts  # noqa: E402,F401
 from .challenge import models as _challenge  # noqa: E402,F401
 from .npcs import models as _npcs  # noqa: E402,F401
 from .disuse import models as _disuse  # noqa: E402,F401
