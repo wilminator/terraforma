@@ -11,7 +11,7 @@ A team that took a quest keeps it for the slot's time limit, and for no longer t
 by running out of time, or whose game says it did badly, costs whatever the game's ``RotatingQuests.penalty`` says (nothing by default).
 """
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +22,7 @@ from ..models import World
 from ..world.rng import WorldRng
 from ..world.start import ensure_start
 from . import service
+from .boss_models import QuestBossFight
 from .hooks import RotatingQuests
 from .rotation_models import (
     ACTIVE, COMPLETED, ENDED, FAILED, FROM_TEMPLATE, GENERATED, LAPSED, NOTHING, OFFERED, POOR_PERFORMANCE, TIMEOUT, WORLD,
@@ -254,6 +255,7 @@ async def active(session: AsyncSession, team_id: int, slot_key: str) -> TeamSlot
 async def forget_team(session: AsyncSession, team_id: int) -> None:
     """A team that is deleted takes its progress with it."""
     for each in (await session.scalars(select(TeamSlotQuest).where(TeamSlotQuest.team_id == team_id))).all():
+        await session.execute(delete(QuestBossFight).where(QuestBossFight.progress_id == each.id))
         await session.delete(each)
     await session.flush()
 

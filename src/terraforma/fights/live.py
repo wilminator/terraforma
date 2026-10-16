@@ -35,7 +35,7 @@ from ..standing import service as standing
 from ..world.rng import WorldRng
 from . import ai, specs, store, timing
 from .build import known_drop_tables, known_statuses, monster_fighter, team_party
-from .combatant import Address, Command
+from .combatant import Address, Combatant, Command
 from .events import Event
 from .fight import build_fight
 from .models import FightActionRecord, FightCommandRecord, FightParticipant, FightRecord
@@ -133,9 +133,11 @@ async def start_team_fight(session: AsyncSession, team: Team, monster_keys: list
 
 
 async def start_party_fight(session: AsyncSession, party_id: int, monster_keys: list[str], rules: Rules, area_drops: list[str] | None = None,
-                            can_flee: bool | None = None, monster_play: bool = False, relations: Relations | None = None) -> FightRecord:
+                            can_flee: bool | None = None, monster_play: bool = False, relations: Relations | None = None,
+                            foes: list[Combatant] | None = None) -> FightRecord:
     """A fight between a whole party (every team of it, side 0) and monsters (side 1), at the party's spot. Like ``start_team_fight``,
-    which it shares its refusals with."""
+    which it shares its refusals with. $foes, when given, are the monsters' fighters ready-made (a promoted boss, ``quests.bosses``) and
+    $monster_keys is ignored."""
     party = await session.get(Party, party_id)
     heroes, teams = [], {}
     for team_id in await parties.team_ids(session, party_id):
@@ -144,7 +146,7 @@ async def start_party_fight(session: AsyncSession, party_id: int, monster_keys: 
         teams |= ids
     if not heroes:
         raise Refused("that party has no heroes")
-    if not 1 <= len(monster_keys) <= rules.party_size:
+    if not 1 <= (len(monster_keys) if foes is None else len(foes)) <= rules.party_size:
         raise Refused(f"a fight needs between 1 and {rules.party_size} monsters")
     hero_ids = [hero for members in teams.values() for hero in members]
     busy = await session.scalar(
@@ -156,7 +158,7 @@ async def start_party_fight(session: AsyncSession, party_id: int, monster_keys: 
     game_map = await session.get(Map, party.map_id)
     if area_drops is None:
         area_drops = game_map.zone(party.x, party.y)["drops"]
-    monsters = [await monster_fighter(session, key, rules) for key in monster_keys]
+    monsters = [await monster_fighter(session, key, rules) for key in monster_keys] if foes is None else list(foes)
     accounts = (await session.scalars(select(Hero.account_id).where(Hero.id.in_(hero_ids)).distinct())).all()
     multiplier = timing.fight_multiplier([await timing.multiplier_for(session, owner) for owner in accounts])
     timing.toughen(monsters, rules, rules.time_bonus(multiplier))

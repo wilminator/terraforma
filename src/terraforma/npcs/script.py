@@ -40,6 +40,11 @@ its command, followed by comma separated parameters. Text outside tags is shown.
                          (the label if none is active or its time ran out)
     slot_template,slot,template,label  the label unless the quest the slot holds now was made from that quest template (a template's key from
                          quest_templates.json): how a dialog sends a team to the dungeon of the quest the slot is offering this period
+    slot_boss,slot,fight|won|lost,label  the boss fight of a quest the engine made (``quests.bossfight``; the quest's spec holds promoted bosses): ``fight``
+                         starts the party's fight against them (the label if the team took no such quest of the slot, or the party cannot
+                         fight now: apart in a town, a hero already in a fight) and leaves the dialog; ``won`` and ``lost`` finish the team's quest
+                         by how its fight ended (as won, or failed for poor performance) and go on; each goes to the label while there is no
+                         fight, it is still running, or it ended the other way
     manual_quest,event,enter|finish_win|finish_lose,label  the talking hero's team's entry in an admin's event (``quests.manual``, an event's key):
                          enter it while it is open (the label if it is not open, is full or the game refuses the team), or finish the entry
                          as won or lost (the label if the team has no entry running in time)
@@ -88,7 +93,7 @@ from dataclasses import dataclass
 SCOPES = ("any", "lead", "each")
 OPS = ("eq", "ne", "lt", "le", "gt", "ge")
 #: The tags that read or change the game's state, which the engine itself runs (through ``advance``'s $state).
-STATE_TAGS = ("have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker", "add_guild_points", "set_guild_rank", "guild_points", "guild_rank", "guild_rank_any", "party_gate", "open_party", "add_status", "has_status", "have_tokens", "spend_tokens", "add_tokens", "add_gold", "warp", "enter_instance", "complete_instance", "leave_instance", "instance_won", "weekly_quest", "slot_quest", "slot_template", "manual_quest")
+STATE_TAGS = ("have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker", "add_guild_points", "set_guild_rank", "guild_points", "guild_rank", "guild_rank_any", "party_gate", "open_party", "add_status", "has_status", "have_tokens", "spend_tokens", "add_tokens", "add_gold", "warp", "enter_instance", "complete_instance", "leave_instance", "instance_won", "weekly_quest", "slot_quest", "slot_template", "slot_boss", "manual_quest")
 MAX_TEXT = 20000
 #: How many guilds one ``guild_rank_any`` may list.
 MAX_GUILD_CHOICES = 8
@@ -229,6 +234,11 @@ def check_tag(parts: list[str]) -> list[str]:
         count(3)
         _name(command, args[0], "a quest slot key")
         _one_of(command, args[1], ("offer", "start", "finish_win", "finish_lose"), "the action")
+        return [args[2]]
+    elif command == "slot_boss":
+        count(3)
+        _name(command, args[0], "a quest slot key")
+        _one_of(command, args[1], ("fight", "won", "lost"), "the action")
         return [args[2]]
     elif command == "manual_quest":
         count(3)
@@ -558,7 +568,7 @@ async def advance(script: Script, pos: int, prompt: dict | None, choice: int | N
             failed = await state(command, args)
             if failed:
                 pos = go(failed)
-            elif command in ("warp", "enter_instance", "leave_instance") and not (command == "enter_instance" and args[1] == "public"):  # the hero is somewhere else now: the dialog is over
+            elif (command in ("warp", "enter_instance", "leave_instance") and not (command == "enter_instance" and args[1] == "public")) or (command == "slot_boss" and args[1] == "fight"):  # the hero is somewhere else now, or in a fight: the dialog is over
                 return over()
         elif command == "ack":
             return stopped({"type": "ack"}, pos)
