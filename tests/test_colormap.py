@@ -10,6 +10,8 @@ from terraforma.colormaps import ColorMapError, apply, check_color_map, check_co
 from terraforma.tools import colormap
 from terraforma.tools.colormap import ColorMapToolError, check, main, make, merge, palette_of, preview, read_map
 
+pytestmark = pytest.mark.platform
+
 PALETTE = ["#3050a0", "#7090e0", "#101010", "#808080"]
 
 

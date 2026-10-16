@@ -13,7 +13,7 @@ from terraforma.quests import service as quests
 from terraforma.towns import service as towns_service
 from terraforma.towns.hooks import Towns
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.heroes]
 
 PASSWORD = "correct horse battery"
 SEED = {

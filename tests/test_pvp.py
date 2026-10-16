@@ -25,7 +25,7 @@ from terraforma.pvp.hooks import PvpZones
 
 from .helpers import expect
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.heroes]
 
 
 class Strength(Rules):

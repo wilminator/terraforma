@@ -12,6 +12,8 @@ from terraforma.models import Map
 from terraforma.testing import in_app_db
 from terraforma.world.start import ensure_start
 
+pytestmark = pytest.mark.heroes
+
 PASSWORD = "correct horse battery"
 SEED = {"jobs": [{"key": "fighter", "name": "Fighter", "stat_growth": {"HP": 10}}]}
 PLACES = [StartPlace("aldergate", "Aldergate", "aldergate", 5, 6), StartPlace("solhaven", "Solhaven", "solhaven", 2, 3)]

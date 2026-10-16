@@ -9,6 +9,8 @@ from terraforma import keys
 from terraforma.__main__ import main
 from terraforma.keys import DecryptError, KeyRing, KeysMissing, new_key, reencrypt_all, shift_slots
 
+pytestmark = pytest.mark.accounts
+
 
 @pytest.fixture
 def key_dir(tmp_path):

@@ -17,6 +17,8 @@ from terraforma.settings import load_settings
 from .helpers import expect
 from .test_settings import write
 
+pytestmark = pytest.mark.platform
+
 
 HERB = {"key": "herb", "name": "Herb", "price": 12, "description": "A bitter leaf.", "one_use": True,
         "use_effect": {"effect": "heal", "targets": "individual", "base": 10, "added": 0}}

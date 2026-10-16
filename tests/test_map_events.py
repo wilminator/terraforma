@@ -32,7 +32,7 @@ from terraforma.towns.hooks import Towns
 from .helpers import expect
 from .test_npcs import sign_in
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.platform]
 
 PASSWORD = "correct horse battery"
 NPCS, REACH, RULES = Npcs(), Reach(), Rules()

@@ -23,7 +23,7 @@ from terraforma.world.start import ensure_start
 
 from .test_fight_rules import busy_fight, fighter, sword
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.fights]
 
 RULES = Rules()
 PASSWORD = "correct horse battery"

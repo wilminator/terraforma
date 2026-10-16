@@ -12,6 +12,8 @@ from terraforma.fights.status import BAD, GOOD, Curve, Modifier, StatusSpec, Tic
 
 from .test_ai import RULES, fight_of, fighter, play, rng, spell
 
+pytestmark = pytest.mark.fights
+
 POISON = StatusSpec("poison", kind=BAD, duration=3, ticks=(Tick(status.ROUND_END, status.DAMAGE, amount=10),))
 REGEN = StatusSpec("regen", kind=GOOD, duration=3, ticks=(Tick(status.ROUND_END, status.HEAL, amount=5),))
 STUN = StatusSpec("stun", kind=BAD, duration=2, ticks=(Tick(status.TURN_START, status.SKIP_TURN, chance=50),))

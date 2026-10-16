@@ -23,6 +23,8 @@ from terraforma.testing import in_app_db
 from .helpers import expect
 from .test_external_signin import account_named, finish, identities_in_db, outcome
 
+pytestmark = pytest.mark.accounts
+
 PASSWORD = "correct horse battery"
 FACEBOOK_ID = "10158000000000001"
 STEAM_ID = "76561198000000001"
