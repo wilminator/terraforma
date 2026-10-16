@@ -542,6 +542,12 @@ Stacks work as in a pack: equipment never stacks, the rest stack up to the pack'
 
 A delivery (a store's purchase, a reward) goes through `terraforma.storage.service.deliver(session, storage, hero, item_key, qty)`: into storage first, then into the packs of `Storage.sharers(session, hero)` in order (the hero's teammates by slot, or the hero alone), the next after each is full. It returns a `Delivery` (`stored`, `packed` by hero id, `left`) and raises nothing for a full house, so the caller decides what to do with the rest. Deleting a team deletes its storage with it, as it does the team's gold.
 
+## Escrow
+
+A guild can hold a team's gold, Challenge Tokens and items until the game settles them (`terraforma.escrow`). `escrow.service.hold(session, economy, hero, guild, purpose, ref, gold, tokens, items)` takes the deposit from a hero for their team: gold from the hero's purse (`Economy.debit`), tokens from the account's balance and `items`, a list of (pack position, quantity), from the hero's pack, all or nothing. `guild` names the hall that holds it, `purpose` is the game's word for why (a breach, a listing, a delivery) and `ref` whatever it wants to find the deposit by (`escrow.service.held` narrows by team, guild, purpose and ref; `contents` lists what a deposit holds).
+
+A deposit is settled once, all or nothing: `refund(session, economy, storage, escrow_id)` gives it back to the depositing team and `forfeit(session, economy, storage, escrow_id, to_team_id)` gives it to another team. Gold goes to the team (`Economy.credit_team`), tokens to the team's account (whatever the purse cap says) and items through the game's storage (`storage.service.deliver`, into the team's first hero); a team with no hero or no room for every item gets nothing and the deposit stays held. Settling is not a call a player can make: what a deposit secures and when it is released is the game's, so these are functions for its dialogs and rules. They are public interfaces (the license exception covers them).
+
 ## Relationships
 
 A team has a relationship with another team: how it feels about it, as a score from -100 to 100 and a short private note. It is *directed* (Aria's view of Bram and Bram's view of Aria are separate rows) and private: only the team's owner reads it, and the other side never sees a score or a note. Scores have named *bands* (`enemy`, `wary`, `neutral`, `friendly`, `close` by default). Alliances are the same kind of side (see Alliances).
