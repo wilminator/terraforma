@@ -66,6 +66,10 @@ its command, followed by comma separated parameters. Text outside tags is shown.
     resurrect,price,label  cure,price,label  uncurse,price,label   the game's paid actions (cancelling jumps to the label)
     pause,ms             wait this long (the browser does)
     sound,clip  music,clip  mute        sound cues (the browser plays them)
+    scene,name           stage a scene (the browser shows it, the game's client code draws the ones it adds; ``black`` is an all-black screen)
+    set_job,job,label    the talking hero's job becomes that one, keeping its level, experience and stats (the label if the job is not one it may
+                         take); only in a force-disuse dialog (``terraforma.disuse``)
+    lost,job|ability|item,label  jump to the label unless the hero still has a job, abilities or items to settle; only in a force-disuse dialog
     ack                  wait until the player says to go on
     end                  leave the whole dialog here (the same as ``end_complete``)
     include,key          run the dialog tree with that key (the ``dialogs`` table) from its start, like a subroutine: where it goes on
@@ -93,7 +97,7 @@ from dataclasses import dataclass
 SCOPES = ("any", "lead", "each")
 OPS = ("eq", "ne", "lt", "le", "gt", "ge")
 #: The tags that read or change the game's state, which the engine itself runs (through ``advance``'s $state).
-STATE_TAGS = ("have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker", "add_guild_points", "set_guild_rank", "guild_points", "guild_rank", "guild_rank_any", "party_gate", "open_party", "add_status", "has_status", "have_tokens", "spend_tokens", "add_tokens", "add_gold", "warp", "enter_instance", "complete_instance", "leave_instance", "instance_won", "weekly_quest", "slot_quest", "slot_template", "slot_boss", "manual_quest")
+STATE_TAGS = ("set_job", "lost", "have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker", "add_guild_points", "set_guild_rank", "guild_points", "guild_rank", "guild_rank_any", "party_gate", "open_party", "add_status", "has_status", "have_tokens", "spend_tokens", "add_tokens", "add_gold", "warp", "enter_instance", "complete_instance", "leave_instance", "instance_won", "weekly_quest", "slot_quest", "slot_template", "slot_boss", "manual_quest")
 MAX_TEXT = 20000
 #: How many guilds one ``guild_rank_any`` may list.
 MAX_GUILD_CHOICES = 8
@@ -146,7 +150,7 @@ def check_tag(parts: list[str]) -> list[str]:
 
     if command == "":
         count(0)
-    elif command in ("label", "sound", "music", "jump"):
+    elif command in ("label", "sound", "music", "scene", "jump"):
         count(1)
         if not args[0] and command != "jump":
             raise ScriptError(f"{command} tag needs a name")
@@ -340,6 +344,14 @@ def check_tag(parts: list[str]) -> list[str]:
         for value, what in zip(args[2:6], ("the lowest rank", "the highest rank", "the least PXP", "the most PXP (0 for no limit)")):
             _whole(command, value, what)
         return [args[6]]
+    elif command == "set_job":
+        count(2)
+        _name(command, args[0], "a job")
+        return [args[1]]
+    elif command == "lost":
+        count(2)
+        _one_of(command, args[0], ("job", "ability", "item"), "what is lost")
+        return [args[1]]
     elif command == "pause":
         count(1)
         _whole(command, args[0], "the wait in milliseconds")
@@ -576,6 +588,8 @@ async def advance(script: Script, pos: int, prompt: dict | None, choice: int | N
             events.append({"type": "pause", "ms": int(args[0])})
         elif command in ("sound", "music"):
             events.append({"type": command, "clip": args[0]})
+        elif command == "scene":
+            events.append({"type": "scene", "name": args[0]})
         elif command == "mute":
             events.append({"type": "mute"})
         else:  # the game's: heal, recharge, select_team, services, resurrect, cure, uncurse
