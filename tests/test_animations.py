@@ -11,6 +11,8 @@ from terraforma.client import ClientError, check_game_client
 from terraforma.example import GAME as EXAMPLE
 from terraforma.game import Game
 
+pytestmark = pytest.mark.platform
+
 
 def file_of(**animations):
     return {"animations": animations}

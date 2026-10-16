@@ -28,7 +28,7 @@ from .test_towns import sign_in
 from .test_weekly_quests import SEED as TEAM_SEED
 from .test_weekly_quests import a_team
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.heroes]
 
 DAY = 24 * 60 * 60
 

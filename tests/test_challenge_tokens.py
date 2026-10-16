@@ -15,7 +15,7 @@ from terraforma.challenge.models import ChallengeEntry as TokenEntry
 from .helpers import expect
 from .test_fight_store import PASSWORD, a_team_fights_a_rat, play_to_the_end
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.heroes]
 
 
 class Pays(Rules):

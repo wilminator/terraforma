@@ -62,5 +62,5 @@ markers = [
     "fights: category, see tests/conftest.py",
     "social: category, see tests/conftest.py",
     "e2e: runs in a real browser against a live server (tests/e2e); CI runs these as their own jobs",
-    "uncategorized: a test file missing from CATEGORIES in tests/conftest.py (CI would not run it)",
+    "uncategorized: a test file that declares no category (CI would not run it), see tests/conftest.py",
 ]

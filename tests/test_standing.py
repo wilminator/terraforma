@@ -31,7 +31,7 @@ from .test_fight_rules import fighter
 from .test_fight_store import SEED as FIGHT_SEED
 from .test_statuses import A, B, bear, item, play, use
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.heroes]
 
 PASSWORD = "correct horse battery"
 RULES = Rules()

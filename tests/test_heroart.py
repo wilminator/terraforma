@@ -9,6 +9,8 @@ from terraforma.animations import check_animation_folder, check_hero_back_views
 from terraforma.tools import heroart
 from terraforma.tools.heroart import BODIES, CARRY, HEADS, OFFHANDS, POSES, HeroArtError, Look, draw, fight_figure, main, map_figure, read_looks
 
+pytestmark = pytest.mark.platform
+
 LOOKS = {
     "fighter": {"colors": {"cloth": "#7e8aa0", "accent": "#c03030"}, "head": "helm", "weapon": "sword", "offhand": "kite", "body": "tabard"},
     "scout": {"colors": {"cloth": "#4c7c3e"}, "head": "feather_cap", "weapon": "bow", "melee": "dagger", "ranged": "bow", "body": "quiver"},

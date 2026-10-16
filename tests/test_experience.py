@@ -1,5 +1,7 @@
 """The experience tree: DragonStar's rules, as pure functions (no database needed)."""
 
+import pytest
+
 from terraforma.fights.experience import (
     Debt,
     Fighter,
@@ -11,6 +13,8 @@ from terraforma.fights.experience import (
     process_experience,
     round_half_up,
 )
+
+pytestmark = pytest.mark.fights
 
 HERO = (0, 0, 0)
 HERO_2 = (0, 0, 1)

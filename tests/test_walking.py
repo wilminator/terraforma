@@ -21,7 +21,7 @@ from terraforma.world.rng import WorldRng
 
 from .helpers import expect
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.platform]
 
 PASSWORD = "correct horse battery"
 RULES = Rules()

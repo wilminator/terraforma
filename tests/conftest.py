@@ -30,23 +30,18 @@ def later(monkeypatch):
 
 # --- test categories (CI runs each category on each database as its own job) ---------------------------------------------------
 
-#: Which category every test file belongs to. A new test file must be listed here (a test checks that).
-CATEGORIES = {
-    "accounts": ["accounts", "handles", "keys", "twofa", "mail", "logscrub", "settings", "external_signin", "external_facebook_steam", "second_factors", "oidc_provider"],
-    "platform": ["app", "client", "categories", "content", "database", "housekeeping", "schema", "baseline_migration", "db_commit_order", "qbtiles", "tilesheet", "heroart", "colormap", "animations", "maps", "walking", "map_events", "parallel", "seed", "world", "example_content", "monster_art", "monster_authoring"],
-    "heroes": ["heroes", "inventory", "field_use", "parties", "towns", "economy", "trading", "storage", "drops", "pending_drops", "challenge_tokens", "store_grant", "pvp", "npc_script", "instance_tags", "npcs", "reach", "quests", "weekly_quests", "rotating_quests", "manual_quests", "quest_needs", "quest_boss_fights", "instances", "npc_state", "market", "inn", "guild", "guild_ranks", "standing", "token_tags", "start"],
-    "fights": ["round_time", "fight_rules", "fleeing", "monster_play", "monster_control", "monster_rewards", "monster_guests", "fight_store", "live_fights", "fight_art", "joining", "experience", "rewards", "ai", "ai_statuses", "statuses", "steal_transfer", "potential_effects"],
-    "social": ["relations", "alliances", "ballots", "ratings", "profiles", "play_time", "follows", "fight_tags", "fight_pages", "chat", "voice"],
-}
-CATEGORY_OF_FILE = {f"test_{name}": category for category, names in CATEGORIES.items() for name in names}
+#: The categories a test file may declare. A file says which one it belongs to with a line near its top:
+#: `pytestmark = pytest.mark.heroes` (or `[pytest.mark.anyio, pytest.mark.heroes]` beside other marks).
+#: Nothing else lists the files, so a new test file never edits a shared file (a test checks that every file declares one).
+CATEGORIES = ("accounts", "platform", "heroes", "fights", "social")
 
 
 def pytest_collection_modifyitems(items):
-    """Marks every test with its category, and with `db` when it runs against a database (so `-m "not db"` is the pure ones)."""
+    """Marks a test `e2e` for the browser tests, `uncategorized` when its file declares no category, and `db` when it runs against a database (so `-m "not db"` is the pure ones)."""
     for item in items:
         if "e2e" in item.path.parts:  # the browser tests: CI runs them as their own jobs (browser-tests.yml)
             item.add_marker(pytest.mark.e2e)
-        else:
-            item.add_marker(getattr(pytest.mark, CATEGORY_OF_FILE.get(item.path.stem) or "uncategorized"))
+        elif not any(item.get_closest_marker(name) for name in CATEGORIES):
+            item.add_marker(pytest.mark.uncategorized)
         if "database_url" in item.fixturenames:
             item.add_marker(pytest.mark.db)

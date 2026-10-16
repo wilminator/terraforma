@@ -17,7 +17,7 @@ from terraforma.testing import in_app_db
 from .helpers import expect
 from .test_fight_store import PASSWORD
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.heroes]
 
 SECRET = "store-backend-secret-0123456789abcdef"
 URL = "/api/server/store/grant"

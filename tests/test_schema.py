@@ -7,7 +7,7 @@ from terraforma.db.base import Base
 from terraforma.db.schema import STAMP_TABLE, SchemaOutdated, ensure_schema, reset_schema, schema_hash
 from terraforma.testing import forget_schema
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.platform]
 
 
 async def tables(engine) -> set[str]:

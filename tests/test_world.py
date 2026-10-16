@@ -7,6 +7,8 @@ from terraforma.models import Map
 from terraforma.world.location import Position
 from terraforma.world.rng import WorldRng
 
+pytestmark = pytest.mark.platform
+
 
 def test_the_same_seed_and_stream_give_the_same_numbers():
     a = [WorldRng(42).stream("fight", 7, 1).randint(1, 1000) for _ in range(1)]

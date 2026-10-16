@@ -12,6 +12,8 @@ from terraforma.content.schema import STATS, ContentError, check_seed
 from terraforma.game import Game
 from terraforma.testing import in_app_db
 
+pytestmark = pytest.mark.platform
+
 
 SEED = {
     "abilities": [

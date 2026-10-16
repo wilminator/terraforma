@@ -30,7 +30,7 @@ from .test_fight_store import SEED as FIGHT_SEED
 from .test_live_fights import FOE
 from .test_npc_state import NPCS, PASSWORD, REACH, check
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.heroes]
 
 RULES = Rules()
 DAY = rotation.DAY

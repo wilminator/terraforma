@@ -4,7 +4,7 @@ import pytest
 
 from terraforma.npcs.script import MAX_TEXT, ScriptError, Who, advance, parse
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.heroes]
 
 WHO = Who(frozenset({7}), 3)
 

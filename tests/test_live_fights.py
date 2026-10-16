@@ -18,7 +18,7 @@ from terraforma.models import Account
 
 from .test_fight_store import PASSWORD, SEED, a_hero
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.fights]
 
 RULES = Rules()
 HERO = (0, 0, 0)

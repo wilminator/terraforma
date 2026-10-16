@@ -2,8 +2,12 @@
 
 import asyncio
 
+import pytest
+
 from terraforma.db.dialect import ensure_database
 from terraforma.testing import per_worker
+
+pytestmark = pytest.mark.platform
 
 POSTGRES = "postgresql+asyncpg://terraforma:p%40ss@postgres-test/terraforma_test"
 MYSQL = "mysql+aiomysql://terraforma:terraforma@mysql-test/terraforma_test"

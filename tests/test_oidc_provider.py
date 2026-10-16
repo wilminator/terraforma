@@ -21,6 +21,8 @@ from terraforma.testing import in_app_db
 
 from .helpers import expect
 
+pytestmark = pytest.mark.accounts
+
 PASSWORD = "correct horse battery"
 STORE = "store"
 STORE_SECRET = "s" * 40

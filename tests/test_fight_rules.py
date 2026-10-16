@@ -22,6 +22,8 @@ from terraforma.fights.rules import Resource, Rules
 from terraforma.fights.specs import AbilitySpec, EffectSpec, ItemSpec
 from terraforma.world.rng import WorldRng
 
+pytestmark = pytest.mark.fights
+
 class Pinned(Rules):
     """These tests use the flee command as "does nothing" with the dice scripted, so no one gets away in them (``tests/test_fleeing.py``
     plays the real thing)."""

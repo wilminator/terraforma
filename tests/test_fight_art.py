@@ -16,7 +16,7 @@ from terraforma.heroes.models import Team
 from .test_fight_store import SEED
 from .test_live_fights import a_team
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.fights]
 
 RULES = Rules()
 SHEET = {"sheet": "crystal", "frame": 1, "animations": "crystal"}

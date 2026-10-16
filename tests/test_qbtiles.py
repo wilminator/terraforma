@@ -9,6 +9,8 @@ import pytest
 from terraforma.tools import qbtiles
 from terraforma.tools.qbtiles import QbError, QbTile, color_of, read_tiles
 
+pytestmark = pytest.mark.platform
+
 
 def record(tag, mark, pixels):
     return struct.pack("<HHHH", tag, mark, 256, 32) + bytes(pixels)

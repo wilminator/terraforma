@@ -31,6 +31,8 @@ from terraforma.world.start import ensure_start
 
 from .test_fight_rules import RULES, Scripted, fighter, listing, sword, types
 
+pytestmark = pytest.mark.fights
+
 A, B = (0, 0, 0), (1, 0, 0)
 
 
