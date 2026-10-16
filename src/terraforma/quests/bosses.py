@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..content.models import Ability, Item, Monster
+from ..fights.combatant import Combatant
 from ..fights.content import monster_combatant
 from ..fights.rules import Rules
 from .hooks import Band, Needs
@@ -91,3 +92,18 @@ async def promote(session: AsyncSession, hooks: Needs, rules: Rules, band: Band,
             return None
         bosses.append({"monster": key, "scale": factor, "pxp": strength(rules, rows[key], items, abilities, factor, extras.get("abilities")), "extras": extras})
     return bosses
+
+
+async def fighters(session: AsyncSession, rules: Rules, entries: list[dict]) -> list[Combatant]:
+    """The fighters for a quest's boss entries (``spec["bosses"]``), ready to stand as the monsters' side of a fight. Raises BossError if a
+    monster an entry names is no longer in the content."""
+    items, abilities = await tables(session)
+    rows = {row.key: row for row in (await session.scalars(select(Monster).where(Monster.key.in_({entry["monster"] for entry in entries})))).all()}
+    made = []
+    for entry in entries:
+        if entry["monster"] not in rows:
+            raise BossError(f"the boss {entry['monster']!r} is not a monster the world has any more")
+        fighter = boss_combatant(rows[entry["monster"]], entry, items, abilities, rules)
+        fighter.monster = entry["monster"]
+        made.append(fighter)
+    return made
