@@ -399,3 +399,91 @@ def test_an_admin_runs_the_gap_check_now_and_a_game_that_lists_no_bands_makes_no
     root = sign_in(app_client, "Root")
     in_app_db(app_client, lambda db: _make_admin(db, "Root"))
     assert expect(app_client.post("/api/admin/quest-needs/run", headers=root), 200).json() == {"proposals": []}
+
+
+# --- the game's dungeon ------------------------------------------------------------------------------------------------
+
+class Delving(Wanted):
+    """A game that builds a dungeon for each boss quest and takes it down again."""
+
+    def __init__(self, *bands, fail=False, **more):
+        super().__init__(*bands, **more)
+        self.fail, self.built, self.gone = fail, [], []
+
+    async def dungeon(self, session, rng, band, bosses):
+        if self.fail:
+            raise RuntimeError("no room for a dungeon")
+        self.built.append([boss["monster"] for boss in bosses])
+        return {"map": f"{band.key}-{rng.randrange(1000)}", "rooms": 3}
+
+    async def dungeon_gone(self, session, proposal_id, dungeon):
+        self.gone.append((proposal_id, dungeon))
+
+
+async def test_the_games_dungeon_is_kept_in_the_quests_spec_and_travels_to_its_template(db):
+    await a_world(db)
+    _, strength = await a_strength(db)
+    game = Delving(band_around(strength), approval=False)
+    [proposal] = await needs.run(db, game, Flat())
+    assert game.built == [[boss["monster"] for boss in proposal.spec["bosses"]]]
+    assert proposal.spec["dungeon"]["rooms"] == 3 and proposal.spec["dungeon"]["map"].startswith("wide-")
+    assert (await db.get(QuestTemplate, proposal.template_id)).spec["dungeon"] == proposal.spec["dungeon"]
+
+
+async def test_the_default_game_builds_no_dungeon(db):
+    await a_world(db)
+    _, strength = await a_strength(db)
+    [proposal] = await needs.run(db, Wanted(band_around(strength)), Flat())
+    assert "dungeon" not in proposal.spec
+
+
+async def test_the_dungeon_replays_from_the_worlds_seed(db):
+    await a_world(db)
+    _, strength = await a_strength(db)
+    [first] = await needs.run(db, Delving(band_around(strength)), Flat())
+    await db.delete(first)
+    await db.flush()
+    [again] = await needs.run(db, Delving(band_around(strength)), Flat())
+    assert again.spec["dungeon"] == first.spec["dungeon"]
+
+
+async def test_a_game_whose_dungeon_fails_skips_that_band_and_the_others_go_on(db):
+    await a_world(db)
+    _, strength = await a_strength(db)
+    assert await needs.run(db, Delving(band_around(strength), fail=True), Flat()) == []
+    assert await db.scalar(select(func.count()).select_from(QuestProposal)) == 0
+    assert len(await needs.run(db, Delving(band_around(strength)), Flat())) == 1, "the band is tried again at the next run"
+
+
+async def test_a_dungeon_too_big_for_a_spec_is_refused_like_a_failure(db):
+    await a_world(db)
+    _, strength = await a_strength(db)
+
+    class Huge(Delving):
+        async def dungeon(self, session, rng, band, bosses):
+            return {"rooms": "x" * 100000}
+
+    assert await needs.run(db, Huge(band_around(strength)), Flat()) == []
+
+
+async def test_rejecting_or_retiring_a_quest_tells_the_game_to_take_its_dungeon_down(db):
+    await a_world(db)
+    _, strength = await a_strength(db)
+    game = Delving(band_around(strength))
+    [first] = await needs.run(db, game, Flat())
+    await needs.reject(db, first.id, game)
+    [second] = await needs.run(db, game, Flat())
+    await needs.approve(db, second.id)
+    await needs.retire(db, second.id, game)
+    assert game.gone == [(first.id, first.spec["dungeon"]), (second.id, second.spec["dungeon"])]
+
+
+async def test_a_quest_with_no_dungeon_or_a_caller_without_the_game_tells_nobody(db):
+    await a_world(db)
+    _, strength = await a_strength(db)
+    plain = Delving(band_around(strength))
+    [proposal] = await needs.run(db, Wanted(band_around(strength)), Flat())
+    await needs.reject(db, proposal.id, plain)
+    [dungeon] = await needs.run(db, plain, Flat())
+    await needs.reject(db, dungeon.id)
+    assert plain.gone == []
