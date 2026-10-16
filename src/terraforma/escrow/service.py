@@ -126,12 +126,12 @@ async def _settle(session: AsyncSession, economy: Economy, storage: Storage, esc
         raise EscrowError("there is no such deposit")
     receiver_id = escrow.team_id if to_team_id is None else to_team_id
     async with session.begin_nested():  # all of it is paid out, or none of it and the deposit stays held
+        team, hero = await _receiver(session, receiver_id)  # before the claim: a team that does not exist breaks the foreign key
         claimed = await session.execute(
             update(Escrow).where(Escrow.id == escrow_id, Escrow.state == HELD).values(state=state, settled_to=receiver_id, settled_at=wallclock.timestamp())
         )
         if claimed.rowcount == 0:
             raise EscrowError("that deposit is settled already")
-        team, hero = await _receiver(session, receiver_id)
         if escrow.gold:
             await economy.credit_team(session, team.id, escrow.gold)
         if escrow.tokens:
