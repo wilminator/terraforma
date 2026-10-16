@@ -129,7 +129,8 @@ def test_rows_without_a_key_are_joined_without_a_clash(tmp_path):
 def test_an_addon_may_only_bring_kinds_of_content_that_can_be_switched_off(tmp_path):
     from terraforma.content.loader import TABLES
 
-    assert set(SWITCHABLE) == set(TABLES), "the kinds with an active column are the ones an add-on may bring"
+    # (job_abilities has no table: the rows are folded into a job's abilities by the live states)
+    assert set(SWITCHABLE) - {"job_abilities"} == set(TABLES), "the kinds with an active column are the ones an add-on may bring"
     layer_seeds((("a", make_seed(tmp_path / "a", **{kind: [] for kind in SWITCHABLE})),))
     for kind in ("maps", "dialogs", "npcs", "quest_slots", "quest_templates", "anything_else"):
         with pytest.raises(AddOnError, match=f"the add-on a: {kind}.json cannot be used yet"):
