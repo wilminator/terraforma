@@ -20,6 +20,10 @@ from .seed import SeedError, load_seed
 ADDON_KEY = re.compile(r"^[a-z][a-z0-9_]{1,31}$")
 LICENSE_FILE = "ASSETS.md"
 
+#: The kinds of seed file an add-on may have: the ones whose rows can be switched off (they have ``active``; content.loader.TABLES).
+#: Components start off, so an add-on's maps, dialogs, NPCs and quests wait for a slice that can switch them.
+SWITCHABLE = ("statuses", "abilities", "items", "drop_tables", "personalities", "jobs", "monsters")
+
 
 class AddOnError(ValueError):
     """The add-ons are not as the game and the settings say: the server won't start on them."""
@@ -109,6 +113,8 @@ def layer_seeds(layers: tuple[tuple[str | None, Path], ...]) -> LayeredSeed:
         except SeedError as error:
             raise AddOnError(f"{owner or 'the game'}'s seed: {error}") from error
         for name, entries in seed.items():
+            if owner is not None and name not in SWITCHABLE:
+                raise AddOnError(f"the add-on {owner}: {name}.json cannot be used yet (an add-on's seed may have: {', '.join(SWITCHABLE)})")
             known = owners.setdefault(name, {})
             for entry in entries:
                 key = entry.get("key")

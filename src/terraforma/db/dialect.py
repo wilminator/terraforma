@@ -26,10 +26,12 @@ async def upsert(
     table: Table,
     values: Mapping[str, Any],
     key: Iterable[str],
+    insert_only: Iterable[str] = (),
 ) -> None:
-    """Inserts $values, or updates the row whose $key columns match."""
+    """Inserts $values, or updates the row whose $key columns match (leaving the $insert_only columns as they are)."""
     key = list(key)
-    changes = {name: value for name, value in values.items() if name not in key}
+    kept = set(insert_only)
+    changes = {name: value for name, value in values.items() if name not in key and name not in kept}
     name = session.bind.dialect.name
     if name == "postgresql":
         statement = postgresql.insert(table).values(**values)

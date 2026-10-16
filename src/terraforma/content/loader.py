@@ -24,7 +24,7 @@ TABLES = {
 }
 
 
-def _values(kind: str, row: Strict) -> dict:
+def _values(kind: str, row: Strict, active: bool = True) -> dict:
     """The row's columns: its fields, with nested formats as plain JSON."""
     values = row.model_dump(mode="json", by_alias=True)
     if kind == "personalities":
@@ -34,16 +34,21 @@ def _values(kind: str, row: Strict) -> dict:
         }
     if kind == "monsters":
         values["authored"] = False  # a seed row with an admin-authored monster's key takes it over
-    return {**values, "active": True}
+    return {**values, "active": active}
 
 
 async def load_content(session: AsyncSession, seed: dict[str, list[dict]], stats: tuple[str, ...] | None = None,
-                       resources: tuple[str, ...] | None = None, drop_scale: int | None = None) -> dict[str, int]:
+                       resources: tuple[str, ...] | None = None, drop_scale: int | None = None,
+                       owners: dict[str, dict[str, str | None]] | None = None) -> dict[str, int]:
     """Checks $seed (raising ContentError if it's wrong) and makes the database match it.
 
     New keys are added, known keys updated, and keys the seed no longer lists
     are marked inactive (never deleted). Returns how many rows of each kind
     the seed has. A seed with no content files leaves the database alone.
+
+    $owners (``LayeredSeed.owners``) says which add-on brought each row (None: the game). An add-on's row is made **inactive** the
+    first time it is seen and its ``active`` is never touched again here: components start off, and switching one is not the
+    seed's to undo. The game's own rows follow the seed, as always.
     """
     checked = check_seed(seed, stats or STATS, resources or RESOURCES, drop_scale or DROP_SCALE)
     counts = {}
@@ -52,7 +57,8 @@ async def load_content(session: AsyncSession, seed: dict[str, list[dict]], stats
             continue
         rows = checked[kind]
         for row in rows:
-            await upsert(session, table.__table__, _values(kind, row), ["key"])
+            brought = (owners or {}).get(kind, {}).get(row.key)
+            await upsert(session, table.__table__, _values(kind, row, active=brought is None), ["key"], insert_only=["active"] if brought else ())
         gone = update(table).where(table.key.not_in([row.key for row in rows]))
         if kind == "monsters":
             gone = gone.where(models.Monster.authored.is_(False))  # an admin's monsters are not the seed's to retire
