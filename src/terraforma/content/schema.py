@@ -194,6 +194,15 @@ class Job(Strict):
     abilities: Annotated[list[JobAbility], BeforeValidator(_job_abilities)] = []
 
 
+class JobAbilitySeed(Strict):
+    """A row of ``job_abilities.json``: one more ability for a job that is written elsewhere (the game's, when an add-on brings the
+    ability). It joins the job's own ``abilities``; the job's row and this one may not both give the same ability."""
+
+    job: Key
+    ability: Key
+    level: int = Field(default=1, ge=1)
+
+
 class ArtRef(Strict):
     """A picture drawn from a sheet: ``sheet`` names the tilesheet (``name.png``, ``name.alpha.png`` and ``name.sheet.json`` under the
     game's assets folder, written without the extension), ``frame`` which picture of it (0 is the first, then left to right and down; a tile
@@ -633,6 +642,7 @@ KINDS: dict[str, type[Strict]] = {
     "drop_tables": DropTable,
     "personalities": Personality,
     "jobs": Job,
+    "job_abilities": JobAbilitySeed,
     "monsters": Monster,
     "statuses": Status,
     "maps": MapSeed,
@@ -685,12 +695,25 @@ def check_seed(seed: dict[str, list[dict]], stats: tuple[str, ...] = STATS, reso
         checked[kind] = rows
     keys: dict[str, set[str]] = {}
     for kind, rows in checked.items():
+        if kind == "job_abilities":
+            continue  # (no key of its own: a repeat is found above)
         seen: set[str] = set()
         for row in rows:
             if row.key in seen:
                 problems.append(f"{kind}.json: key {row.key!r} is used twice")
             seen.add(row.key)
         keys[kind] = seen
+    granted: dict[str, set[str]] = {row.key: {entry.ability for entry in row.abilities} for row in checked["jobs"]}
+    extra: dict[str, list[JobAbility]] = {}
+    for row in checked["job_abilities"]:
+        if row.job not in granted:
+            problems.append(f"job_abilities.json: {row.job}: {row.ability} is for a job that jobs.json doesn't have")
+        elif row.ability in granted[row.job]:
+            problems.append(f"job_abilities.json: {row.job} gets {row.ability!r} twice (jobs.json or another row gives it too)")
+        else:
+            granted[row.job].add(row.ability)
+            extra.setdefault(row.job, []).append(JobAbility(ability=row.ability, level=row.level))
+    checked["jobs"] = [row.model_copy(update={"abilities": [*row.abilities, *extra[row.key]]}) if row.key in extra else row for row in checked["jobs"]]
     references = [
         ("jobs", "abilities", "abilities"),
         ("monsters", "abilities", "abilities"),

@@ -213,6 +213,7 @@ A game's starting content is JSON in its `seed/` folder (`Game(seed_dir=...)`): 
 | `abilities.json` | `key`, `name`, `kind` (`spell` or `skill`), `mp_cost`, `description`, `icon`, `effect`, `presentation` |
 | `items.json` | `key`, `name`, `price`, `one_use`, `description`, `icon`, `use_effect`, `equip_slots`, `requires`, `stat_bonus`, `stat_percent`, `attack`, `use_presentation`, `fight_presentation` |
 | `jobs.json` | `key`, `name`, `xp_needed`, `stat_growth` (stats per level), `abilities` (each `{"ability": key, "level": n}`, the level a hero gets it at; a bare key means level 1) |
+| `job_abilities.json` | `job` (key in `jobs.json`), `ability` (key in `abilities.json`), `level` (default 1): one more ability for a job written elsewhere, so an add-on can teach the game's jobs its own abilities. Joined to the job's `abilities`; a job getting the same ability twice, from its own row and here or from two rows, is refused. |
 | `personalities.json` | `key`, `name`, `fight_art` and `map_art` (each a picture, see Art: a hero's two are separate sheets, a monster needs only `fight_art`), and the older way, an animation for each of `base equip flee hit die attack_close attack_throw attack_shoot skill spell item`, and `overworld` (`stand` and `move`, each facing `up down left right`) |
 | `monsters.json` | `key`, `name`, `personality` (key), `xp_reward`, `gold_reward`, `stats`, `abilities`, `items`, `equipment` (keys), `drops` (drop table keys), `ai` |
 | `drop_tables.json` | `key`, `name`, `weighted`, `rolls`, `entries` (see Item drops below) |
