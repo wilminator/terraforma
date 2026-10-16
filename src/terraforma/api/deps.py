@@ -15,7 +15,7 @@ from ..relations.hooks import Relations
 from ..pvp.hooks import PvpZones
 from ..market.hooks import Market
 from ..guild.hooks import Guild
-from ..quests.hooks import RotatingQuests, WeeklyQuests
+from ..quests.hooks import Needs, RotatingQuests, WeeklyQuests
 from ..heroes.hooks import Roster, Start
 from ..npcs.hooks import Npcs
 from ..npcs.inn import Inn
@@ -121,6 +121,15 @@ def get_rotating_quests(request: Request) -> RotatingQuests:
 
 
 GameRotatingQuests = Annotated[RotatingQuests, Depends(get_rotating_quests)]
+
+
+def get_needs(request: Request) -> Needs:
+    """The game's quest needs (the engine's default, which lists no bands, when the app runs without a game)."""
+    game = request.app.state.game
+    return game.needs if game else Needs()
+
+
+GameNeeds = Annotated[Needs, Depends(get_needs)]
 
 
 async def current_account(request: Request, db: Db) -> Account:

@@ -69,7 +69,7 @@ async def apply_templates(session: AsyncSession, rows: list) -> int:
             raise WeeklyError(f"quest_templates.json {row.key}: an admin already promoted a quest to a template with this key")
         await upsert(session, QuestTemplate.__table__, {
             "key": row.key, "name": row.name, "source": SEEDED, "min_level": row.min_level, "max_level": row.max_level,
-            "weight": row.weight, "spec": row.spec, "slot": row.slot, "active": True}, ["key"])
+            "weight": row.weight, "spec": row.spec, "slot": row.slot, "pxp_min": row.pxp_min, "pxp_max": row.pxp_max, "active": True}, ["key"])
     gone = await session.scalars(select(QuestTemplate).where(QuestTemplate.source == SEEDED, QuestTemplate.key.not_in([row.key for row in rows])))
     for template in gone.all():
         template.active = False

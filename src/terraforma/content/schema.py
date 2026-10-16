@@ -588,9 +588,15 @@ class QuestTemplateSeed(Strict):
     # The rotating quest slot (quest_slots.json) this template is for; empty for a weekly quest. A slot's quest is the same for every team,
     # so the levels above mean nothing to it.
     slot: Key | None = None
+    # The party strength (PXP) the quest is meant for, if the game says: a slot's quest then counts as fitting a band of teams that overlaps
+    # it (see ``quests.needs``). 0 means unsaid; a ceiling of 0 means none.
+    pxp_min: int = Field(default=0, ge=0)
+    pxp_max: int = Field(default=0, ge=0)
 
     @model_validator(mode="after")
     def _levels_run_up(self):
+        if self.pxp_max and self.pxp_min > self.pxp_max:
+            raise ValueError("pxp_min is above pxp_max")
         if self.min_level > self.max_level:
             raise ValueError("min_level is above max_level")
         if len(json.dumps(self.spec)) > 16_000:

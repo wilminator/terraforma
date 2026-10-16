@@ -80,3 +80,64 @@ class RotatingQuests:
         """A team failed a quest of $slot. $reason is ``timeout`` (it ran out of time) or ``poor_performance`` (the game's dialog or dungeon said
         it lost). Does nothing by default: the game decides what failing costs (guild points, gold, a status). Never called when the
         world ended the quest."""
+
+
+@dataclass(frozen=True)
+class Band:
+    """A range of party strength (PXP) the world should always have a quest for, and where such quests go. $slot is the rotating quest
+    slot (``quests.rotation``) the quests are made for. A band is judged only when it holds at least $min_teams teams."""
+
+    key: str
+    slot: str
+    pxp_min: int = 0
+    pxp_max: int = 0  # (0: no ceiling)
+    #: A band is stalled when none of its teams completed a quest for this many seconds (0: stalls are not looked for).
+    stall_seconds: int = 0
+    min_teams: int = 1
+
+
+class Needs:
+    """What a game decides about the quests the world needs (``quests.needs``). A game subclasses this and hands it to ``Game(needs=...)``.
+    This is a public interface (the license exception covers it).
+
+    The engine looks at each band of party strength the game lists. A band has a gap when no quest of its slot fits it, or when none of its
+    teams completed a quest for the band's stall time. It then promotes an existing monster (or a gang) to a boss, scaled to the band
+    (the engine never makes up a monster: the world works with the monsters it has), and makes a quest of it. The default lists no bands, so
+    nothing is made unless the game asks.
+
+        class Wanted(terraforma.quests.hooks.Needs):
+            def bands(self):
+                return [Band("vanguard-a", "vanguard-rank-a", pxp_min=3000, pxp_max=6000, stall_seconds=30 * 86400)]
+            def extras(self, rng, band, monster):
+                return {"abilities": ["roar"]}
+    """
+
+    def bands(self) -> list[Band]:
+        """The bands the game wants quests for, strongest teams last or in any order."""
+        return []
+
+    def needs_approval(self, band: Band) -> bool:
+        """Whether a quest made for $band waits for an admin to approve it (True, the default) or goes live at once."""
+        return True
+
+    def target(self, band: Band) -> int:
+        """The party strength a quest for $band should challenge: the band's ceiling, or half as much again as its floor when it has none."""
+        return band.pxp_max or band.pxp_min * 3 // 2
+
+    def gang_size(self, rng: Random, band: Band) -> int:
+        """How many monsters stand together as the boss: 1 by default (a single boss). The target strength is shared among them."""
+        return 1
+
+    def pick(self, rng: Random, band: Band, candidates: list[str]) -> list[str] | None:
+        """The monsters (keys) to promote, from $candidates (monsters weak enough to be scaled up to the target and not so weak that the
+        scaling would be absurd). None (the default) leaves the choice to the engine, which draws from $rng weighted by strength."""
+        return None
+
+    def extras(self, rng: Random, band: Band, monster: str) -> dict:
+        """What the game adds to make a boss distinctive, stored with it and never read except ``abilities`` (a list of ability keys the boss
+        gains in a fight). Nothing by default."""
+        return {}
+
+    def name(self, rng: Random, band: Band, monsters: list[str]) -> str:
+        """The new quest's name (up to 64 characters)."""
+        return f"Hunt: {', '.join(monsters)}"[:64]

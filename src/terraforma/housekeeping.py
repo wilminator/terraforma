@@ -25,6 +25,7 @@ from .fights.rules import Rules
 from .fighttags import service as fighttags
 from .models import RateLimitHit, RememberedBrowser, WebauthnKey
 from .oidc import service as oidc
+from .quests import needs
 from .relations.models import ANSWERED, DISMISSED, RatingPrompt
 from .settings import Settings
 from .standing import service as standing
@@ -161,13 +162,23 @@ async def old_unkept_fights(session: AsyncSession, now: int, settings: Settings,
     return await fighttags.sweep(session, rules or Rules(), now)
 
 
-async def run(sessionmaker: async_sessionmaker[AsyncSession], settings: Settings, rules: Rules | None = None) -> dict[str, int]:
-    """One pass: every job in its own transaction. Returns how many rows each removed (a job that failed is left out)."""
+@job
+async def quest_needs(session: AsyncSession, now: int, settings: Settings, rules: Rules | None = None) -> int:
+    """Looks for gaps in the world's progression and makes a quest for each (``quests.needs``), when the game lists bands (the game's
+    ``Needs`` is in ``session.info["needs"]``). Unlike the other jobs it adds rows: it returns how many proposals it made."""
+    hooks = session.info.get("needs")
+    return len(await needs.run(session, hooks, rules or Rules())) if hooks is not None else 0
+
+
+async def run(sessionmaker: async_sessionmaker[AsyncSession], settings: Settings, rules: Rules | None = None, needs_hooks=None) -> dict[str, int]:
+    """One pass: every job in its own transaction. Returns how many rows each removed (a job that failed is left out), and for ``quest_needs``
+    how many proposals it made. $needs_hooks is the game's ``Needs``, if it has one."""
     now = wallclock.timestamp()
     removed: dict[str, int] = {}
     for name, work in JOBS.items():
         try:
             async with sessionmaker() as session, session.begin():
+                session.info["needs"] = needs_hooks
                 removed[name] = await work(session, now, settings, rules or Rules())
         except Exception:  # one bad job must not stop the others
             log.exception("housekeeping job %s failed", name)
