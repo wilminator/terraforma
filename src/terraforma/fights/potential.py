@@ -4,8 +4,11 @@ DragonStar's formula, kept as it is. It rates a fighter on four parts and adds
 them: physical defence (Dodge, Block and HP), physical offence (what each hand
 swings, with the ammunition it has), magical defence (Resistance and HP) and
 magical offence (the spells and skills it can pay for, with Speed, Focus and
-Power). Gear counts; statuses do not. The experience tree weighs each blow by
-it, and the AI's protector goal uses it.
+Power). Gear counts. A status a fighter is under does not (being afflicted
+changes nothing), but being able to cause or remove statuses does, and so does
+being able to steal mana or pass life or mana to an ally: those effects are
+rated below, which DragonStar's formula left at nothing. The experience tree
+weighs each blow by it, and the AI's protector goal uses it.
 
 ``Rules.pxp`` calls ``potential``; a game with other stats overrides that.
 """
@@ -33,6 +36,9 @@ from .specs import (
     REVIVE,
     SLAY,
     STEAL_HP,
+    STEAL_MP,
+    TRANSFER_HP,
+    TRANSFER_MP,
     EffectSpec,
 )
 
@@ -48,15 +54,26 @@ def target_rating(targets: int) -> float:
     return targets * 0.5 + 1 if targets < 3 else 2.5
 
 
+#: What one round of a placed (or removed) status is worth, in the unit of damage: a status effect is rated as this much for each
+#: round it lasts, added to DragonStar's ``base * added`` (which rates a status ability that sets neither at nothing). Kept simple
+#: on purpose: it does not read the status's definition, so a hero and a monster with the same ability always rate alike, whichever
+#: statuses the fight knows.
+STATUS_ROUND_WORTH = 10
+#: How many rounds a status effect that names none counts for (its own duration is not known here), and the most it counts for.
+STATUS_DEFAULT_ROUNDS = 3
+STATUS_MAX_ROUNDS = 10
+
+
 def effect_rating(effect: EffectSpec) -> float:
     """How much an effect is worth."""
     kind, base, added = effect.effect, effect.base, effect.added
-    if kind in (HEAL, HURT, STEAL_HP):
+    if kind in (HEAL, HURT, STEAL_HP, STEAL_MP, TRANSFER_HP, TRANSFER_MP):
         return base + added / 2
     if kind in (REVIVE, SLAY):
         return base * 2.5 + added * 2.5
     if kind in (CAUSE_GOOD_STATUS, REMOVE_GOOD_STATUS, CAUSE_BAD_STATUS, REMOVE_BAD_STATUS):
-        return base * added
+        rounds = min(effect.duration or STATUS_DEFAULT_ROUNDS, STATUS_MAX_ROUNDS)
+        return base * added + STATUS_ROUND_WORTH * rounds
     return 0
 
 
