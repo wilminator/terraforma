@@ -6,10 +6,12 @@ Alembic produces the same schema changes on each database.
 """
 
 import json
-from datetime import UTC, datetime
+from datetime import datetime
 
 from sqlalchemy import DateTime, MetaData
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+from terraforma import wallclock
 
 NAMING_CONVENTION = {
     "ix": "ix_%(column_0_label)s",
@@ -25,7 +27,8 @@ class Base(DeclarativeBase):
 
 
 def utcnow() -> datetime:
-    return datetime.now(UTC)
+    """The stamp for created_at and updated_at: the wall clock the rest of the engine uses, so a test that moves it moves these too."""
+    return wallclock.now()
 
 
 class Timestamps:
