@@ -9,6 +9,7 @@ import { MapScene } from "./map-scene.js";
 import { mountPanels } from "./panels.js";
 import { Roster } from "./roster.js";
 import { Shell } from "./shell.js";
+import { settleHeroes } from "./disuse.js";
 import { DESIGN_HEIGHT, DESIGN_WIDTH, fitStage } from "./stage.js";
 
 const shell = new Shell("play");
@@ -75,6 +76,8 @@ async function showGame() {
   try {
     const [running] = await api.get("/api/fights?running=true&limit=1");
     if (running) await enterFight(running.id);
+    // A hero that holds something the game has retired (or has something kept that can come back) goes through its scene first.
+    await settleHeroes(shell, roster, document.querySelector(".game"));
   } catch (error) {
     problem.textContent = problemText(shell, error);
   }
