@@ -24,6 +24,7 @@ from ..fighttags.models import FightTeam, TeamKept, TeamTag
 from ..profiles.models import TeamProfile
 from ..guild.ranks import forget_team as forget_ranks
 from ..quests.service import forget_team as forget_quests
+from ..quests.manual import forget_team as forget_manual_quests
 from ..quests.rotation import forget_team as forget_slot_quests
 from ..quests.weekly import forget_team as forget_weekly_quests
 from ..storage.service import forget as forget_storage
@@ -251,6 +252,7 @@ async def delete_team(session: AsyncSession, account: Account, team_id: int, all
     await forget_ranks(session, team.id)
     await forget_weekly_quests(session, team.id)
     await forget_slot_quests(session, team.id)
+    await forget_manual_quests(session, team.id)
     await forget_storage(session, "team", team.id)
     await session.execute(delete(PartyRequest).where(PartyRequest.team_id == team.id))
     await standing.forget(session, "team", team.id)

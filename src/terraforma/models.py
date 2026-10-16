@@ -245,6 +245,7 @@ from .instances import models as _instances  # noqa: E402,F401
 from .quests import weekly_models as _weekly_quests  # noqa: E402,F401
 from .quests import rotation_models as _rotation_quests  # noqa: E402,F401
 from .quests import needs_models as _needs_quests  # noqa: E402,F401
+from .quests import manual_models as _manual_quests  # noqa: E402,F401
 from .chat import models as _chat  # noqa: E402,F401
 from .guild import models as _guild  # noqa: E402,F401
 from .playtime import models as _playtime  # noqa: E402,F401
