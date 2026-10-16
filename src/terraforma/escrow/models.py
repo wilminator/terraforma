@@ -8,13 +8,15 @@ from ..db.base import Base, Timestamps
 HELD = "held"
 REFUNDED = "refunded"
 FORFEITED = "forfeited"
+RELEASED = "released"
 
 
 class Escrow(Timestamps, Base):
     """One deposit. ``guild`` names the hall that holds it (the place the deposit exists), ``purpose`` is the game's word for why
     (a breach, a listing, a delivery) and ``ref`` whatever the game wants to find it by again (a contract's key). The depositor
     is a team, like standing and quests. A deposit is settled once: ``state`` goes from ``held`` to ``refunded`` (it went back to
-    the depositor) or ``forfeited`` (it went to ``settled_to``, another team), and never changes again."""
+    the depositor), ``forfeited`` (it went to ``settled_to``, another team) or ``released`` (the game took its contents over to send
+    them on, ``settled_to`` is who they were sent to), and never changes again."""
 
     __tablename__ = "escrows"
 

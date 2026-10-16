@@ -24,7 +24,7 @@ from ..heroes import inventory
 from ..heroes.models import Hero, Team, TeamMember
 from ..storage import service as storage_service
 from ..storage.hooks import Storage
-from .models import FORFEITED, HELD, REFUNDED, Escrow, EscrowItem
+from .models import FORFEITED, HELD, REFUNDED, RELEASED, Escrow, EscrowItem
 
 ESCROW = "escrow"  # the reason in the Challenge Token ledger
 MAX_AMOUNT = 10**9
@@ -153,3 +153,19 @@ async def forfeit(session: AsyncSession, economy: Economy, storage: Storage, esc
     """Gives the whole deposit to $to_team_id (a breach's victim). Raises EscrowError, changing nothing, if it is settled already
     or that team has no hero or no room for every item."""
     return await _settle(session, economy, storage, escrow_id, FORFEITED, to_team_id)
+
+
+async def release(session: AsyncSession, escrow_id: int, to_team_id: int | None = None) -> dict:
+    """Ends the deposit without paying it out and hands its contents (see ``contents``) to the caller, who must send them on in the
+    same transaction (a purchase sends the goods of a listing as a parcel, for example). $to_team_id is who they are for, kept in
+    ``settled_to``. Raises EscrowError, changing nothing, if the deposit is settled already."""
+    escrow = await session.get(Escrow, escrow_id)
+    if escrow is None:
+        raise EscrowError("there is no such deposit")
+    claimed = await session.execute(
+        update(Escrow).where(Escrow.id == escrow_id, Escrow.state == HELD).values(state=RELEASED, settled_to=to_team_id, settled_at=wallclock.timestamp())
+    )
+    if claimed.rowcount == 0:
+        raise EscrowError("that deposit is settled already")
+    await session.refresh(escrow)
+    return await contents(session, escrow)

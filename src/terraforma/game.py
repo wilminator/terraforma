@@ -23,6 +23,7 @@ from .voice.hooks import Voice
 from .pvp.hooks import PvpZones
 from .market.hooks import Market
 from .guild.fees import Fees
+from .marketplace.hooks import Marketplace
 from .guild.hooks import Guild
 from .quests.hooks import ManualQuests, Needs, RotatingQuests, WeeklyQuests
 from .heroes.hooks import Roster, Start
@@ -90,6 +91,8 @@ class Game:
     storage: Storage = field(default_factory=NoStorage)
     # What a guild charges a team for its services: the base price to everyone, by default (``guild.fees``).
     fees: Fees = field(default_factory=Fees)
+    # How long a marketplace listing lasts, what posting one costs and what getting a purchase to the buyer's guild costs (``marketplace.hooks``).
+    marketplace: Marketplace = field(default_factory=Marketplace)
     # Two things about logging in: how long a browser that proved a second factor may skip it, and the note a player with a single
     # second factor sees (see accounts.hooks).
     sign_in: SignIn = field(default_factory=SignIn)
