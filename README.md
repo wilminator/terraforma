@@ -453,6 +453,7 @@ What an admin authors as settings is a *settings document*, kept twice: the **li
 - **The hash** is SHA-256 of the canonical JSON (sorted keys, no spaces), so equal states have equal hashes. A snapshot is stored as `ExactJSON`, never changed, and carries who committed it, when, and an optional note. Fights and recordings will store the live hash.
 - **Check** finds every problem: wrong format, a section the game doesn't have or one that is missing, a section that is not an object, and each section's own checks. **Commit** needs the draft's hash (the one the admin read, so a draft edited since is refused with 409), runs the check, refuses an unchanged draft, and moves the one live pointer to a new snapshot. **Revert** replaces the draft with the live document. Concurrent edits are caught by a revision number on the draft.
 - **Frozen** is set only by an import (slice 2; `service.freeze`, no route) and cleared by any edit, revert or commit. Staged maintenance will need a frozen plan.
+- **The first state** (every section at its default) is made the first time anything looks at the state, by any server.
 - **No process state.** The live snapshot's id sits in one row; a server compares it and reloads on change.
 - **The calls** (admins; each its own route; the writes need the login and CSRF token and are rate-limited): `GET /api/admin/state`, `GET .../live`, `GET .../planned`, `GET .../history`, `POST .../check`, `PUT .../planned/sections/{name}`, `POST .../revert`, `POST .../commit`.
 

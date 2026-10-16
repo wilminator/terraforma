@@ -266,7 +266,7 @@ def an_admin(client):
     return root
 
 
-def test_the_app_starts_with_a_live_state_and_an_admin_sees_it(app_client):
+def test_the_first_look_by_an_admin_makes_the_live_state(app_client):
     root = an_admin(app_client)
     seen = expect(app_client.get("/api/admin/state", headers=root), 200).json()
     assert (seen["live"]["note"], seen["planned"]["revision"], seen["planned"]["differs"], seen["planned"]["frozen"]) == ("first state", 0, False, False)
