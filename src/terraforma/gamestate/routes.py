@@ -5,15 +5,16 @@ Each call is its own route with a strict model. The calls that change something 
 no call that freezes the plan: an import does (slice 2).
 """
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Path, Query, Request, status
+from fastapi.responses import JSONResponse
 from pydantic import Field
 
 from ..accounts import ratelimit
 from ..accounts.common import Strict, limited
-from ..api.deps import AdminAccount, CurrentAccount, Db, GameStateSections
-from . import service
+from ..api.deps import AdminAccount, CurrentAccount, Db, GameStateSections, InstalledModules
+from . import service, transfer
 from .document import Problem
 
 router = APIRouter(prefix="/api/admin/state")
@@ -33,6 +34,17 @@ class CommitBody(Strict):
 
     hash: str = Field(min_length=64, max_length=64)
     note: str = Field(default="", max_length=200)
+
+
+class ImportBody(Strict):
+    """An export file as ``GET /api/admin/state/export`` wrote it. The document inside is checked against this game's sections."""
+
+    export_format: int
+    kind: str = Field(max_length=32)
+    source: Literal["planned", "live"]
+    hash: str = Field(min_length=64, max_length=64)
+    modules: list[Annotated[str, Field(max_length=32)]] = Field(max_length=64)
+    document: dict
 
 
 def only_admin(account) -> None:
@@ -89,6 +101,25 @@ async def history(account: CurrentAccount, db: Db, sections: GameStateSections, 
     only_admin(account)
     await service.ensure(db, sections)
     return {"snapshots": [snapshot_view(snapshot) for snapshot in await service.history(db, after, limit)]}
+
+
+@router.get("/export")
+async def export(account: CurrentAccount, db: Db, sections: GameStateSections, modules: InstalledModules,
+                 source: Literal["planned", "live"] = "planned") -> JSONResponse:
+    """The planned (or, with ``source=live``, the live) state as a file to import on another server: the document, its hash and the add-ons installed here."""
+    only_admin(account)
+    data = await transfer.export(db, sections, modules, source)
+    return JSONResponse(data, headers={"Content-Disposition": f'attachment; filename="terraforma-state-{data["hash"][:12]}.json"'})
+
+
+@router.post("/import")
+async def import_state(body: ImportBody, request: Request, account: AdminAccount, db: Db, sections: GameStateSections, modules: InstalledModules) -> dict:
+    """Replaces the draft with an export file's document, frozen (live is untouched until it is committed). Refused if the add-ons differ."""
+    await limited(request, ratelimit.STATE_BY_ACCOUNT, str(account.id))
+    try:
+        return view(await transfer.import_file(db, sections, modules, body.model_dump(), account.id))
+    except service.StateError as error:
+        raise refuse(error) from error
 
 
 @router.post("/check")

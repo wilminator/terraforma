@@ -6,12 +6,16 @@
     python -m terraforma check-settings     read settings.toml and the keys and say what's wrong, if anything
     python -m terraforma keys new           make the first encryption key
     python -m terraforma keys rotate        replace the key, re-encrypting everything stored with it
+    python -m terraforma export-state FILE [--live] [GAME_APP]   write the planned (or --live) settings state to FILE
+    python -m terraforma import-state FILE [GAME_APP]            put a file's state in the draft, frozen (live is untouched)
 
 GAME_APP is a game's app factory, such as ``my_game:app``.
 """
 
 import asyncio
+import json
 import sys
+from pathlib import Path
 
 from . import keys, models  # noqa: F401  (models: every encrypted column is registered)
 from .db.schema import SchemaOutdated, ensure_schema, reset_schema
@@ -27,6 +31,60 @@ async def create_tables(reset: bool = False) -> None:
         await (reset_schema if reset else ensure_schema)(engine)
     finally:
         await engine.dispose()
+
+
+async def run_state_command(app, action: str, path: Path, live: bool = False) -> int:
+    """Exports the app's planned (or live) state to $path, or imports $path into its draft (frozen). The app is built, not started."""
+    from .gamestate import service, transfer
+
+    sections, modules = app.state.state_sections, [addon.key for addon in app.state.addons]
+    engine = make_engine(app.state.settings.database_url)
+    try:
+        async with make_sessionmaker(engine)() as session, session.begin():
+            if action == "export-state":
+                data = await transfer.export(session, sections, modules, "live" if live else "planned")
+                path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+                print(f"Wrote the {data['source']} state ({data['hash'][:12]}) to {path}.")
+                return 0
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                current = await transfer.import_file(session, sections, modules, data, None)
+            except (OSError, ValueError) as error:  # (not a file, or not JSON)
+                print(f"Can't read {path}: {error}")
+                return 1
+            except service.Refused as error:
+                print(f"{error}:")
+                for problem in error.problems:
+                    print(f"  - {problem.section + ': ' if problem.section else ''}{problem.message}")
+                return 1
+            except service.StateError as error:
+                print(error)
+                return 1
+            print(f"Imported into the draft, frozen ({current.planned_hash[:12]}). Live is unchanged until the draft is committed.")
+            return 0
+    finally:
+        await engine.dispose()
+
+
+def state_command(action: str, args: list[str]) -> int:
+    from uvicorn.importer import import_from_string
+
+    flags = [each for each in args if each.startswith("--")]
+    words = [each for each in args if not each.startswith("--")]
+    if not words or len(words) > 2 or set(flags) - {"--live"} or (action == "import-state" and flags):
+        print(__doc__)
+        return 2
+    try:
+        asyncio.run(create_tables())
+    except SchemaOutdated as error:
+        print(error)
+        return 1
+    try:
+        app = import_from_string(words[1] if len(words) > 1 else DEFAULT_APP)()
+    except Exception as error:  # (a game's factory fails in its own ways; say which)
+        print(f"Can't build the app {words[1] if len(words) > 1 else DEFAULT_APP}: {error}")
+        return 1
+    return asyncio.run(run_state_command(app, action, Path(words[0]), "--live" in flags))
 
 
 def check_settings() -> bool:
@@ -117,6 +175,8 @@ def main(argv: list[str]) -> int:
         return 0 if check_settings() else 1
     if command == "keys":
         return manage_keys(argv[2] if len(argv) > 2 else "")
+    if command in ("export-state", "import-state"):
+        return state_command(command, argv[2:])
     if command == "serve":
         serve(argv[2] if len(argv) > 2 else DEFAULT_APP)
         return 0

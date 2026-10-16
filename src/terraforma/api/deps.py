@@ -142,6 +142,14 @@ def get_state_sections(request: Request) -> dict[str, Section]:
 GameStateSections = Annotated[dict[str, Section], Depends(get_state_sections)]
 
 
+def get_installed_modules(request: Request) -> list[str]:
+    """The keys of the add-ons this server runs, in layer order (what an export records and an import must match)."""
+    return [addon.key for addon in request.app.state.addons]
+
+
+InstalledModules = Annotated[list[str], Depends(get_installed_modules)]
+
+
 def get_needs(request: Request) -> Needs:
     """The game's quest needs (the engine's default, which lists no bands, when the app runs without a game)."""
     game = request.app.state.game
