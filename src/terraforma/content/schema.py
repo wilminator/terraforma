@@ -616,7 +616,7 @@ class QuestTemplateSeed(Strict):
 class QuestSlotSeed(Strict):
     """A place where one quest at a time is offered and the quest changes now and then (see ``quests.rotation``), such as a guild's rank S
     promotion. A period lasts a random number of whole days from ``min_days`` to ``max_days`` (a higher tier gets a longer minimum: it needs
-    more preparation). A team that took the quest has ``limit_days`` to finish it, and no more than ``grace_days`` after the quest rotated
+    more preparation). With ``obligation`` the slot is a duty of the guild's members instead (see ``quests.rotation``). A team that took the quest has ``limit_days`` to finish it, and no more than ``grace_days`` after the quest rotated
     out. ``guild`` and ``rank`` are the game's own labels for its dialogs; the engine knows no guilds. Templates join a slot with their ``slot``."""
 
     key: Key
@@ -627,6 +627,8 @@ class QuestSlotSeed(Strict):
     max_days: int = Field(ge=1, le=3650)
     grace_days: int = Field(default=0, ge=0, le=3650)
     limit_days: int = Field(ge=1, le=3650)
+    # An obligation (a guild's "F" rank): a member team owes the quest every period and the game's penalty applies to each one it ignores.
+    obligation: bool = False
 
     @model_validator(mode="after")
     def _periods_run_up(self):

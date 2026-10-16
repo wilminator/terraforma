@@ -499,3 +499,95 @@ async def test_a_slot_template_check_for_an_unknown_slot_is_an_error_the_dialog_
     p = await a_party(db)
     with pytest.raises(NpcError, match="no such quest slot"):
         await npc_says(db, p.heroes[0], check("slot_template,nowhere,dragon,no"))
+
+
+# --- obligations (a guild's "F" rank) ------------------------------------------------------------------------------------
+
+DUTY = {"key": "duty", "name": "Guild duty", "guild": "vanguard", "rank": 0, "min_days": 10, "max_days": 10, "grace_days": 0, "limit_days": 5, "obligation": True}
+
+
+async def a_duty(db, *templates):
+    """A world whose only slot is the duty (periods of exactly 10 days), and a member team: it holds a standing in the duty's guild."""
+    from terraforma.guild import ranks
+    await load_content(db, {**SEED, "quest_slots": [DUTY, {**SLOT}], "quest_templates": [template("duty-a", slot="duty"), *templates]})
+    await ensure_start(db)
+    await db.execute(update(World).values(seed=4242))
+    team = await a_team(db)
+    await ranks.add_points(db, team.id, "vanguard", 1)
+    return Hooks(), team
+
+
+async def test_a_member_that_leaves_the_duty_alone_is_penalized_once_per_period(db, later):
+    hooks, team = await a_duty(db)
+    start = wallclock.timestamp()
+    await rotation.settle(db, hooks, team.id)  # (the period the member lives through now has its quest)
+    first = await rotation.peek(db, await rotation.get_slot(db, "duty"))
+    assert hooks.penalties == [], "nothing is owed while the period runs"
+    later(first.ends_at - start)
+    await rotation.settle(db, hooks, team.id)
+    await rotation.settle(db, hooks, team.id)
+    assert hooks.penalties == [(team.id, "duty", "ignored")], "once, however often the team is touched"
+    row = await rotation.progress_of(db, team.id, first)
+    assert (row.status, row.failure) == ("lapsed", "ignored")
+
+
+async def test_a_duty_offered_and_let_lapse_is_ignored_too_but_a_completed_one_is_not(db, later):
+    hooks, team = await a_duty(db)
+    start = wallclock.timestamp()
+    slot = await rotation.get_slot(db, "duty")
+    offered = await rotation.offer(db, hooks, team.id, "duty")
+    first = await db.get(SlotQuest, offered.slot_quest_id)
+    later(first.ends_at - start)
+    await rotation.settle(db, hooks, team.id)
+    assert hooks.penalties == [(team.id, "duty", "ignored")] and (await rotation.get(db, offered.id)).failure == "ignored"
+    second = await rotation.offer(db, hooks, team.id, "duty")
+    await rotation.start(db, hooks, second.id)
+    await rotation.finish(db, hooks, second.id, True)
+    later((await db.get(SlotQuest, second.slot_quest_id)).ends_at - start)
+    await rotation.settle(db, hooks, team.id)
+    assert hooks.penalties == [(team.id, "duty", "ignored")], "the duty done in time costs nothing"
+    assert await quests.completed(db, team.id, "duty") == 1 and slot.obligation is True
+
+
+async def test_a_team_that_is_not_a_member_or_joined_mid_period_owes_nothing(db, later):
+    from terraforma.guild import ranks
+    hooks, member = await a_duty(db)
+    start = wallclock.timestamp()
+    outsider = await a_team(db, "Strangers")
+    await rotation.settle(db, hooks, member.id)
+    first = await rotation.peek(db, await rotation.get_slot(db, "duty"))
+    later(first.ends_at - start - DAY)
+    await ranks.add_points(db, outsider.id, "vanguard", 1)  # (joins the last day of the period)
+    later(first.ends_at - start + DAY)
+    await rotation.settle(db, hooks, outsider.id)
+    assert hooks.penalties == [], "the period began before the team joined"
+    stranger = await a_team(db, "Wanderers")
+    await rotation.settle(db, hooks, stranger.id)
+    assert hooks.penalties == []
+
+
+async def test_the_world_ending_the_duty_or_a_slot_that_is_not_a_duty_costs_nothing(db, later):
+    hooks, team = await a_duty(db, template("big"))
+    start = wallclock.timestamp()
+    await rotation.settle(db, hooks, team.id)
+    await rotation.end_early(db, hooks, "duty")
+    ordinary = await rotation.current(db, hooks, await rotation.get_slot(db, "rank-s"))
+    await rotation.offer(db, hooks, team.id, "rank-s")
+    later(ordinary.ends_at - start + 40 * DAY)
+    await rotation.settle(db, hooks, team.id)
+    assert [each for each in hooks.penalties if each[1] == "rank-s"] == [], "an ordinary slot's lapse is never a penalty"
+    assert [each for each in hooks.penalties if each[2] != "ignored"] == []
+
+
+async def test_a_long_absence_is_penalized_for_at_most_a_seasons_worth_of_periods(db, later):
+    hooks, team = await a_duty(db)
+    for period in range(20):  # (someone else keeps asking, so every period has its quest)
+        later(period * 10 * DAY)
+        await rotation.current(db, hooks, await rotation.get_slot(db, "duty"))
+    later(20 * 10 * DAY + 1)
+    await rotation.settle(db, hooks, team.id)
+    assert len([each for each in hooks.penalties if each[2] == "ignored"]) == rotation.MAX_OWED
+
+
+def test_the_seed_marks_a_duty_and_the_player_sees_it():
+    assert rotation.slot_view(QuestSlot(key="d", name="D", guild="g", rank=0, obligation=True))["obligation"] is True

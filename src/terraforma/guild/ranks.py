@@ -13,6 +13,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .. import wallclock
 from .models import GuildStanding
 
 MAX_RANK = 99
@@ -45,7 +46,7 @@ async def _row(session: AsyncSession, team_id: int, guild: str) -> GuildStanding
             return row
         try:
             async with session.begin_nested():
-                row = GuildStanding(team_id=team_id, guild=guild, points=0, rank=0)
+                row = GuildStanding(team_id=team_id, guild=guild, points=0, rank=0, joined_at=wallclock.timestamp())
                 session.add(row)
                 await session.flush()
             return row
