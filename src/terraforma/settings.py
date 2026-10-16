@@ -32,6 +32,8 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .addons import ADDON_KEY
+
 
 class MailSettings(BaseModel):
     """Outgoing mail (Cloudflare: port 465, implicit TLS, an API key as username and password)."""
@@ -196,8 +198,21 @@ class Settings(BaseModel):
     # The sites that may sign players in with this game (the engine as an OpenID Connect provider, for the game's store).
     # Empty: the provider is off and none of its addresses exist.
     oidc_clients: list[OidcClient] = []
+    # The add-ons to use, by key (each must be one the game supports: ``Game(addons=...)``). Listing one adds its seed and assets to the
+    # game's for good (see README, "Add-ons").
+    addons: list[str] = []
     # Providers a player may sign in with instead of a password (each a [[external_providers]] section).
     external_providers: list[ExternalProvider] = []
+
+    @field_validator("addons")
+    @classmethod
+    def _addon_keys(cls, values: list[str]) -> list[str]:
+        for value in values:
+            if not ADDON_KEY.fullmatch(value):
+                raise ValueError(f"{value!r} is not an add-on key (2 to 32 lowercase letters, digits or _, starting with a letter)")
+        if len(values) != len(set(values)):
+            raise ValueError("an add-on is listed twice")
+        return values
 
     @field_validator("external_providers")
     @classmethod

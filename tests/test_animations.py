@@ -128,6 +128,16 @@ def test_a_personality_with_a_job_keys_name_needs_base_up_as_an_animation_or_an_
     check_hero_back_views(seed_of(art), assets_with(tmp_path / "other", back=aliased))
 
 
+def test_the_back_view_may_be_in_any_of_the_assets_folders_of_the_game_and_its_addons(tmp_path):
+    art = {"sheet": "s", "animations": "back"}
+    (tmp_path / "game").mkdir()
+    (tmp_path / "pack").mkdir()
+    assets_with(tmp_path / "pack", back=file_of(base=BASE, base_up=BASE))
+    check_hero_back_views(seed_of(art), [tmp_path / "game", tmp_path / "pack"])
+    with pytest.raises(ContentError, match="base_up"):
+        check_hero_back_views(seed_of(art), [tmp_path / "game"])
+
+
 @pytest.mark.parametrize("art", ["plain.png", {"sheet": "s"}, {"sheet": "s", "animations": "front"}, {"sheet": "s", "animations": "missing"}])
 def test_player_heroes_cannot_use_a_personality_without_a_back_view(tmp_path, art):
     assets_with(tmp_path, front=file_of(base=BASE, hit_up=BASE))  # (a back view of something else is not the idle's)

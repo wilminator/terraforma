@@ -72,7 +72,7 @@ from .trading.routes import router as trading_router
 from . import client, housekeeping
 from .keys import KeyRing
 from .mail import Mailer, OutboxMailer, SmtpMailer
-from .seed import load_seed
+from .addons import integrate
 from .settings import Settings
 
 
@@ -102,6 +102,7 @@ async def housekeeping_timer(app: FastAPI, seconds: float) -> None:
 
 def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer | None = None) -> FastAPI:
     logscrub.install()
+    integrated = integrate(game, settings.addons)  # a listed add-on the game lacks, or a clash between layers, stops the server here
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -109,13 +110,13 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
         app.state.keys = KeyRing.load(settings.key_dir)
         engine = make_engine(settings.database_url)
         app.state.sessionmaker = make_sessionmaker(engine)
-        if game and game.seed_dir:
+        if game and integrated.seed_dirs:
             # A seed that doesn't check out stops the server here, naming what's wrong.
             async with app.state.sessionmaker() as session, session.begin():
-                seed = load_seed(game.seed_dir)
+                seed = integrated.load_seed().rows
                 await load_content(session, seed, game.rules.stats, game.rules.resource_names, game.rules.drop_chance_scale)
-                if game.assets_dir is not None:
-                    check_hero_back_views(seed, game.assets_dir)
+                if integrated.asset_dirs:
+                    check_hero_back_views(seed, integrated.asset_dirs)
         timer = asyncio.create_task(fight_timer(app, settings.fight_timer_seconds)) if settings.fight_timer_seconds else None
         tidier = asyncio.create_task(housekeeping_timer(app, settings.housekeeping_seconds)) if settings.housekeeping_seconds else None
         yield
@@ -131,6 +132,8 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app = FastAPI(title=game.name if game else "TerraForma", lifespan=lifespan)
     app.state.settings = settings
     app.state.game = game
+    app.state.addons = integrated.addons
+    app.state.asset_dirs = integrated.asset_dirs
     app.state.fights = FightChannels()
     app.state.http_client = http_client
     app.state.tokens = Tokens(settings.session_secret)
@@ -204,6 +207,6 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(fights_router)
     app.add_api_websocket_route("/ws/fights/{fight_id}", fight_socket)
     app.add_api_websocket_route("/ws/monsters/guest/fights/{fight_id}", guest_fight_socket)
-    client.install(app, game)  # last: the calls above are matched first
+    client.install(app, game, integrated.asset_dirs)  # last: the calls above are matched first
 
     return app
