@@ -14,7 +14,8 @@
 // shell.api       { get, post, call, ApiError }
 // shell.account   null, or { username, handle } once logged in
 // shell.on(event, handler)   "ready" (every module registered, nothing drawn yet), "login", "logout", and on the play page "game"
-//                            (the panels are drawn; the detail is { roster }); returns a function that stops listening
+//                            (the panels are drawn; the detail is { roster }), "scene" (a force-disuse scene staged a scene with ``scene,name``; the detail is
+//                            { name, host, heroId }: draw into $host, or style [data-scene="name"] on #disuse-scene); returns a function that stops listening
 // shell.panels    the game client's panels: the engine's (teams, party, nearby, talk), and shell.panels.add(id, build) for a game's own
 // shell.actions   the actions the nearby list can ask for (talk, invite, open, search, fight, help); a game pushes the names it adds
 // shell.activities  what the talk panel shows when an NPC's dialog reaches an activity: the engine's shop, and shell.activities.add(command, build)
