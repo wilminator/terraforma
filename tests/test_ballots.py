@@ -19,6 +19,8 @@ from terraforma.testing import in_app_db
 
 from .helpers import expect
 
+pytestmark = pytest.mark.social
+
 anyio = pytest.mark.anyio
 
 PASSWORD = "correct horse battery"

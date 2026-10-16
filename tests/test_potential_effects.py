@@ -13,6 +13,8 @@ from terraforma.fights.status import Curve, StatusSpec, StatusToken, Tick
 
 from .test_fight_rules import RULES, fighter
 
+pytestmark = pytest.mark.fights
+
 STATUS_EFFECTS = [specs.CAUSE_BAD_STATUS, specs.CAUSE_GOOD_STATUS, specs.REMOVE_BAD_STATUS, specs.REMOVE_GOOD_STATUS]
 MOVES = [specs.STEAL_MP, specs.TRANSFER_HP, specs.TRANSFER_MP]
 

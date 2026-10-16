@@ -25,7 +25,7 @@ from terraforma.world.start import ensure_start
 
 from .test_fight_rules import fighter
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.social]
 
 PASSWORD = "correct horse battery"
 SEED = {"jobs": [{"key": "fighter", "name": "Fighter", "stat_growth": {"HP": 40, "MP": 5, "Speed": 10, "Accuracy": 12, "Strength": 12, "Dodge": 4, "Block": 6}}]}

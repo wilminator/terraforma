@@ -24,7 +24,7 @@ from terraforma.testing import in_app_db
 
 from .helpers import expect
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.heroes]
 
 PASSWORD = "correct horse battery"
 SEED = {

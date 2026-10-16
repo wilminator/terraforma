@@ -15,6 +15,8 @@ from terraforma.testing import in_app_db
 from .helpers import expect
 from .test_fight_store import PASSWORD, SEED
 
+pytestmark = pytest.mark.social
+
 RULES = Rules()
 
 

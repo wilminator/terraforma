@@ -13,7 +13,7 @@ from .helpers import expect
 from .test_fight_store import PASSWORD
 from .test_live_fights import RULES, a_team, attack
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.fights]
 
 
 # --- the rules (pure) ------------------------------------------------------------------------------------------------

@@ -20,6 +20,8 @@ from terraforma.fights.specs import AbilitySpec, EffectSpec
 
 from .test_fight_rules import RULES, Scripted, fighter, listing, types
 
+pytestmark = pytest.mark.fights
+
 SPEEDS = [100, 100, 100]
 
 

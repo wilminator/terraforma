@@ -28,7 +28,7 @@ from terraforma.world.start import ensure_start
 from .helpers import expect
 from .test_towns import MONSTERS, PASSWORD, SEED, TOWNS, account, count, sign_in, with_monsters
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.fights]
 
 
 class Sure(Rules):

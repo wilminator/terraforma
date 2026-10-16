@@ -8,7 +8,7 @@ from terraforma.accounts.service import AccountError, EmailTaken, UsernameTaken,
 from terraforma.db.dialect import empty_tables, same_text, upsert
 from terraforma.models import Account, Fighter, Map, World, advance_clock
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.platform]
 
 
 async def test_a_world_gets_a_seed_and_starts_its_clock_at_zero(db):

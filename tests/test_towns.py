@@ -28,7 +28,7 @@ from terraforma.towns.service import TownError
 from .helpers import expect
 
 anyio = pytest.mark.anyio
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.heroes]
 
 PASSWORD = "correct horse battery"
 SEED = {"jobs": [{"key": "fighter", "name": "Fighter", "stat_growth": {"HP": 20, "MP": 2, "Speed": 5, "Strength": 5}}]}

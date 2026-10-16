@@ -29,7 +29,7 @@ from terraforma.npcs.script import tags
 from terraforma.seed import load_seed
 from terraforma.world.rng import WorldRng
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.platform]
 
 ASSETS = GAME.assets_dir
 RULES = Rules()

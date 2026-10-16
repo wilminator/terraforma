@@ -22,6 +22,8 @@ from terraforma.trading.models import TradeRecord
 
 from .helpers import expect
 
+pytestmark = pytest.mark.heroes
+
 anyio = pytest.mark.anyio
 
 PASSWORD = "correct horse battery"

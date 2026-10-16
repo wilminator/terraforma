@@ -19,6 +19,8 @@ from terraforma.testing import in_app_db
 from .test_ballots import RULES, alliance_of
 from .test_ratings import a_pvp_fight
 
+pytestmark = pytest.mark.platform
+
 HOUR = 60 * 60
 DAY = 24 * HOUR
 

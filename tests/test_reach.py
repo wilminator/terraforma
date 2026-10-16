@@ -21,7 +21,7 @@ from terraforma.towns.hooks import Towns
 from .helpers import expect
 from .test_npcs import SEED, a_hero, keeper, sign_in
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.heroes]
 
 REACH, RULES = Reach(), Rules()
 

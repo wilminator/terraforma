@@ -21,7 +21,7 @@ from .test_monster_play import fight, volunteer
 from .test_monster_rewards import Sure, set_hp
 from .test_towns import sign_in, with_monsters
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.fights]
 
 ORIGIN = {"origin": "http://testserver"}
 

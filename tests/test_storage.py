@@ -18,6 +18,8 @@ from terraforma.testing import in_app_db
 from .helpers import expect
 from .test_inventory import equip, give, look, sign_in
 
+pytestmark = pytest.mark.heroes
+
 SEED = {
     "jobs": [{"key": "fighter", "name": "Fighter", "stat_growth": {"HP": 10}, "abilities": []}],
     "items": [

@@ -13,7 +13,7 @@ from terraforma.npcs.script import ScriptError, parse
 
 from .test_npc_state import a_party
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.heroes]
 
 NPCS, ECONOMY = Npcs(), TeamGold()
 REACH = Reach()

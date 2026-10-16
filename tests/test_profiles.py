@@ -14,6 +14,8 @@ from terraforma.testing import in_app_db
 
 from .helpers import expect
 
+pytestmark = pytest.mark.social
+
 PASSWORD = "correct horse battery"
 SEED = {"jobs": [{"key": "fighter", "name": "Fighter", "stat_growth": {"HP": 20}}]}
 

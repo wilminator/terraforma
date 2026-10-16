@@ -29,6 +29,8 @@ from .helpers import expect
 from .test_fight_store import SEED
 from .test_live_fights import RULES, a_team
 
+pytestmark = pytest.mark.social
+
 PASSWORD = "correct horse battery"
 
 
