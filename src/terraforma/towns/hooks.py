@@ -20,6 +20,7 @@ from ..fights.models import FightParticipant, FightRecord
 from ..fights.rules import Rules
 from ..heroes.models import TeamMember
 from ..models import Map
+from ..parties.models import Party
 from ..world.rng import WorldRng
 from ..world.start import HUB_NAME
 
@@ -49,12 +50,17 @@ class Towns:
     async def encounter(self, session: AsyncSession, rules: Rules, party_id: int, strength: int, rng: WorldRng, number: int) -> list[str]:
         """The monsters (their keys) the party faces when it leaves the town and is whole again; none means no fight. $strength
         is the party's strength (its fighters' PXP, ``Rules.pxp``), $rng the world's streams and $number how many fights this
-        party has had here (so the same party leaving twice meets different monsters). By default: active monsters picked at
-        random, one at a time, while the total of their PXP stays within $strength, at least one and at most a full party."""
+        party has had here (so the same party leaving twice meets different monsters). By default: when the party's spot is in a
+        zone that lists encounters, one of the zone's authored groups, by weight, whatever the size of the team (``zone_group``).
+        Otherwise (the hub has no zones until the maps are in use): active monsters picked at random, one at a time, while the
+        total of their PXP stays within $strength, at least one and at most a full party."""
+        stream = rng.stream("town", "party", party_id, "encounter", number)
+        group = await self.zone_group(session, party_id, stream)
+        if group is not None:
+            return group
         keys = sorted((await session.scalars(select(Monster.key).where(Monster.active.is_(True)))).all())
         if not keys:
             return []
-        stream = rng.stream("town", "party", party_id, "encounter", number)
         worth: dict[str, int] = {}
         picked, total = [], 0
         for _ in range(rules.party_size * 3):
@@ -68,3 +74,16 @@ class Towns:
             picked.append(key)
             total += worth[key]
         return picked
+
+    async def zone_group(self, session: AsyncSession, party_id: int, stream) -> list[str] | None:
+        """One of the encounter groups of the zone the party stands in, drawn by weight from $stream, or None when the zone
+        cannot be worked out (the party or its map is gone, the map has no zones) or lists no encounters. A group is as authored,
+        up to ``Rules.party_size`` monsters; the size of the party does not matter."""
+        party = await session.get(Party, party_id)
+        game_map = None if party is None or party.map_id is None else await session.get(Map, party.map_id)
+        if game_map is None or not game_map.zones:
+            return None
+        groups = game_map.zone(party.x, party.y)["encounters"]
+        if not groups:
+            return None
+        return list(stream.choices(groups, weights=[each["weight"] for each in groups])[0]["monsters"])
