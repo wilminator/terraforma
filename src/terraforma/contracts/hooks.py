@@ -29,6 +29,12 @@ class Contracts:
         """The kinds of term a contract may hold. None, by default: the game (or a later engine piece) adds them."""
         return set()
 
+    def open_kinds(self) -> set[str]:
+        """The kinds of term a guild may put in an *open* contract (``service.post_open``), which binds only the team that takes it, to the
+        guild. None, by default: the standard kinds describe another team, so they mean nothing here. A game adds its own and judges them
+        in ``check``."""
+        return set()
+
     def validate(self, kind: str, params: dict) -> str | None:
         """Why $params are no good for a term of this $kind, or None if they are."""
         return None

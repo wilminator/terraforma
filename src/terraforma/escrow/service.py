@@ -155,6 +155,23 @@ async def forfeit(session: AsyncSession, economy: Economy, storage: Storage, esc
     return await _settle(session, economy, storage, escrow_id, FORFEITED, to_team_id)
 
 
+async def keep(session: AsyncSession, escrow_id: int) -> Escrow:
+    """The guild keeps a deposit of gold: it is forfeited to nobody and the gold leaves the game's economy (a breach against the guild
+    itself, in an open contract). Raises EscrowError, changing nothing, if it is settled already or holds items or tokens."""
+    escrow = await session.get(Escrow, escrow_id)
+    if escrow is None:
+        raise EscrowError("there is no such deposit")
+    if escrow.tokens or (await contents(session, escrow))["items"]:
+        raise EscrowError("the guild keeps only gold")
+    claimed = await session.execute(
+        update(Escrow).where(Escrow.id == escrow_id, Escrow.state == HELD).values(state=FORFEITED, settled_to=None, settled_at=wallclock.timestamp())
+    )
+    if claimed.rowcount == 0:
+        raise EscrowError("that deposit is settled already")
+    await session.refresh(escrow)
+    return escrow
+
+
 async def release(session: AsyncSession, escrow_id: int, to_team_id: int | None = None) -> dict:
     """Ends the deposit without paying it out and hands its contents (see ``contents``) to the caller, who must send them on in the
     same transaction (a purchase sends the goods of a listing as a parcel, for example). $to_team_id is who they are for, kept in
