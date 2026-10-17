@@ -12,6 +12,8 @@ The TerraForma RPG Engine runs browser RPGs. A game is a module: its content (se
 
 The engine is licensed under the GNU AGPL version 3 (`LICENSE`), with an additional permission (`LICENSE-EXCEPTION.md`). Changes to the engine stay open, even when it only runs on a server. A game module that uses the engine through its public interfaces may be licensed however its author likes.
 
+What may be added to this repository, and under which licenses, is the asset and contribution policy in `ASSET-POLICY.md`.
+
 Copyright (C) 2026 Michael Allen Wilmes.
 
 ## Making a game
