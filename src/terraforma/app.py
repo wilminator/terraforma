@@ -104,7 +104,7 @@ async def housekeeping_timer(app: FastAPI, seconds: float) -> None:
     while True:
         await asyncio.sleep(seconds)
         game = app.state.game
-        await housekeeping.run(app.state.sessionmaker, app.state.settings, game.rules if game else None, game.needs if game else None)
+        await housekeeping.run(app.state.sessionmaker, app.state.settings, game.rules if game else None, game.needs if game else None, game)
 
 
 def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer | None = None) -> FastAPI:
