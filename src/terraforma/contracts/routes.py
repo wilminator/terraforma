@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import Field
 from sqlalchemy import or_, select
 
@@ -46,9 +46,9 @@ async def _team_id(db, hero: Hero) -> int | None:
 
 
 async def _view(db, contract: Contract) -> dict:
-    names = dict((await db.execute(select(Team.id, Team.name).where(Team.id.in_((contract.a_team_id, contract.b_team_id))))).all())
+    names = dict((await db.execute(select(Team.id, Team.name).where(Team.id.in_([t for t in (contract.a_team_id, contract.b_team_id) if t is not None])))).all())
     return {
-        "id": contract.id, "guild": contract.guild, "state": contract.state,
+        "id": contract.id, "guild": contract.guild, "state": contract.state, "open": contract.a_team_id is None, "reward": contract.reward_gold,
         "a": {"team_id": contract.a_team_id, "team": names.get(contract.a_team_id), "escrow": contract.a_escrow_gold},
         "b": {"team_id": contract.b_team_id, "team": names.get(contract.b_team_id), "escrow": contract.b_escrow_gold},
         "terms": [{"side": t.side, "kind": t.kind, "params": t.params, "state": t.state} for t in await contracts_service.terms_of(db, contract)],
@@ -124,6 +124,15 @@ async def my_contracts(hero_id: Id, account: CurrentAccount, db: Db, limit: int 
         .order_by(Contract.id.desc()).limit(max(1, min(limit, 100)))
     )
     return [await _view(db, contract) for contract in rows.all()]
+
+
+@router.get("/open-contracts")
+async def open_contracts(hero_id: Id, account: CurrentAccount, db: Db, guild: str | None = Query(default=None, max_length=64), limit: int = Query(default=50, ge=1, le=100)) -> list[dict]:
+    try:
+        await service.own_hero(db, account, hero_id)
+    except service.HeroError as error:
+        raise refuse(error) from error
+    return [await _view(db, contract) for contract in await contracts_service.open_offers(db, guild, limit)]
 
 
 @router.get("/contracts/{contract_id}")

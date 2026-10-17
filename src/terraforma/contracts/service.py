@@ -129,6 +129,48 @@ async def offer(
     return contract
 
 
+async def post_open(
+    session: AsyncSession, contracts: Contracts, guild: str, terms: list[tuple[str, dict]], escrow_gold: int, reward_gold: int, duration: int,
+) -> Contract:
+    """The guild itself posts an open contract: whichever team takes it first (``accept``, which pays its fee and puts down $escrow_gold)
+    is bound by $terms, kinds from ``Contracts.open_kinds``, for $duration seconds, and is paid $reward_gold if every term is met; if it
+    breaks one, the guild keeps the escrow. It stays open for ``Contracts.offer_lifetime`` and ``expire_offers`` clears it. This is the
+    game's call, not a player's. Raises ContractError, changing nothing, for anything wrong."""
+    if not guild:
+        raise ContractError("a contract needs a guild")
+    if not terms:
+        raise ContractError("a contract binds someone to something")
+    if not 1 <= duration <= MAX_DURATION:
+        raise ContractError("a contract runs from a second to a year")
+    if not (0 <= escrow_gold <= MAX_AMOUNT and 0 <= reward_gold <= MAX_AMOUNT):
+        raise ContractError("escrow and reward are zero or more gold")
+    for kind, _params in terms:
+        if kind not in contracts.open_kinds():
+            raise ContractError(f"there is no kind of open term {kind!r}")
+    _check_terms(contracts, "b", terms)
+    contract = Contract(
+        guild=guild, a_team_id=None, b_team_id=None, a_escrow_gold=0, b_escrow_gold=escrow_gold, reward_gold=reward_gold,
+        duration=duration, offer_expires_at=wallclock.timestamp() + contracts.offer_lifetime(guild),
+    )
+    async with session.begin_nested():
+        session.add(contract)
+        await session.flush()
+        for kind, params in terms:
+            session.add(ContractTerm(contract_id=contract.id, side="b", kind=kind, params=dict(params)))
+        await session.flush()
+    return contract
+
+
+async def open_offers(session: AsyncSession, guild: str | None = None, limit: int = 50) -> list[Contract]:
+    """The open contracts nobody has taken yet and still in time, newest first, at $guild or (None) at every guild."""
+    query = select(Contract).where(
+        Contract.state == OFFERED, Contract.a_team_id.is_(None), Contract.b_team_id.is_(None), Contract.offer_expires_at > wallclock.timestamp()
+    )
+    if guild is not None:
+        query = query.where(Contract.guild == guild)
+    return list((await session.scalars(query.order_by(Contract.id.desc()).limit(max(1, min(limit, 100))))).all())
+
+
 async def terms_of(session: AsyncSession, contract: Contract) -> list[ContractTerm]:
     return list((await session.scalars(select(ContractTerm).where(ContractTerm.contract_id == contract.id).order_by(ContractTerm.id))).all())
 
@@ -139,16 +181,18 @@ async def accept(session: AsyncSession, economy: Economy, fees: Fees, contracts:
     contract = await session.get(Contract, contract_id)
     if contract is None or contract.state != OFFERED or contract.offer_expires_at <= wallclock.timestamp():
         raise ContractError("that offer is gone")
-    if contract.b_team_id != await _team_of(session, hero):
+    team_id = await _team_of(session, hero)
+    is_open = contract.b_team_id is None
+    if not is_open and contract.b_team_id != team_id:
         raise ContractError("that offer is not for your team")
-    guild, b_team, b_gold, duration = contract.guild, contract.b_team_id, contract.b_escrow_gold, contract.duration
+    guild, b_team, b_gold, duration = contract.guild, team_id, contract.b_escrow_gold, contract.duration
     fee = await fees.quote(session, b_team, guild, contracts.base_fee(guild), "contract")
     async with session.begin_nested():
         now = wallclock.timestamp()
-        claimed = await session.execute(
-            update(Contract).where(Contract.id == contract_id, Contract.state == OFFERED, Contract.offer_expires_at > now)
-            .values(state=ACTIVE, starts_at=now, ends_at=now + duration)
-        )
+        claim = update(Contract).where(Contract.id == contract_id, Contract.state == OFFERED, Contract.offer_expires_at > now)
+        if is_open:  # the first team to take it holds it: a second finds b_team_id set
+            claim = claim.where(Contract.b_team_id.is_(None))
+        claimed = await session.execute(claim.values(state=ACTIVE, starts_at=now, ends_at=now + duration, b_team_id=b_team))
         if claimed.rowcount == 0:
             raise ContractError("that offer is gone")
         await _pay(session, economy, hero, fee)
@@ -222,6 +266,7 @@ async def judge(session: AsyncSession, economy: Economy, storage: Storage, contr
         return contract
     ended = contract.ends_at <= wallclock.timestamp()
     a_escrow_id, b_escrow_id, a_team, b_team = contract.a_escrow_id, contract.b_escrow_id, contract.a_team_id, contract.b_team_id
+    reward = contract.reward_gold
     async with session.begin_nested():
         terms = await terms_of(session, contract)
         for term in terms:
@@ -248,10 +293,14 @@ async def judge(session: AsyncSession, economy: Economy, storage: Storage, contr
             for side, escrow_id, own, other in (("a", a_escrow_id, a_team, b_team), ("b", b_escrow_id, b_team, a_team)):
                 if escrow_id is None:
                     continue
-                if side in broke:
+                if side in broke and other is None:  # an open contract: the guild keeps what the breaker put down
+                    await escrow.keep(session, escrow_id)
+                elif side in broke:
                     await escrow.forfeit(session, economy, storage, escrow_id, other)
                 else:
                     await escrow.refund(session, economy, storage, escrow_id)
+            if a_team is None and not broke and reward:
+                await economy.credit_team(session, b_team, reward)
         except escrow.EscrowError as error:
             raise ContractError(str(error)) from error
     await session.refresh(contract)

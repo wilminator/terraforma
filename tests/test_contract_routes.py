@@ -6,6 +6,8 @@ from terraforma import testing
 from terraforma.economy import TeamGold
 from terraforma.heroes.models import TeamMember
 
+from terraforma.testing import in_app_db
+
 from .helpers import expect
 from .test_marketplace_routes import give_gold, login
 from .test_trading import game, sign_in  # noqa: F401 (the game fixture)
@@ -89,3 +91,29 @@ def test_the_calls_take_only_what_they_define(two_teams):
         {"my_terms": [{"kind": "", "params": {}}]}, {"my_terms": [{"kind": "truce", "extra": 1}]}, {"my_terms": [{"kind": "truce", "params": []}]},
     ):
         expect(offer(client, headers, aria, z_team, **over), 422)
+
+
+def test_a_team_sees_and_takes_an_open_contract_and_the_second_is_too_late(two_teams):
+    client, mike, aria, _a_team, zed, zara, _z_team = two_teams
+    from terraforma.contracts import service
+    from terraforma.contracts.hooks import Contracts
+
+    class Work(Contracts):
+        def kinds(self):
+            return {"slay"}
+
+        def open_kinds(self):
+            return {"slay"}
+
+    async def post(db):
+        return (await service.post_open(db, Work(), "vanguard", [("slay", {})], 50, 200, 3600)).id
+
+    contract_id = in_app_db(client, post)
+    mike()
+    open_ones = expect(client.get(f"/api/heroes/{aria}/open-contracts", params={"guild": "vanguard"}), 200).json()
+    assert [(row["id"], row["open"], row["reward"]) for row in open_ones] == [(contract_id, True, 200)]
+    assert expect(client.get(f"/api/heroes/{aria}/open-contracts", params={"guild": "elsewhere"}), 200).json() == []
+    accepted = expect(client.post(f"/api/heroes/{zara}/contracts/{contract_id}/accept", headers=zed()), 200).json()
+    assert accepted["state"] == "active" and accepted["b"]["team"] == "Rearguard" and accepted["a"]["team"] is None
+    expect(client.post(f"/api/heroes/{aria}/contracts/{contract_id}/accept", headers=mike()), 404)  # too late
+    assert expect(client.get(f"/api/heroes/{aria}/open-contracts"), 200).json() == []

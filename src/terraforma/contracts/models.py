@@ -26,14 +26,18 @@ class Contract(Timestamps, Base):
     (``b`` accepted; it runs ``duration`` seconds from ``starts_at``) or ``declined``, ``withdrawn`` (``a`` took it back) or ``expired``
     (``b`` did not answer by ``offer_expires_at``); an active one ends ``fulfilled`` (every term met, escrows returned) or ``breached``
     (``breached_by`` names the side(s) that broke a term, whose escrow went to the other side). Escrow amounts are gold; the deposits
-    themselves are ``a_escrow_id`` and ``b_escrow_id``."""
+    themselves are ``a_escrow_id`` and ``b_escrow_id``.
+
+    An *open* contract is posted by the guild itself (``a_team_id`` is none): it binds only side ``b``, the first team to take it, and pays
+    that team ``reward_gold`` when every term is met. A breach loses their escrow to the guild."""
 
     __tablename__ = "contracts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     guild: Mapped[str] = mapped_column(String(64), index=True)
-    a_team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), index=True)
-    b_team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), index=True)
+    a_team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), nullable=True, index=True)  # none: the guild posted it (open)
+    b_team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), nullable=True, index=True)  # none: nobody has taken it yet
+    reward_gold: Mapped[int] = mapped_column(BigInteger, default=0)  # an open contract: what the guild pays the team that keeps it
     a_escrow_gold: Mapped[int] = mapped_column(BigInteger, default=0)
     b_escrow_gold: Mapped[int] = mapped_column(BigInteger, default=0)
     a_escrow_id: Mapped[int | None] = mapped_column(ForeignKey("escrows.id"), nullable=True)
