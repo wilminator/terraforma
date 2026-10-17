@@ -1,10 +1,12 @@
 // The Pack panel: what a hero carries (gold and items), what they gave and received, and the forms that give gold or an item to another
 // hero. Who may be given to is the game's call (its economy's trade policy; teammates by default), so the browser offers the player's own
-// heroes and a hero's number, and the server's answer says no, in its own words, when the game refuses.
+// heroes and a hero's number, and the server's answer says no, in its own words, when the game refuses. When the game keeps storage
+// (Game(storage=...)) the panel also shows it, with a Store button on each stack and Take and Use on the stored ones; a game with none shows nothing.
 
 import * as api from "./api.js";
 import { h, replace } from "./dom.js";
 import { attempt } from "./forms.js";
+import { storageCard } from "./storage.js";
 
 export function packPanel(shell, roster) {
   const t = (key, values) => shell.text.get(key, values);
@@ -14,6 +16,7 @@ export function packPanel(shell, roster) {
   const root = h("div", { class: "panel pack", id: "panel-pack" }, h("h2", {}, t("panel.pack")), body);
   let view = null; // GET /api/heroes/{id}/inventory
   let trades = []; // GET /api/heroes/{id}/trades
+  let stored = { enabled: false, items: [] }; // GET /api/heroes/{id}/storage
   let loaded = null; // the hero the view is of
   let recipient = ""; // what the player chose to give to, kept across redraws: a hero's id, or "" for none yet
   let number = ""; // a hero's number typed in
@@ -35,7 +38,7 @@ export function packPanel(shell, roster) {
       loaded = null;
       return draw();
     }
-    [view, trades] = await Promise.all([api.get(`/api/heroes/${id}/inventory`), api.get(`/api/heroes/${id}/trades`)]);
+    [view, trades, stored] = await Promise.all([api.get(`/api/heroes/${id}/inventory`), api.get(`/api/heroes/${id}/trades`), api.get(`/api/heroes/${id}/storage`)]);
     loaded = id;
     draw();
   }
@@ -56,6 +59,16 @@ export function packPanel(shell, roster) {
       await api.post(`/api/heroes/${loaded}/${path}`, { to_hero_id: to, ...values });
       await load();
       note.textContent = done(heroName(to));
+    });
+  }
+
+  /** A move to or from storage (or a use from it); the pack and storage are read again after, so what is shown is the server's. */
+  function keep(path, values, done) {
+    note.textContent = "";
+    attempt(shell, problem, async () => {
+      await api.post(`/api/heroes/${loaded}/storage/${path}`, values);
+      await load();
+      note.textContent = done;
     });
   }
 
@@ -109,6 +122,9 @@ export function packPanel(shell, roster) {
         { class: "inline" },
         qty,
         h("button", { type: "button", "aria-label": t("pack.give_item", { name: stack.name }), onclick: () => give("give-item", { position: stack.position, qty: Number(qty.value) }, (name) => t("pack.gave_item", { count: Number(qty.value), item: stack.name, name })) }, t("pack.give")),
+        stored.enabled
+          ? h("button", { type: "button", "aria-label": t("storage.store_item", { name: stack.name }), onclick: () => keep("put", { position: stack.position, qty: Number(qty.value) }, t("storage.stored", { count: Number(qty.value), item: stack.name })) }, t("storage.store"))
+          : null,
       ),
     );
   }
@@ -137,6 +153,7 @@ export function packPanel(shell, roster) {
       view.items.length ? h("ul", { class: "rows", "aria-label": t("pack.items") }, view.items.map(stackRow)) : h("p", { class: "muted" }, t("pack.empty")),
       recipients(),
       h("div", { class: "card" }, h("h3", {}, t("pack.give_gold_title")), goldForm()),
+      storageCard(shell, stored, loaded, keep),
       problem,
       note,
       h("h3", {}, t("pack.ledger")),

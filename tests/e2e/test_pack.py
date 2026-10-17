@@ -144,3 +144,12 @@ def test_a_hero_chosen_in_the_pack_is_the_hero_nearby_acts_with(page, live_serve
     expect(page.locator("#pack-hero")).to_have_value(str(Player(page, "Mike").heroes()["Bram"]))
     tab(page, "Nearby")
     expect(page.locator("#nearby-hero")).to_contain_text("Bram")
+
+
+def test_a_game_with_no_storage_shows_none(page, live_server):
+    player = start(page, live_server, {"Alpha": ["Aria"]})
+    fill(live_server, player.heroes()["Aria"], items=[("potion", 1)])
+    page.get_by_role("button", name="Refresh").click()
+    expect(page.locator("[data-item='Potion']")).to_contain_text("×1")
+    expect(page.locator("#pack-storage")).to_have_count(0)
+    expect(page.get_by_role("button", name="Store Potion")).to_have_count(0)

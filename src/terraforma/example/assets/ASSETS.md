@@ -9,4 +9,5 @@
 | `slime.png`, `slime.alpha.png`, `slime.sheet.json`, `slime.anim.json`, `bat.png`, `bat.alpha.png`, `bat.sheet.json`, `bat.anim.json`, `wolf.png`, `wolf.alpha.png`, `wolf.sheet.json`, `wolf.anim.json`, `goblin.png`, `goblin.alpha.png`, `goblin.sheet.json`, `goblin.anim.json`, `skeleton.png`, `skeleton.alpha.png`, `skeleton.sheet.json`, `skeleton.anim.json`, `imp.png`, `imp.alpha.png`, `imp.sheet.json`, `imp.anim.json` | Drawn for this repository: the fight pictures of the example's six monsters (four or five frames each, with their animations), generated from pixel rules by `utils/example_art.py`, not taken from any other work. | The engine's own: AGPL-3.0 with the module permission (`LICENSE`, `LICENSE-EXCEPTION.md`). |
 
 Rule for anything added here: record its source and license in this table. Any license that is compatible with the AGPL is fine
-(CC0, CC-BY, CC-BY-SA 4.0, MIT, BSD, OFL, GPL); never one that is unknown, non-commercial or no-derivatives.
+(CC0, CC-BY, CC-BY-SA 4.0, MIT, BSD, OFL, GPL); never one that is unknown, non-commercial, no-derivatives or CC-BY-SA 3.0 and older.
+The full rule is `ASSET-POLICY.md` at the root of the repository.
