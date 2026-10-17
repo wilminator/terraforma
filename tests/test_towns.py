@@ -316,6 +316,58 @@ async def test_the_default_encounter_is_repeatable_and_stays_near_the_party_stre
     assert strong == await TOWNS.encounter(db, rules, party.id, 10**9, rng, 0), "the same world gives the same monsters"
 
 
+async def put_zones(db, party, zones, zone_tiles=None):
+    """Give the map the party stands on zones (and the grid over it), the party standing at (0, 0)."""
+    hub = await db.get(Party, party.id)
+    game_map = await db.get(Map, hub.map_id)
+    game_map.width, game_map.height = 2, 1
+    game_map.tileset, game_map.tiles = [{}], [[0, 0]]
+    game_map.zones, game_map.zone_tiles = zones, zone_tiles or [[0, 0]]
+    hub.x, hub.y = 0, 0
+    await db.flush()
+
+
+async def test_a_zone_with_encounters_gives_its_group_whatever_the_size_of_the_team(db):
+    await with_monsters(db)
+    party, _teams = await party_of_three(db)
+    nine = ["slime"] * 4 + ["bat"] * 3 + ["rat"] * 2
+    await put_zones(db, party, [{"name": "wilds", "encounters": [{"monsters": nine, "weight": 1}]}])
+    for strength in (1, 10**9):
+        assert await TOWNS.encounter(db, Rules(), party.id, strength, WorldRng(7), 0) == nine, "as authored: no cap, no PXP limit"
+
+
+async def test_a_zone_group_is_drawn_by_weight_and_repeats_for_the_same_world(db):
+    await with_monsters(db)
+    party, _teams = await party_of_three(db)
+    await put_zones(db, party, [{"name": "wilds", "encounters": [{"monsters": ["rat"], "weight": 1}, {"monsters": ["bat", "bat"], "weight": 3}]}])
+    rng = WorldRng(7)
+    drawn = [tuple(await TOWNS.encounter(db, Rules(), party.id, 10**9, rng, number)) for number in range(40)]
+    assert set(drawn) == {("rat",), ("bat", "bat")}
+    assert drawn.count(("bat", "bat")) > drawn.count(("rat",))
+    assert drawn == [tuple(await TOWNS.encounter(db, Rules(), party.id, 10**9, WorldRng(7), number)) for number in range(40)]
+    assert len(set(drawn)) > 1, "leaving again meets a different group"
+
+
+async def test_the_zone_is_the_one_the_party_stands_in(db):
+    await with_monsters(db)
+    party, _teams = await party_of_three(db)
+    await put_zones(db, party, [{"name": "safe"}, {"name": "wilds", "encounters": [{"monsters": ["bat"], "weight": 1}]}], [[1, 0]])
+    assert await TOWNS.encounter(db, Rules(), party.id, 10**9, WorldRng(7), 0) == ["bat"]
+    (await db.get(Party, party.id)).x = 1
+    await db.flush()
+    keys = await TOWNS.encounter(db, Rules(), party.id, 10**9, WorldRng(7), 0)
+    assert keys and set(keys) <= {"slime", "bat", "rat"}, "a zone with no encounters falls back to the PXP-based party"
+
+
+async def test_with_no_zones_the_hub_keeps_the_pxp_based_party(db):
+    await with_monsters(db)
+    party, _teams = await party_of_three(db)
+    hub_map = await db.get(Map, (await db.get(Party, party.id)).map_id)
+    assert not hub_map.zones
+    weak = await TOWNS.encounter(db, Rules(), party.id, 1, WorldRng(7), 0)
+    assert len(weak) == 1
+
+
 async def test_no_monsters_means_no_fight(db):
     party, teams = await party_of_three(db)
     await towns_service.settle(db, TOWNS, party.id)
