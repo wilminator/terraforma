@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..accounts.hooks import SignIn
 from ..economy import Economy, TeamGold
 from ..storage.hooks import NoStorage, Storage
+from ..guild.fees import Fees
+from ..marketplace.hooks import Marketplace
 from ..alliances.hooks import Alliances
 from ..relations.hooks import Relations
 from ..pvp.hooks import PvpZones
@@ -70,6 +72,24 @@ def get_storage(request: Request) -> Storage:
 
 
 GameStorage = Annotated[Storage, Depends(get_storage)]
+
+
+def get_fees(request: Request) -> Fees:
+    """The game's guild fee rule (the base price to everyone, when the app runs without a game)."""
+    game = request.app.state.game
+    return game.fees if game else Fees()
+
+
+GameFees = Annotated[Fees, Depends(get_fees)]
+
+
+def get_marketplace(request: Request) -> Marketplace:
+    """The game's marketplace rules (the engine's defaults, when the app runs without a game)."""
+    game = request.app.state.game
+    return game.marketplace if game else Marketplace()
+
+
+GameMarketplace = Annotated[Marketplace, Depends(get_marketplace)]
 
 
 def get_relations(request: Request) -> Relations:
