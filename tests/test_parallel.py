@@ -126,3 +126,94 @@ def test_another_game_does_not_get_the_first_games_copy(tmp_path, monkeypatch):
     import terraforma.testing as testing
 
     assert len(testing._seeded) == 2, "a game with no seed has a copy of its own"
+
+
+def make_game(folder, jobs):
+    """A game whose seed holds just $jobs, built new each time, the way a test file's own ``game`` fixture does."""
+    import json
+
+    from terraforma.game import Game
+
+    seed_dir = folder / "seed"
+    seed_dir.mkdir(exist_ok=True)
+    (seed_dir / "jobs.json").write_text(json.dumps(jobs))
+    return Game(name="Test Game", seed_dir=seed_dir)
+
+
+def test_a_game_built_again_from_the_same_seed_shares_the_copy_and_a_changed_seed_does_not(tmp_path, monkeypatch):
+    """A test file's ``game`` fixture builds a new Game for every test: the copy is found by what the seed holds, not by the object."""
+    import terraforma.app as app_module
+    import terraforma.testing as testing
+    from terraforma.mail import MemoryMailer
+
+    monkeypatch.setattr(testing, "_seeded", {})
+    loads = []
+    real = app_module.load_content
+
+    async def counting(*args, **kwargs):
+        loads.append(1)
+        return await real(*args, **kwargs)
+
+    seeds = tmp_path / "seeds"
+    seeds.mkdir()
+    plain = [{"key": "fighter", "name": "Fighter"}]
+    for number, jobs in enumerate([plain, plain, plain, [{"key": "fighter", "name": "Warrior"}]]):
+        folder = tmp_path / f"start{number}"
+        (folder / "game").mkdir(parents=True)
+        url = f"sqlite+aiosqlite:///{folder}/test.db"
+        with pytest.MonkeyPatch.context() as each:  # (a copied start leaves load_content replaced until its monkeypatch is undone)
+            each.setattr(app_module, "load_content", counting)
+            with testing.serve(url, MemoryMailer(), make_game(folder / "game", jobs), [], folder, seeds, each):
+                pass
+    assert len(loads) == 2, "the three identical games load once, the changed seed loads again"
+    assert len(testing._seeded) == 2
+
+
+def test_the_fingerprint_follows_the_seed_the_rules_and_the_add_ons(tmp_path):
+    from dataclasses import replace
+
+    from terraforma.fights.rules import Rules as StandardRules
+    from terraforma.testing import seed_fingerprint
+
+    class Rarer(StandardRules):
+        drop_chance_scale = 100
+
+    jobs = [{"key": "fighter", "name": "Fighter"}]
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    first, second = make_game(tmp_path / "a", jobs), make_game(tmp_path / "b", jobs)
+    assert seed_fingerprint(first, []) == seed_fingerprint(second, []), "the same seed in another folder"
+    assert seed_fingerprint(first, []) != seed_fingerprint(None, [])
+    assert seed_fingerprint(first, []) != seed_fingerprint(replace(second, rules=Rarer()), [])
+    (tmp_path / "b" / "seed" / "abilities.json").write_text("[]")
+    assert seed_fingerprint(first, []) != seed_fingerprint(second, []), "a file added to the seed"
+
+
+def test_a_blank_sqlite_database_is_built_once_and_copied(tmp_path, monkeypatch):
+    """The tables of a new SQLite file come from a copy of ones built earlier, empty and stamped like a built database."""
+    import terraforma.testing as testing
+    from terraforma.db import schema
+    from terraforma.db.session import make_engine
+
+    monkeypatch.setattr(testing, "_blank", {})
+    builds = []
+    real = testing.ensure_schema
+
+    async def counting(engine):
+        builds.append(1)
+        await real(engine)
+
+    monkeypatch.setattr(testing, "ensure_schema", counting)
+
+    async def start(number):
+        url = f"sqlite+aiosqlite:///{tmp_path}/blank{number}.db"
+        engine = make_engine(url)
+        await testing.fresh_database(engine, url)
+        await schema.ensure_schema(engine)  # what the app does next: a copy must pass as the models' own tables
+        await engine.dispose()
+        return rows_of(tmp_path / f"blank{number}.db")
+
+    first, second = asyncio.run(start(0)), asyncio.run(start(1))
+    assert len(builds) == 1, "only the first database is built"
+    assert first == second
+    assert len(first) > 50 and not any(rows for name, rows in first.items() if name != schema.STAMP_TABLE)
