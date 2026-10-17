@@ -27,10 +27,11 @@ from ..guild.fees import Fees
 from ..heroes.models import Hero, Team, TeamMember
 from ..storage.hooks import Storage
 from .hooks import Marketplace
-from .models import CANCELLED, EXPIRED, OPEN, SOLD, Listing
+from .models import AUCTION, CANCELLED, EXPIRED, FIXED, OPEN, SOLD, Listing
 
 PURPOSE = "listing"  # the escrow deposit's purpose
 PURCHASE = "purchase"  # the parcel's purpose
+BID_PURPOSE = "bid"  # the escrow deposit holding a bid
 SALE = "sale"  # the reason in the Challenge Token ledger
 MAX_PRICE = 10**9
 MAX_PAGE = 100
@@ -57,23 +58,26 @@ async def _charge(session: AsyncSession, economy: Economy, hero: Hero, amount: i
 
 async def post(
     session: AsyncSession, economy: Economy, fees: Fees, marketplace: Marketplace, hero: Hero, guild: str,
-    items: list[tuple[int, int]], price_gold: int = 0, price_tokens: int = 0,
+    items: list[tuple[int, int]], price_gold: int = 0, price_tokens: int = 0, auction: bool = False,
 ) -> Listing:
     """$hero lists $items, (pack position, quantity) pairs, at $guild for $price_gold gold and $price_tokens Challenge Tokens. The posting
     fee comes out of their purse. Raises MarketplaceError, changing nothing, for no goods, no price, a price out of range, anything the
-    hero does not have or a fee they cannot pay."""
+    hero does not have or a fee they cannot pay. With $auction the price is the starting bid, in gold only."""
     if not guild:
         raise MarketplaceError("a listing needs a guild")
     if not items:
         raise MarketplaceError("there is nothing to list")
     if not (0 <= price_gold <= MAX_PRICE and 0 <= price_tokens <= MAX_PRICE) or not (price_gold or price_tokens):
         raise MarketplaceError("a listing asks for some gold or tokens, and no more than a billion of either")
+    if auction and (price_tokens or not price_gold):
+        raise MarketplaceError("an auction starts at some gold, and takes no tokens")
     team_id = await _team_of(session, hero)
     fee = await fees.quote(session, team_id, guild, marketplace.listing_fee(guild, price_gold, price_tokens), "listing")
     async with session.begin_nested():
         listing = Listing(
             guild=guild, seller_team_id=team_id, price_gold=price_gold, price_tokens=price_tokens,
-            expires_at=wallclock.timestamp() + marketplace.lifetime(guild),
+            expires_at=wallclock.timestamp() + (marketplace.auction_lifetime(guild) if auction else marketplace.lifetime(guild)),
+            kind=AUCTION if auction else FIXED,
         )
         session.add(listing)
         await session.flush()
@@ -124,6 +128,7 @@ async def search(
         {
             "id": listing.id, "guild": listing.guild, "seller": name, "price_gold": listing.price_gold,
             "price_tokens": listing.price_tokens, "goods": await goods(session, listing), "expires_at": listing.expires_at,
+            "kind": listing.kind, "bid_gold": listing.bid_gold,
         }
         for listing, name in rows
     ]
@@ -141,6 +146,8 @@ async def buy(
     listing = await session.get(Listing, listing_id)
     if listing is None or listing.state != OPEN or listing.expires_at <= wallclock.timestamp():
         raise MarketplaceError("that listing is gone")
+    if listing.kind == AUCTION:
+        raise MarketplaceError("that is an auction: bid on it")
     if listing.seller_team_id == buyer_team:
         raise MarketplaceError("a team cannot buy its own listing")
     seller_team, guild, price_gold, price_tokens, escrow_id = listing.seller_team_id, listing.guild, listing.price_gold, listing.price_tokens, listing.escrow_id
@@ -198,19 +205,94 @@ async def cancel(session: AsyncSession, economy: Economy, storage: Storage, hero
     listing = await session.get(Listing, listing_id)
     if listing is None or listing.seller_team_id != await _team_of(session, hero):
         raise MarketplaceError("there is no such listing of yours")
+    if listing.bid_gold:
+        raise MarketplaceError("an auction with a bid cannot be taken back")
     return await _take_back(session, economy, storage, listing_id, CANCELLED)
 
 
-async def expire_due(session: AsyncSession, economy: Economy, storage: Storage, limit: int = 100) -> int:
-    """Gives the goods of up to $limit listings that ran out of time back to their sellers; returns how many it did. A listing whose
-    seller has no room for the goods stays as it is (nobody can buy it any more) and is tried again next time."""
-    due = list((await session.scalars(
-        select(Listing.id).where(Listing.state == OPEN, Listing.expires_at <= wallclock.timestamp()).order_by(Listing.expires_at).limit(limit)
-    )).all())
-    done = 0
-    for listing_id in due:
+async def bid(
+    session: AsyncSession, economy: Economy, fees: Fees, marketplace: Marketplace, storage: Storage, hero: Hero, listing_id: int,
+    amount: int, to_guild: str,
+) -> Listing:
+    """$hero bids $amount gold for their team on an open auction, to have the goods delivered to $to_guild if they win. The bid and the
+    delivery fee for that route are held until they are outbid (they go back) or the auction closes. A bid must be at least the starting
+    bid, or the highest bid plus the game's increment. Raises MarketplaceError, changing nothing, if the auction is gone, is the
+    bidder's own team's, the bid is too low, someone bid first, or anything is short."""
+    if not to_guild:
+        raise MarketplaceError("say which guild the goods should be delivered to")
+    buyer_team = await _team_of(session, hero)
+    listing = await session.get(Listing, listing_id)
+    if listing is None or listing.kind != AUCTION or listing.state != OPEN or listing.expires_at <= wallclock.timestamp():
+        raise MarketplaceError("that auction is gone")
+    if listing.seller_team_id == buyer_team:
+        raise MarketplaceError("a team cannot bid on its own auction")
+    guild, previous, previous_escrow = listing.guild, listing.bid_gold, listing.bid_escrow_id
+    least = listing.price_gold if not previous else previous + marketplace.increment(guild, previous)
+    if not 0 < amount <= MAX_PRICE or amount < least:
+        raise MarketplaceError(f"a bid must be at least {least} gold")
+    fee = await fees.quote(session, buyer_team, to_guild, marketplace.delivery(guild, to_guild).fee, "delivery")
+    async with session.begin_nested():
+        if previous_escrow is not None:  # the one outbid gets everything back first, so a team can raise its own bid
+            try:
+                await escrow.refund(session, economy, storage, previous_escrow)
+            except escrow.EscrowError as error:
+                raise MarketplaceError(str(error)) from error
         try:
-            await _take_back(session, economy, storage, listing_id, EXPIRED)
+            deposit = await escrow.hold(session, economy, hero, guild, BID_PURPOSE, str(listing_id), gold=amount + fee)
+        except escrow.EscrowError as error:
+            raise MarketplaceError(str(error)) from error
+        now = wallclock.timestamp()
+        claimed = await session.execute(  # nobody bid in between, or none of this stands
+            update(Listing).where(Listing.id == listing_id, Listing.state == OPEN, Listing.expires_at > now, Listing.bid_gold == previous)
+            .values(bid_gold=amount, bid_team_id=buyer_team, bid_guild=to_guild, bid_fee=fee, bid_escrow_id=deposit.id)
+        )
+        if claimed.rowcount == 0:
+            raise MarketplaceError("someone bid first, or the auction closed: look again")
+    await session.refresh(listing)
+    return listing
+
+
+async def _close_auction(session: AsyncSession, economy: Economy, marketplace: Marketplace, listing_id: int) -> None:
+    """Sells an auction that has a bid and is out of time: the seller's team gets the bid, the delivery fee goes to the guild and the
+    goods go to the bidder's team as a parcel."""
+    listing = await session.get(Listing, listing_id)
+    seller, buyer, amount, to_guild, guild = listing.seller_team_id, listing.bid_team_id, listing.bid_gold, listing.bid_guild, listing.guild
+    bid_escrow, goods_escrow = listing.bid_escrow_id, listing.escrow_id
+    async with session.begin_nested():
+        now = wallclock.timestamp()
+        claimed = await session.execute(
+            update(Listing).where(Listing.id == listing_id, Listing.state == OPEN, Listing.bid_gold > 0)
+            .values(state=SOLD, buyer_team_id=buyer, settled_at=now)
+        )
+        if claimed.rowcount == 0:
+            raise MarketplaceError("that auction is settled already")
+        try:
+            await escrow.release(session, bid_escrow, seller)
+            await economy.credit_team(session, seller, amount)
+            contents = await escrow.release(session, goods_escrow, buyer)
+            await delivery.send_goods(session, buyer, to_guild, PURCHASE, str(listing_id), delay=marketplace.delivery(guild, to_guild).delay, items=contents["items"])
+        except (escrow.EscrowError, delivery.DeliveryError) as error:
+            raise MarketplaceError(str(error)) from error
+
+
+async def expire_due(
+    session: AsyncSession, economy: Economy, storage: Storage, limit: int = 100, marketplace: Marketplace | None = None,
+) -> int:
+    """Settles up to $limit listings that ran out of time; returns how many it did. The goods of a listing nobody wanted go back to
+    their seller (a listing whose seller has no room stays as it is, and is tried again next time); an auction with a bid is sold to the
+    highest bidder, delivered by the game's $marketplace (the engine's default, when None)."""
+    marketplace = marketplace or Marketplace()
+    due = (await session.execute(
+        select(Listing.id, Listing.bid_gold).where(Listing.state == OPEN, Listing.expires_at <= wallclock.timestamp())
+        .order_by(Listing.expires_at).limit(limit)
+    )).all()
+    done = 0
+    for listing_id, bid_gold in due:
+        try:
+            if bid_gold:
+                await _close_auction(session, economy, marketplace, listing_id)
+            else:
+                await _take_back(session, economy, storage, listing_id, EXPIRED)
             done += 1
         except MarketplaceError:
             continue

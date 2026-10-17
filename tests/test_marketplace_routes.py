@@ -106,3 +106,19 @@ def test_the_calls_take_only_what_they_define(two_teams):
     expect(client.post(f"/api/heroes/{aria}/listings/1/buy", json={}, headers=mike()), 422)
     expect(client.get("/api/market/listings", params={"limit": 0}), 422)
     expect(client.get("/api/market/listings", params={"max_gold": -1}), 422)
+
+
+def test_an_auction_is_posted_bid_on_and_the_fixed_price_call_refuses_it(two_teams):
+    client, mike, aria, zed, zara = two_teams
+    posted = expect(client.post(f"/api/heroes/{aria}/auctions", json={"guild": "vanguard", "items": [{"position": 0}], "start_gold": 40}, headers=mike()), 200).json()
+    assert posted["start_gold"] == 40 and posted["goods"] == [["potion", 1]]
+    found = expect(client.get("/api/market/listings"), 200).json()
+    assert [(row["kind"], row["bid_gold"]) for row in found] == [("auction", 0)]
+    expect(client.post(f"/api/heroes/{zara}/listings/{posted['id']}/buy", json={"to_guild": "vanguard"}, headers=zed()), 409)
+    expect(client.post(f"/api/heroes/{zara}/listings/{posted['id']}/bid", json={"amount": 39, "to_guild": "vanguard"}, headers=zed()), 409)
+    bid = expect(client.post(f"/api/heroes/{zara}/listings/{posted['id']}/bid", json={"amount": 40, "to_guild": "vanguard"}, headers=zed()), 200).json()
+    assert bid["bid_gold"] == 40
+    expect(client.post(f"/api/heroes/{aria}/listings/{posted['id']}/cancel", headers=mike()), 409)  # a bid is in
+    for body in ({"amount": 0, "to_guild": "g"}, {"amount": 5}, {"amount": 5, "to_guild": "g", "x": 1}):
+        expect(client.post(f"/api/heroes/{zara}/listings/{posted['id']}/bid", json=body, headers=zed()), 422)
+    expect(client.post(f"/api/heroes/{aria}/auctions", json={"guild": "g", "items": [{"position": 0}], "start_gold": 0}, headers=mike()), 422)
