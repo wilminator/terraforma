@@ -21,13 +21,19 @@ from .voice.discord import VoiceError, provider_for
 from .voice.models import VoiceRoom
 from .fights.models import PendingDrop
 from .fights.pending import OPEN, expire
+from .contracts import service as contracts_service
+from .contracts.models import ACTIVE, Contract
+from .economy import TeamGold
 from .fights.rules import Rules
 from .fighttags import service as fighttags
+from .marketplace import service as marketplace
+from .marketplace.hooks import Marketplace
 from .models import RateLimitHit, RememberedBrowser, WebauthnKey
 from .oidc import service as oidc
 from .quests import needs
 from .relations.models import ANSWERED, DISMISSED, RatingPrompt
 from .settings import Settings
+from .storage.hooks import NoStorage
 from .standing import service as standing
 
 log = logging.getLogger(__name__)
@@ -170,15 +176,59 @@ async def quest_needs(session: AsyncSession, now: int, settings: Settings, rules
     return len(await needs.run(session, hooks, rules or Rules())) if hooks is not None else 0
 
 
-async def run(sessionmaker: async_sessionmaker[AsyncSession], settings: Settings, rules: Rules | None = None, needs_hooks=None) -> dict[str, int]:
+def _trade(session: AsyncSession):
+    """The game's economy, storage, marketplace and contract rules for the trading jobs (``session.info["game"]``), or the engine's own
+    when the app runs without a game."""
+    game = session.info.get("game")
+    if game is None:
+        from .contracts.terms import StandardTerms
+
+        return TeamGold(), NoStorage(), Marketplace(), StandardTerms()
+    return game.economy, game.storage, game.marketplace, game.contracts
+
+
+@job
+async def ended_listings(session: AsyncSession, now: int, settings: Settings, rules: Rules | None = None) -> int:
+    """Marketplace listings that ran out of time (``marketplace.expire_due``): the goods go back to their sellers, and an auction with a
+    bid is sold to the highest bidder. Unlike the other jobs it moves goods, so it returns how many it settled."""
+    economy, storage, hooks, _contracts = _trade(session)
+    return await marketplace.expire_due(session, economy, storage, BATCH, hooks)
+
+
+@job
+async def unanswered_contract_offers(session: AsyncSession, now: int, settings: Settings, rules: Rules | None = None) -> int:
+    """Contract offers nobody answered in time (``contracts.expire_offers``): the offering side's escrow goes back. Returns how many."""
+    economy, storage, _hooks, _contracts = _trade(session)
+    return await contracts_service.expire_offers(session, economy, storage, BATCH)
+
+
+@job
+async def running_contracts(session: AsyncSession, now: int, settings: Settings, rules: Rules | None = None) -> int:
+    """Asks the game about every active contract (``contracts.judge``); one whose terms are all met, or one broken, or one out of time is
+    settled and its escrows paid. Returns how many it settled. A contract whose payout can't be made stays active and is tried again."""
+    economy, storage, _hooks, contracts = _trade(session)
+    settled = 0
+    for contract_id in (await session.scalars(select(Contract.id).where(Contract.state == ACTIVE).order_by(Contract.ends_at).limit(BATCH))).all():
+        try:
+            if (await contracts_service.judge(session, economy, storage, contracts, contract_id)).state != ACTIVE:
+                settled += 1
+        except contracts_service.ContractError:
+            continue
+    return settled
+
+
+async def run(
+    sessionmaker: async_sessionmaker[AsyncSession], settings: Settings, rules: Rules | None = None, needs_hooks=None, game=None,
+) -> dict[str, int]:
     """One pass: every job in its own transaction. Returns how many rows each removed (a job that failed is left out), and for ``quest_needs``
-    how many proposals it made. $needs_hooks is the game's ``Needs``, if it has one."""
+    how many proposals it made. $needs_hooks is the game's ``Needs``, if it has one, and $game the game, for the trading jobs."""
     now = wallclock.timestamp()
     removed: dict[str, int] = {}
     for name, work in JOBS.items():
         try:
             async with sessionmaker() as session, session.begin():
                 session.info["needs"] = needs_hooks
+                session.info["game"] = game
                 removed[name] = await work(session, now, settings, rules or Rules())
         except Exception:  # one bad job must not stop the others
             log.exception("housekeeping job %s failed", name)
