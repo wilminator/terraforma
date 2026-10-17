@@ -38,3 +38,11 @@ class Marketplace:
         """The route from the guild a listing is at to the guild the buyer wants the goods at. Free and at once within a guild, 10 gold
         and an hour between two, by default."""
         return Route() if from_guild == to_guild else Route(fee=10, delay=3600)
+
+    def auction_lifetime(self, guild: str) -> int:
+        """How many seconds an auction posted at $guild runs. Two days, by default."""
+        return 2 * DAY
+
+    def increment(self, guild: str, current_bid: int) -> int:
+        """How much a new bid must beat $current_bid by. A twentieth of it (at least 1), by default."""
+        return max(1, current_bid // 20)
