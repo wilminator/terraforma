@@ -83,6 +83,8 @@ class EffectSpec:
     duration: int | None = None
     #: For ``eject`` only: whether it may be aimed at the user's own side (its allies and itself). Off, it only ejects enemies.
     friendly: bool = False
+    #: For a weapon's blow only: the odds out of 100 that ``status`` (the bad status riding on the blow) is left on a target it hit.
+    status_chance: int = 100
 
     @classmethod
     def from_dict(cls, data: dict | None) -> "EffectSpec":
@@ -90,7 +92,8 @@ class EffectSpec:
             return cls()
         return cls(data.get("effect", NONE), scope_number(data.get("targets", INDIVIDUAL)),
                    data.get("base", 0), data.get("added", 0), data.get("attribute", "none"),
-                   data.get("status") or "", data.get("duration"), bool(data.get("friendly", False)))
+                   data.get("status") or "", data.get("duration"), bool(data.get("friendly", False)),
+                   data.get("status_chance", 100))
 
     @property
     def detrimental(self) -> bool:
@@ -131,10 +134,16 @@ class ItemSpec:
     attack_count: int = 1
     attack_attribute: str = "none"
     ammo_type: str = ""
+    #: A bad status the blow may leave (empty: none), the rounds it lasts (None: the status's own) and the odds out of 100.
+    attack_status: str = ""
+    attack_status_duration: int | None = None
+    attack_status_chance: int = 100
 
     def weapon_effect(self, strength: int) -> EffectSpec:
-        """What an attack with this does, by the wielder's Strength: half to all of it."""
-        return EffectSpec(HURT, self.attack_targets, strength // 2, -(-strength // 2), self.attack_attribute)
+        """What an attack with this does, by the wielder's Strength: half to all of it. A blow that leaves a status is a hurt effect that
+        also names it (``status``, ``duration``, ``status_chance``), which the hit resolution places once the damage is done."""
+        return EffectSpec(HURT, self.attack_targets, strength // 2, -(-strength // 2), self.attack_attribute,
+                          self.attack_status, self.attack_status_duration, False, self.attack_status_chance)
 
 
 @dataclass(frozen=True)

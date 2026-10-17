@@ -215,6 +215,11 @@ class Rules:
         """The base amount of an effect plus a random share of the extra."""
         return rng.randint(0, effect.added) + effect.base
 
+    def attack_status_lands(self, rng: random.Random, chance: int) -> bool:
+        """Whether the status riding on a blow that landed is left on its target: $chance is the odds out of 100. A sure status
+        (100) draws nothing, so a stored fight that has none keeps its dice."""
+        return chance >= 100 or rng.randint(1, 100) <= chance
+
     def random_party_pool(self, fight, actor_party: int) -> list[int]:
         """The parties a ``random_party`` effect (a seed target scope) may land on, in the fight's order: one of them
         is drawn from the fight's stream. The default is every party with someone still alive, the actor's own

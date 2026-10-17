@@ -77,6 +77,15 @@ def effect_rating(effect: EffectSpec) -> float:
     return 0
 
 
+def attack_status_worth(effect: EffectSpec) -> float:
+    """What the status riding on a blow adds to the blow's damage: what a status ability of the same duration is worth, by the odds
+    that it is left."""
+    if not effect.status:
+        return 0
+    rounds = min(effect.duration or STATUS_DEFAULT_ROUNDS, STATUS_MAX_ROUNDS)
+    return STATUS_ROUND_WORTH * rounds * effect.status_chance / 100
+
+
 def half_life(start: int, end: int | None) -> float:
     """How many turns' worth of use a stock of ammunition gives between ``start`` and ``end`` (None: no end)."""
     final = 2 if end is None else 2 - 0.5 ** (end - 1)
@@ -94,7 +103,8 @@ def _cbrt(value: float) -> float:
 
 
 def _hand(rules: Rules, fighter: Combatant, index: int):
-    """What the hand (0 left, 1 right, 2 bare) swings: (ammo count, reach rating, speed, accuracy, strength) or None."""
+    """What the hand (0 left, 1 right, 2 bare) swings: (ammo count, reach rating, speed, accuracy, strength) or None. A status the blow
+    may leave is counted as strength (see ``attack_status_worth``), whichever of the weapon and its ammunition places it."""
     if index < 2:
         weapon = fighter.weapon(rules, index)
         if weapon is None:
@@ -109,7 +119,7 @@ def _hand(rules: Rules, fighter: Combatant, index: int):
     times = weapon.attack_count
     if ammo_count is not None:
         ammo_count = math.ceil(ammo_count / times)
-    strength = max(1, fighter.get_base(rules, "Strength", index))
+    strength = max(1, fighter.get_base(rules, "Strength", index)) + attack_status_worth(effect)
     speed = max(1, fighter.get_base(rules, "Speed", index)) * _speed_multiplier(times)
     accuracy = max(1, fighter.get_base(rules, "Accuracy", index))
     return ammo_count, target_rating(effect.targets), speed, accuracy, strength
