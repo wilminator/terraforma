@@ -42,6 +42,7 @@ EXTERNAL_FINISH_BY_ADDRESS = Limit("external-finish", 10, 60 * 60)
 # Linking, unlinking and setting a first password all change the ways into an account.
 SIGN_IN_METHOD_BY_ACCOUNT = Limit("sign-in-method", 20, 60 * 60)
 TRADE_BY_ACCOUNT = Limit("trade", 120, 60 * 60)
+MARKET_BY_ACCOUNT = Limit("market", 120, 60 * 60)
 DROP_BY_ACCOUNT = Limit("drop", 120, 60 * 60)
 WEEKLY_QUEST_BY_ACCOUNT = Limit("weekly-quest", 60, 60 * 60)
 SLOT_QUEST_BY_ACCOUNT = Limit("slot-quest", 60, 60 * 60)

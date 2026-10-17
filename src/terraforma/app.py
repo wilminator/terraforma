@@ -74,6 +74,7 @@ from .voice.routes import router as voice_router
 from .pvp.routes import router as pvp_router
 from .towns.routes import router as towns_router
 from .trading.routes import router as trading_router
+from .marketplace.routes import router as marketplace_router
 from . import client, housekeeping
 from .keys import KeyRing
 from .mail import Mailer, OutboxMailer, SmtpMailer
@@ -163,6 +164,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(inventory_router)
     app.include_router(storage_router)
     app.include_router(trading_router)
+    app.include_router(marketplace_router)
     app.include_router(pending_drops_router)
     app.include_router(relations_router)
     app.include_router(chat_router)
