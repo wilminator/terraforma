@@ -24,17 +24,20 @@ from ..economy import Economy, NotEnoughGold
 from ..escrow import service as escrow
 from ..escrow.models import EscrowItem
 from ..guild.fees import Fees
+from ..heroes import inventory
 from ..heroes.models import Hero, Team, TeamMember
 from ..storage.hooks import Storage
 from .hooks import Marketplace
-from .models import AUCTION, CANCELLED, EXPIRED, FIXED, OPEN, SOLD, Listing
+from .models import AUCTION, CANCELLED, EXPIRED, FIXED, OPEN, SOLD, Listing, ListingAsk
 
 PURPOSE = "listing"  # the escrow deposit's purpose
 PURCHASE = "purchase"  # the parcel's purpose
 BID_PURPOSE = "bid"  # the escrow deposit holding a bid
+BARTER = "barter"  # the purpose of the escrow deposit and the parcel that carry a buyer's payment in items to the seller
 SALE = "sale"  # the reason in the Challenge Token ledger
 MAX_PRICE = 10**9
 MAX_PAGE = 100
+MAX_ASKS = 8
 
 
 class MarketplaceError(ValueError):
@@ -58,19 +61,24 @@ async def _charge(session: AsyncSession, economy: Economy, hero: Hero, amount: i
 
 async def post(
     session: AsyncSession, economy: Economy, fees: Fees, marketplace: Marketplace, hero: Hero, guild: str,
-    items: list[tuple[int, int]], price_gold: int = 0, price_tokens: int = 0, auction: bool = False,
+    items: list[tuple[int, int]], price_gold: int = 0, price_tokens: int = 0, asks: list[tuple[str, int]] | None = None,
+    auction: bool = False,
 ) -> Listing:
     """$hero lists $items, (pack position, quantity) pairs, at $guild for $price_gold gold and $price_tokens Challenge Tokens. The posting
     fee comes out of their purse. Raises MarketplaceError, changing nothing, for no goods, no price, a price out of range, anything the
-    hero does not have or a fee they cannot pay. With $auction the price is the starting bid, in gold only."""
+    hero does not have or a fee they cannot pay. $asks, (item key, quantity) pairs, are items the buyer must also give (barter); a price
+    may be only items. With $auction the price is the starting bid, in gold only."""
+    asks = list(asks or [])
     if not guild:
         raise MarketplaceError("a listing needs a guild")
     if not items:
         raise MarketplaceError("there is nothing to list")
-    if not (0 <= price_gold <= MAX_PRICE and 0 <= price_tokens <= MAX_PRICE) or not (price_gold or price_tokens):
-        raise MarketplaceError("a listing asks for some gold or tokens, and no more than a billion of either")
-    if auction and (price_tokens or not price_gold):
-        raise MarketplaceError("an auction starts at some gold, and takes no tokens")
+    if not (0 <= price_gold <= MAX_PRICE and 0 <= price_tokens <= MAX_PRICE) or not (price_gold or price_tokens or asks):
+        raise MarketplaceError("a listing asks for some gold or tokens or items, and no more than a billion of either gold or tokens")
+    if len({key for key, _qty in asks}) != len(asks) or len(asks) > MAX_ASKS:
+        raise MarketplaceError(f"a listing asks for at most {MAX_ASKS} kinds of item, each named once")
+    if auction and (price_tokens or asks or not price_gold):
+        raise MarketplaceError("an auction starts at some gold, and takes no tokens or items")
     team_id = await _team_of(session, hero)
     fee = await fees.quote(session, team_id, guild, marketplace.listing_fee(guild, price_gold, price_tokens), "listing")
     async with session.begin_nested():
@@ -80,6 +88,14 @@ async def post(
             kind=AUCTION if auction else FIXED,
         )
         session.add(listing)
+        await session.flush()
+        for key, qty in asks:
+            item = await session.scalar(select(Item).where(Item.key == key))
+            if item is None:
+                raise MarketplaceError(f"there's no item {key!r}")
+            if not 1 <= qty <= inventory.MAX_ITEM_QTY:
+                raise MarketplaceError("a listing asks for at least 1 of each item")
+            session.add(ListingAsk(listing_id=listing.id, item_id=item.id, qty=qty))
         await session.flush()
         await _charge(session, economy, hero, fee)
         try:
@@ -97,6 +113,14 @@ async def goods(session: AsyncSession, listing: Listing) -> list[tuple[str, int]
         return []
     rows = await session.execute(
         select(Item.key, EscrowItem.qty).join(Item, Item.id == EscrowItem.item_id).where(EscrowItem.escrow_id == listing.escrow_id).order_by(EscrowItem.id)
+    )
+    return [(key, qty) for key, qty in rows.all()]
+
+
+async def asks_of(session: AsyncSession, listing: Listing) -> list[tuple[str, int]]:
+    """The items a listing asks for in payment, as (item key, quantity) pairs."""
+    rows = await session.execute(
+        select(Item.key, ListingAsk.qty).join(Item, Item.id == ListingAsk.item_id).where(ListingAsk.listing_id == listing.id).order_by(ListingAsk.id)
     )
     return [(key, qty) for key, qty in rows.all()]
 
@@ -127,8 +151,8 @@ async def search(
     return [
         {
             "id": listing.id, "guild": listing.guild, "seller": name, "price_gold": listing.price_gold,
-            "price_tokens": listing.price_tokens, "goods": await goods(session, listing), "expires_at": listing.expires_at,
-            "kind": listing.kind, "bid_gold": listing.bid_gold,
+            "price_tokens": listing.price_tokens, "asks": await asks_of(session, listing), "goods": await goods(session, listing),
+            "expires_at": listing.expires_at, "kind": listing.kind, "bid_gold": listing.bid_gold,
         }
         for listing, name in rows
     ]
@@ -136,10 +160,14 @@ async def search(
 
 async def buy(
     session: AsyncSession, economy: Economy, fees: Fees, marketplace: Marketplace, hero: Hero, listing_id: int, to_guild: str,
+    pay_items: list[tuple[int, int]] | None = None,
 ) -> Shipment:
     """$hero buys the open listing for their team and has the goods delivered to $to_guild. They pay its price and the delivery fee
     for the route from the listing's guild; the seller's team gets the price. Returns the parcel. Raises MarketplaceError, changing
-    nothing, if the listing is gone, out of time or the buyer's own team's, or anything is short."""
+    nothing, if the listing is gone, out of time or the buyer's own team's, or anything is short.
+
+    A listing that asks for items (barter) is paid for with $pay_items, (pack position, quantity) pairs that must add up to exactly the
+    items asked: they are held in escrow and go to the seller's team as a parcel at the listing's guild, never handed over."""
     if not to_guild:
         raise MarketplaceError("say which guild the goods should be delivered to")
     buyer_team = await _team_of(session, hero)
@@ -153,6 +181,11 @@ async def buy(
     seller_team, guild, price_gold, price_tokens, escrow_id = listing.seller_team_id, listing.guild, listing.price_gold, listing.price_tokens, listing.escrow_id
     route = marketplace.delivery(guild, to_guild)
     fee = await fees.quote(session, buyer_team, to_guild, route.fee, "delivery")
+    wanted = sorted(await asks_of(session, listing))
+    if not wanted and pay_items:
+        raise MarketplaceError("that listing asks for no items")
+    if wanted and not pay_items:
+        raise MarketplaceError("that listing asks for items: say which of yours to give")
     async with session.begin_nested():
         now = wallclock.timestamp()
         claimed = await session.execute(
@@ -167,6 +200,15 @@ async def buy(
                 await challenge.change(session, hero.account_id, -price_tokens, SALE)
             except challenge.NotEnoughTokens as error:
                 raise MarketplaceError("not enough tokens") from error
+        if wanted:
+            try:
+                payment = await escrow.hold(session, economy, hero, guild, BARTER, str(listing_id), items=pay_items)
+                given = await escrow.release(session, payment.id, seller_team)
+                if sorted(given["items"]) != wanted:
+                    raise MarketplaceError("the items you gave are not the items asked for")
+                await delivery.send_goods(session, seller_team, guild, BARTER, str(listing_id), items=given["items"])
+            except (escrow.EscrowError, delivery.DeliveryError) as error:
+                raise MarketplaceError(str(error)) from error
         seller = await session.get(Team, seller_team)
         if price_gold:
             await economy.credit_team(session, seller_team, price_gold)

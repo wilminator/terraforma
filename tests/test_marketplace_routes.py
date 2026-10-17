@@ -108,6 +108,23 @@ def test_the_calls_take_only_what_they_define(two_teams):
     expect(client.get("/api/market/listings", params={"max_gold": -1}), 422)
 
 
+def test_a_barter_listing_is_paid_in_items(two_teams):
+    client, mike, aria, zed, zara = two_teams
+    stock_over_http(client, zara, "sword")
+    body = {"guild": "vanguard", "items": [{"position": 0, "qty": 1}], "asks": [{"item": "sword", "qty": 1}]}
+    listing = expect(client.post(f"/api/heroes/{aria}/listings", json=body, headers=mike()), 200).json()
+    assert listing["asks"] == [["sword", 1]] and listing["price_gold"] == 0
+    assert [row["asks"] for row in expect(client.get("/api/market/listings"), 200).json()] == [[["sword", 1]]]
+    expect(client.post(f"/api/heroes/{zara}/listings/{listing['id']}/buy", json={"to_guild": "vanguard"}, headers=zed()), 409)  # no payment named
+    bought = expect(client.post(f"/api/heroes/{zara}/listings/{listing['id']}/buy", json={"to_guild": "vanguard", "pay_items": [{"position": 0}]}, headers=zed()), 200).json()
+    assert bought["items"] == [["potion", 1]]
+    expect(client.get(f"/api/heroes/{aria}/parcels"), 404)  # (signed in as Zed: Aria is not hers)
+    mike()
+    parcels = expect(client.get(f"/api/heroes/{aria}/parcels"), 200).json()
+    assert [(p["purpose"], p["items"]) for p in parcels] == [("barter", [["sword", 1]])]
+    expect(client.post(f"/api/heroes/{aria}/listings", json={**body, "asks": [{"item": "sword", "qty": 0}]}, headers=mike()), 422)
+
+
 def test_an_auction_is_posted_bid_on_and_the_fixed_price_call_refuses_it(two_teams):
     client, mike, aria, zed, zara = two_teams
     posted = expect(client.post(f"/api/heroes/{aria}/auctions", json={"guild": "vanguard", "items": [{"position": 0}], "start_gold": 40}, headers=mike()), 200).json()
