@@ -21,10 +21,17 @@ MySQL database, named like the listed one with the worker's id on the end
 other's tables. The MySQL user needs the right to make them (see
 docker/mysql-test-init.sql). Postgres and MySQL
 tests drop every table first and last, so point them at a test database.
+
+On SQLite, ``app_client`` builds the tables and loads the game's seed once per worker for each game it serves, and starts every
+later test from a copy of that database (``serve``). So a test sees what a fresh start loads, a few seconds sooner.
 """
 
 import asyncio
 import os
+import shutil
+import sqlite3
+from contextlib import contextmanager
+from pathlib import Path
 
 import pytest
 
@@ -138,33 +145,89 @@ def addons():
     return []
 
 
-@pytest.fixture
-def app_client(database_url, mailbox, game, addons, tmp_path):
-    """A TestClient for the engine app on a freshly built database (each database under test), with its own key."""
+#: Seeded SQLite databases, one per (game, add-ons) a worker has served: starting an app builds the tables and loads the game's
+#: whole seed, which costs about two seconds, and every test used to pay it. The first test to serve a game keeps a copy of its
+#: database as it was just after the app started; later tests start from a copy of that file and skip both steps.
+#: The game is kept in the entry so its id can't be handed to another game; the number of entries is capped (a test that
+#: makes a game of its own gets an entry of its own).
+_seeded: dict[tuple, tuple[object, Path]] = {}
+SEEDED_LIMIT = 8
+
+
+def sqlite_file(url: str) -> Path | None:
+    """The file a SQLite $url names, or None for another database (or an in-memory one)."""
+    parsed = make_url(url)
+    return Path(parsed.database) if parsed.get_backend_name() == "sqlite" and parsed.database not in (None, "", ":memory:") else None
+
+
+def snapshot(source: Path, target: Path) -> None:
+    """Copies the SQLite database $source to $target, safe while the app has it open."""
+    origin = sqlite3.connect(source)
+    try:
+        copy = sqlite3.connect(target)
+        try:
+            origin.backup(copy)
+        finally:
+            copy.close()
+    finally:
+        origin.close()
+
+
+async def _already_loaded(*args, **kwargs) -> dict[str, int]:
+    """Stands in for load_content when the database was copied from one that has the game's seed loaded."""
+    return {}
+
+
+@contextmanager
+def serve(database_url, mailbox, game, addons, folder, seeds, monkeypatch):
+    """A TestClient for the engine app on a database holding the game's seed (each database under test), with its own key in $folder.
+
+    $seeds is where the seeded copies of SQLite databases are kept (a folder that lives as long as the worker)."""
     from starlette.testclient import TestClient
 
     from terraforma.app import create_app
     from terraforma.keys import new_key
     from terraforma.settings import Settings
 
-    async def prepare():
-        engine = make_engine(database_url)
-        await fresh_database(engine, database_url)
-        await engine.dispose()
+    path = sqlite_file(database_url)
+    key = (id(game), tuple(addons))
+    seeded = _seeded.get(key) if path else None
+    if seeded:
+        shutil.copyfile(seeded[1], path)
+        monkeypatch.setattr("terraforma.app.load_content", _already_loaded)  # the copy has what it would load
+    else:
 
-    run(prepare())
-    new_key(tmp_path / "keys")
+        async def prepare():
+            engine = make_engine(database_url)
+            await fresh_database(engine, database_url)
+            await engine.dispose()
+
+        run(prepare())
+    new_key(folder / "keys")
     settings = Settings(
         database_url=database_url,
         session_secret=SECRET,
         secure_cookies=False,
         public_url="http://game.test",
         addons=addons,
-        key_dir=tmp_path / "keys",
+        key_dir=folder / "keys",
         fight_timer_seconds=0,  # tests resolve overdue rounds themselves, on the clock they move
         housekeeping_seconds=0,  # tests run the housekeeping pass themselves
     )
     with TestClient(create_app(settings, game, mailer=mailbox)) as client:
+        if path and not seeded and len(_seeded) < SEEDED_LIMIT:
+            target = seeds / f"seeded-{len(_seeded)}.db"
+            snapshot(path, target)
+            _seeded[key] = (game, target)
+        yield client
+
+
+@pytest.fixture
+def app_client(database_url, mailbox, game, addons, tmp_path, tmp_path_factory, monkeypatch):
+    """A TestClient for the engine app on a freshly built database (each database under test), with its own key."""
+    seeds = tmp_path_factory.getbasetemp() / "seeded"  # (under pytest-xdist the base folder is the worker's own)
+    seeds.mkdir(exist_ok=True)
+    with serve(database_url, mailbox, game, addons, tmp_path, seeds, monkeypatch) as client:
         yield client
 
 
