@@ -155,7 +155,8 @@ def new_page(browser, live_server, console):
         page = context.new_page()
         page.on("console", lambda message: console.problems.append(f"console {message.type}: {message.text}") if message.type in ("error", "warning") else None)
         page.on("pageerror", lambda error: console.problems.append(f"uncaught: {error}"))
-        page.on("requestfailed", lambda request: console.problems.append(f"request failed: {request.url}"))
+        # (A page that is closed or sent elsewhere cancels the requests still in flight, "net::ERR_ABORTED": nothing a player would see.)
+        page.on("requestfailed", lambda request: None if "ERR_ABORTED" in (request.failure or "") else console.problems.append(f"request failed: {request.url}"))
         return page
 
     yield open_page
