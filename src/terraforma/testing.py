@@ -22,14 +22,17 @@ other's tables. The MySQL user needs the right to make them (see
 docker/mysql-test-init.sql). Postgres and MySQL
 tests drop every table first and last, so point them at a test database.
 
-On SQLite, ``app_client`` builds the tables and loads the game's seed once per worker for each game it serves, and starts every
+On SQLite, ``app_client`` builds the tables and loads the game's seed once per worker for each distinct seed it serves, and starts every
 later test from a copy of that database (``serve``). So a test sees what a fresh start loads, a few seconds sooner.
 """
 
 import asyncio
+import atexit
+import hashlib
 import os
 import shutil
 import sqlite3
+import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -37,8 +40,9 @@ import pytest
 
 from sqlalchemy.engine import make_url
 
+from terraforma.addons import integrate
 from terraforma.db.dialect import empty_tables, ensure_database
-from terraforma.db.schema import drop_everything, ensure_schema
+from terraforma.db.schema import drop_everything, ensure_schema, schema_hash
 from terraforma.db.session import make_engine, make_sessionmaker
 
 DEFAULT_DATABASES = "sqlite+aiosqlite:///{tmp}/test.db"
@@ -79,25 +83,52 @@ def database_url(request, tmp_path) -> str:
 
 _built: set[str] = set()
 
+#: SQLite files with the tables made and no rows, by the models' ``schema_hash``: making the ~100 tables takes most of a second, and a SQLite
+#: file is new for every test, so the first test of a worker builds them and later tests start from a copy.
+_blank: dict[str, Path] = {}
+_blank_folder: Path | None = None
+
+
+def blank_folder() -> Path:
+    """Where the worker keeps its blank SQLite databases (made when first needed, removed when the worker exits)."""
+    global _blank_folder
+    if _blank_folder is None:
+        _blank_folder = Path(tempfile.mkdtemp(prefix="terraforma-blank-"))
+        atexit.register(shutil.rmtree, _blank_folder, ignore_errors=True)
+    return _blank_folder
+
 
 async def fresh_database(engine, url: str) -> None:
     """Leaves $engine's database with every table made from the models and no rows.
 
-    Building the tables is the slow part on Postgres and MySQL, so each shared database is built once per
-    run and then only emptied. A test that changes the tables must call forget_schema(url) when it is done.
+    Building the tables is the slow part, so each shared Postgres or MySQL database is built once per run and then only
+    emptied, and a SQLite file (new for every test) is copied from one the worker built earlier. A test that changes the
+    tables must call forget_schema(url) when it is done. The engine must not have connected yet (a SQLite file is replaced).
     """
     if url in _built:
         await empty_tables(engine)
         return
+    path = sqlite_file(url)
+    blank = _blank.get(schema_hash()) if path else None
+    if blank:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(blank, path)
+        return
     await drop_everything(engine)
     await ensure_schema(engine)
-    if make_url(url).get_backend_name() != "sqlite":  # a SQLite file is made new for every test
+    if path:
+        if len(_blank) < SEEDED_LIMIT:
+            target = blank_folder() / f"blank-{len(_blank)}.db"
+            snapshot(path, target)
+            _blank[schema_hash()] = target
+    else:
         _built.add(url)
 
 
 def forget_schema(url: str) -> None:
     """Says the database's tables are no longer the built ones, so the next test rebuilds them."""
     _built.discard(url)
+    _blank.clear()
 
 
 @pytest.fixture
@@ -145,13 +176,30 @@ def addons():
     return []
 
 
-#: Seeded SQLite databases, one per (game, add-ons) a worker has served: starting an app builds the tables and loads the game's
-#: whole seed, which costs about two seconds, and every test used to pay it. The first test to serve a game keeps a copy of its
-#: database as it was just after the app started; later tests start from a copy of that file and skip both steps.
-#: The game is kept in the entry so its id can't be handed to another game; the number of entries is capped (a test that
-#: makes a game of its own gets an entry of its own).
-_seeded: dict[tuple, tuple[object, Path]] = {}
+#: Seeded SQLite databases, one per seed a worker has served: starting an app builds the tables and loads the game's whole seed,
+#: which costs about two seconds, and every test used to pay it. The first test to serve a seed keeps a copy of its database as it
+#: was just after the app started; later tests start from a copy of that file and skip both steps.
+#: A seed is known by what it holds (``seed_fingerprint``), not by the Game object: a test file whose ``game`` fixture builds the
+#: same game for every test still shares one copy. The number of entries is capped (a test that makes a seed of its own gets an
+#: entry of its own).
+_seeded: dict[str, Path] = {}
 SEEDED_LIMIT = 8
+
+
+def seed_fingerprint(game, addons) -> str:
+    """What the app loads into an empty database for $game with $addons: the bytes of every seed file (and where each sits), the
+    add-ons listed, and the rules that shape the stored rows. Two games with the same fingerprint start from the same database."""
+    digest = hashlib.sha256()
+    integrated = integrate(game, addons)
+    for addon, folder in integrated.seed_dirs:
+        digest.update(f"[{addon}]".encode())
+        for path in sorted(Path(folder).rglob("*.json")):
+            digest.update(path.relative_to(folder).as_posix().encode() + b"\0" + path.read_bytes() + b"\0")
+    if game:
+        digest.update(repr((game.rules.stats, game.rules.resource_names, game.rules.drop_chance_scale)).encode())
+        digest.update(repr([(type(each).__module__, type(each).__qualname__, each.name) for each in game.state_sections]).encode())
+    digest.update(repr(tuple(addons)).encode())
+    return digest.hexdigest()
 
 
 def sqlite_file(url: str) -> Path | None:
@@ -190,10 +238,10 @@ def serve(database_url, mailbox, game, addons, folder, seeds, monkeypatch):
     from terraforma.settings import Settings
 
     path = sqlite_file(database_url)
-    key = (id(game), tuple(addons))
+    key = seed_fingerprint(game, addons) if path else None
     seeded = _seeded.get(key) if path else None
     if seeded:
-        shutil.copyfile(seeded[1], path)
+        shutil.copyfile(seeded, path)
         monkeypatch.setattr("terraforma.app.load_content", _already_loaded)  # the copy has what it would load
     else:
 
@@ -218,7 +266,7 @@ def serve(database_url, mailbox, game, addons, folder, seeds, monkeypatch):
         if path and not seeded and len(_seeded) < SEEDED_LIMIT:
             target = seeds / f"seeded-{len(_seeded)}.db"
             snapshot(path, target)
-            _seeded[key] = (game, target)
+            _seeded[key] = target
         yield client
 
 
