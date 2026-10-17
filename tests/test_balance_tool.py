@@ -128,3 +128,125 @@ def test_the_command_line_writes_a_report_and_the_numbers(tmp_path, capsys):
 def test_the_command_line_says_what_is_wrong(arguments, message, capsys):
     assert balance.main(["--content", str(SEED), "--levels", "1", "--fights", "1", *arguments]) == 1
     assert message in capsys.readouterr().err
+
+
+# --- named teams: attrition and endurance ------------------------------------------------------------------------
+
+TEAMS = {"usual": ["fighter", "mage", "cleric", "scout"], "no healer": ["fighter", "fighter", "mage", "scout"]}
+
+
+def test_a_fight_reports_what_it_cost_the_party(content):
+    result = balance.run_fight(content, TEAMS["usual"], 3, random.Random("cost"), difficulty=0.25, sizes=(2, 3))
+    assert 0 <= result.life_lost <= 1 and 0 <= result.mana_lost <= 1
+    assert result.life_lost == pytest.approx(1 - result.life_left, abs=1e-9), "a rested party's loss is what it has left, taken from 1"
+    assert all(0 <= hero.life_lost <= 1 and 0 <= hero.mana_lost <= 1 for hero in result.heroes)
+
+
+def test_a_hurt_party_fights_on_from_where_it_was(content):
+    rng = random.Random("hurt")
+    heroes = [balance.hero_at_level(content, job, 3, rng) for job in TEAMS["usual"]]
+    heroes[0].current["HP"] = 0  # fallen
+    heroes[1].current["HP"] = 1
+    result = balance.run_fight(content, TEAMS["usual"], 3, rng, difficulty=0.25, sizes=(2, 3), heroes=heroes)
+    assert heroes[0].current["HP"] == 0, "the fallen stay fallen"
+    assert result.heroes[0].turns == 0 and result.heroes[0].dealt == 0
+    assert result.life_lost >= 0
+
+
+def test_an_endurance_run_ends_when_the_party_falls_or_the_cap_is_reached(content):
+    run = balance.endurance(content, TEAMS["usual"], 3, random.Random("run"), cap=5, difficulty=0.25, sizes=(2, 3))
+    assert 0 <= run.fights <= 5 and len(run.life_after) == run.fights
+    assert run.wiped == (run.fights < 5 or not run.life_after)  # not wiped only when it came through all five
+    assert all(0 < left <= 1 for left in run.life_after)
+    assert balance.endurance(content, TEAMS["usual"], 3, random.Random("run"), cap=5, difficulty=0.25, sizes=(2, 3)) == run, "the dice repeat it"
+    # a party that is never wiped out comes through every fight of the cap, and one that is wiped out does not
+    for name in ("a", "b", "c", "d"):
+        play = balance.endurance(content, TEAMS["usual"], 1, random.Random(name), cap=6, difficulty=3, sizes=(2, 6))
+        assert (play.fights == 6) == (not play.wiped) or play.wiped and play.fights <= 6
+        assert play.wiped or play.fights == 6
+
+
+def test_the_two_modes_summarise_each_team_by_level(content):
+    teams = {name: balance.Team.of(jobs) for name, jobs in TEAMS.items()}
+    cost = balance.attrition(content, teams, [1, 3], 2, seed=3, difficulty=0.25, sizes=(2, 3))
+    assert set(cost) == set(teams) and set(cost["usual"]) == {1, 3}
+    assert all(0 <= row["life_lost"] <= 1 and 0 <= row["won"] <= 1 for levels in cost.values() for row in levels.values())
+    lasted = balance.stamina(content, teams, [1, 3], 2, seed=3, cap=4, difficulty=0.25, sizes=(2, 3))
+    for levels in lasted.values():
+        for row in levels.values():
+            assert 0 <= row["fewest"] <= row["median"] <= row["most"] <= 4 and 0 <= row["capped"] <= 1
+    assert balance.attrition(content, teams, [1, 3], 2, seed=3, difficulty=0.25, sizes=(2, 3)) == cost
+    assert "no healer" in balance.format_attrition(cost) and "no healer" in balance.format_stamina(lasted)
+
+
+def test_a_hero_with_a_seed_is_the_same_hero_in_every_fight(content):
+    seeds = [11, None, None, 12]
+    first = balance.make_heroes(content, TEAMS["usual"], 8, random.Random("one"), seeds)
+    second = balance.make_heroes(content, TEAMS["usual"], 8, random.Random("two"), seeds)
+    assert first[0].base == second[0].base and first[3].base == second[3].base, "seeded heroes do not depend on the fight's dice"
+    assert first[0].base == balance.hero_at_level(content, "fighter", 8, random.Random(11)).base
+    assert first[1].base != second[1].base or first[2].base != second[2].base, "the others do"
+    assert balance.make_heroes(content, TEAMS["usual"], 8, random.Random("one")) == balance.make_heroes(content, TEAMS["usual"], 8, random.Random("one"))
+
+
+def scenario_file(tmp_path, text):
+    path = tmp_path / "scenario.json"
+    path.write_text(text if isinstance(text, str) else json.dumps(text))
+    return path
+
+
+def test_a_scenario_file_names_teams_levels_and_seeds(tmp_path, content):
+    path = scenario_file(tmp_path, {
+        "levels": [2, 4], "difficulty": 0.25, "runs": 3,
+        "teams": {"usual": ["fighter", "mage"], "fixed": [{"job": "fighter", "seed": 5}, "cleric"]},
+    })
+    scenario = balance.load_scenario(path, content)
+    assert scenario["levels"] == [2, 4] and scenario["runs"] == 3
+    assert scenario["teams"] == {"usual": balance.Team(["fighter", "mage"], [None, None]), "fixed": balance.Team(["fighter", "cleric"], [5, None])}
+
+
+def test_the_command_line_runs_a_scenario_in_both_modes(tmp_path, capsys):
+    path = scenario_file(tmp_path, {"levels": [2], "difficulty": 0.25, "foes": "1-2", "fights": 2, "runs": 2, "cap": 3,
+                                    "teams": {"usual": TEAMS["usual"], "fixed": [{"job": "fighter", "seed": 5}, "mage"]}})
+    out = tmp_path / "numbers.json"
+    base = ["--content", str(SEED), "--scenario", str(path), "--json", str(out)]
+    assert balance.main([*base, "--mode", "attrition"]) == 0
+    assert "What one fight costs a rested party" in capsys.readouterr().out
+    saved = json.loads(out.read_text())
+    assert set(saved["teams"]) == {"usual", "fixed"} and set(saved["teams"]["usual"]) == {"2"}
+    assert balance.main([*base, "--mode", "endurance"]) == 0
+    assert "How many fights a party lasts" in capsys.readouterr().out
+    assert saved["teams"]["usual"]["2"]["fights"] == 2
+    assert json.loads(out.read_text())["teams"]["usual"]["2"]["cap"] == 3
+    # a flag given on the command line beats the file
+    assert balance.main([*base, "--mode", "endurance", "--cap", "1", "--levels", "3"]) == 0
+    assert set(json.loads(out.read_text())["teams"]["usual"]) == {"3"} and json.loads(out.read_text())["teams"]["usual"]["3"]["cap"] == 1
+    capsys.readouterr()
+    # with no scenario, one team or four drawn jobs are played
+    assert balance.main(["--content", str(SEED), "--levels", "2", "--mode", "endurance", "--runs", "1", "--cap", "2", "--team", "fighter,mage"]) == 0
+    assert "  team" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "text, message",
+    [
+        ("[]", "should be a JSON object"),
+        ("{", "cannot read"),
+        ('{"teams": {}}', "should be a JSON object"),
+        ('{"teams": {"a": "fighter"}}', "should be a list of heroes"),
+        ('{"teams": {"a": [3]}}', "a hero is a job key or"),
+        ('{"teams": {"a": [{"job": "fighter", "seed": "x"}]}}', "a hero is a job key or"),
+        ('{"teams": {"a": ["fighter", "wizard"]}}', "has no job 'wizard' to use"),
+        ('{"teams": {"a": ["fighter"]}, "speed": 3}', "settings the tool does not know: speed"),
+    ],
+)
+def test_the_command_line_says_what_is_wrong_with_a_scenario_file(tmp_path, capsys, text, message):
+    path = scenario_file(tmp_path, text)
+    assert balance.main(["--content", str(SEED), "--mode", "attrition", "--fights", "1", "--levels", "1", "--scenario", str(path)]) == 1
+    assert message in capsys.readouterr().err
+
+
+def test_a_scenario_is_not_for_the_report_mode(tmp_path, capsys):
+    path = scenario_file(tmp_path, {"teams": {"a": ["fighter"]}})
+    assert balance.main(["--content", str(SEED), "--levels", "1", "--fights", "1", "--scenario", str(path)]) == 1
+    assert "pick one with --mode" in capsys.readouterr().err

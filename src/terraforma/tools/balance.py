@@ -13,6 +13,21 @@ read from disk, and its rules class (if it has one) is named on the command line
 
 Without ``--team`` every fight draws four different jobs at random, so each job's numbers average over many teams.
 
+Two more modes play named teams, listed in a scenario file (``--scenario file.json``, below), so a game keeps the line-ups it cares
+about: the usual ones and the awkward ones such as a party with no healer:
+- ``--mode attrition``: every fight starts from a rested party, and the report is how much of the party's life and mana one fight costs
+  on average, and how often the party wins.
+- ``--mode endurance``: one party fights one encounter after another with no rest and nobody raised, until it is wiped out (or ``--cap``
+  fights have passed), and the report is how many fights it lasted on average. The party stays at its level throughout.
+
+A scenario file is JSON. Only ``teams`` is needed; the rest are the settings of the same names on the command line (a flag given on
+the command line wins over the file). A team is a list of jobs, and a job may be a key or ``{"job": key, "seed": number}``: the seed fixes
+that hero's level-up dice, so the same character is made every time (the other heroes are made from each fight's own dice):
+
+    {"levels": [5, 20, 40], "difficulty": 0.3, "runs": 20, "fights": 50, "cap": 100, "seed": 1, "foes": "3-5",
+     "teams": {"usual": ["knight", "rogue", "cleric", "warlock"],
+               "same knight": [{"job": "knight", "seed": 7}, "rogue", "cleric", "warlock"]}}
+
 What it does and does not model (so a number is read for what it is):
 - A hero at level L is made the way the engine makes one: the job's growth rounded for level 1, then each level adds a random 75 to
   100 percent of the growth, rounded down (``Rules.advance``). It wears nothing and carries nothing.
@@ -27,9 +42,10 @@ import json
 import random
 import sys
 from collections import defaultdict
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
+from typing import NamedTuple
 
 from ..content.schema import check_seed
 from ..fights import ai
@@ -52,8 +68,23 @@ SIZE_AT_START, SIZE_AT_END, LAST_LEVEL = (3, 5), (4, 30), 50
 FIT = 0.3
 
 
+#: The most fights an endurance run plays before it stops counting.
+ENDURANCE_CAP = 100
+
+
 class BalanceError(ValueError):
     pass
+
+
+class Team(NamedTuple):
+    """The jobs of a team's heroes, and for each the seed of its level-up dice (None: drawn from the fight's own dice)."""
+
+    jobs: list[str]
+    seeds: list[int | None]
+
+    @classmethod
+    def of(cls, jobs: list[str]) -> "Team":
+        return cls(list(jobs), [None] * len(jobs))
 
 
 @dataclass
@@ -163,6 +194,8 @@ class HeroResult:
     healed: int = 0
     mana_spent: int = 0
     died: bool = False
+    life_lost: float = 0.0  # life and mana lost over the fight, each as a share of the hero's own most
+    mana_lost: float = 0.0
 
 
 @dataclass
@@ -188,6 +221,8 @@ class FightResult:
     life_left: float  # the heroes' life at the end as a share of the beginning
     heroes: list[HeroResult]
     casts: list[Cast]
+    life_lost: float = 0.0  # the party's life and mana lost over the fight, each as a share of the party's most
+    mana_lost: float = 0.0
 
 
 class Tally:
@@ -252,12 +287,26 @@ class Tally:
         # a cast that is the last thing in the round's events is closed by the round end, or by the next fight's reset
 
 
+def resources(rules: Rules, hero: Combatant, stat: str) -> tuple[int, int]:
+    """What the hero has left of $stat, and the most it can have."""
+    return hero.current.get(stat, 0), hero.get_base(rules, stat)
+
+
+def make_heroes(content: Content, team: list[str], level: int, rng: random.Random, seeds: list[int | None] | None = None) -> list[Combatant]:
+    """The team's heroes at $level; one with a seed in $seeds is made from that seed alone, so it is the same hero every time."""
+    seeds = seeds or [None] * len(team)
+    return [hero_at_level(content, job, level, rng if seed is None else random.Random(seed)) for job, seed in zip(team, seeds, strict=True)]
+
+
 def run_fight(content: Content, team: list[str], level: int, rng: random.Random, *, difficulty: float = 1.0,
-              sizes: tuple[int, int] | None = None, max_rounds: int = 60) -> FightResult:
+              sizes: tuple[int, int] | None = None, max_rounds: int = 60, heroes: list[Combatant] | None = None,
+              seeds: list[int | None] | None = None) -> FightResult:
     """One fight: a team of heroes of $level against an encounter worth $difficulty times the team's strength, of $sizes monsters
-    (fewest, most; what ``encounter_sizes`` says for the level if left out)."""
+    (fewest, most; what ``encounter_sizes`` says for the level if left out). $heroes are the ones who fight if given (as they are, hurt
+    or fallen), and the encounter is still worth what the whole team is."""
     rules = content.rules
-    heroes = [hero_at_level(content, job, level, rng) for job in team]
+    heroes = heroes or make_heroes(content, team, level, rng, seeds)
+    before = [(resources(rules, hero, rules.vital)[0], resources(rules, hero, rules.mana)[0]) for hero in heroes]
     team_pxp = sum(rules.pxp(hero) for hero in heroes)
     keys = pick_encounter(content, round(team_pxp * difficulty), sizes or encounter_sizes(level), rng)
     enemies = [foe(content, key) for key in keys]
@@ -277,10 +326,49 @@ def run_fight(content: Content, team: list[str], level: int, rng: random.Random,
     lost, won = fight.parties[HEROES].dead(rules), fight.parties[FOES].dead(rules)
     outcome = "won" if won and not lost else "lost" if lost else "timeout"
     left = sum(fight.get(address).current[rules.vital] for address in fight.addresses() if address[0] == HEROES)
+    results = list(tally.heroes.values())  # in the order of $heroes: the layout fills the groups in turn
+    totals = {"life": [0, 0], "mana": [0, 0]}
+    for hero, result, (life_before, mana_before) in zip(heroes, results, before, strict=True):
+        for name, stat, start in (("life", rules.vital, life_before), ("mana", rules.mana, mana_before)):
+            now, most = resources(rules, hero, stat)
+            lost = (start - now) / most if most else 0.0
+            setattr(result, "life_lost" if name == "life" else "mana_lost", lost)
+            totals[name][0] += start - now
+            totals[name][1] += most
     return FightResult(
         outcome, rounds, keys, team_pxp, sum(monster_pxp(content, key) for key in keys), left / max(tally.life[HEROES], 1),
-        list(tally.heroes.values()), tally.casts,
+        results, tally.casts, totals["life"][0] / max(totals["life"][1], 1), totals["mana"][0] / max(totals["mana"][1], 1),
     )
+
+
+@dataclass
+class Run:
+    """A party's run with no rest: how many fights it lasted, and what share of its life was left after each."""
+
+    fights: int  # fights it came through (won, or ended by the round limit)
+    wiped: bool  # False: it was still standing when the cap was reached
+    life_after: list[float]
+
+
+def endurance(content: Content, team: list[str], level: int, rng: random.Random, *, cap: int = ENDURANCE_CAP, difficulty: float = 1.0,
+              sizes: tuple[int, int] | None = None, max_rounds: int = 60, seeds: list[int | None] | None = None) -> Run:
+    """One party fights encounter after encounter with no rest and nobody raised, until it is wiped out or $cap fights have passed.
+    Life, mana and the fallen carry from one fight to the next; statuses do not."""
+    rules = content.rules
+    heroes = make_heroes(content, team, level, rng, seeds)
+    life_after: list[float] = []
+    most = sum(resources(rules, hero, rules.vital)[1] for hero in heroes)
+    for _ in range(cap):
+        result = run_fight(content, team, level, rng, difficulty=difficulty, sizes=sizes, max_rounds=max_rounds, heroes=heroes)
+        if result.outcome == "lost":
+            return Run(len(life_after), True, life_after)
+        for hero in heroes:
+            hero.tokens.clear()
+            hero.buffed_by.clear()
+            hero.xp_debts.clear()
+            hero.fled = False
+        life_after.append(sum(hero.current[rules.vital] for hero in heroes) / max(most, 1))
+    return Run(cap, False, life_after)
 
 
 # --- many fights -------------------------------------------------------------------------------------------------
@@ -296,6 +384,101 @@ def simulate(content: Content, levels: list[int], fights: int, *, team: list[str
             chosen = team or rng.sample(sorted(content.jobs), min(4, len(content.jobs)))
             results[level].append(run_fight(content, chosen, level, rng, difficulty=difficulty, sizes=sizes, max_rounds=max_rounds))
     return results
+
+
+SCENARIO_SETTINGS = ("levels", "difficulty", "foes", "fights", "runs", "cap", "seed")
+
+
+def load_scenario(path: Path, content: Content) -> dict:
+    """The scenario file at $path, checked against the seed: its settings, and its ``teams`` as a map of a name to a ``Team``."""
+    try:
+        scenario = json.loads(path.read_text())
+    except (OSError, ValueError) as error:
+        raise BalanceError(f"cannot read {path}: {error}") from error
+    if not isinstance(scenario, dict) or not isinstance(scenario.get("teams"), dict) or not scenario["teams"]:
+        raise BalanceError(f"{path} should be a JSON object with a map of team names to their heroes under \"teams\"")
+    unknown = sorted(set(scenario) - {"teams", *SCENARIO_SETTINGS})
+    if unknown:
+        raise BalanceError(f"{path} has settings the tool does not know: {', '.join(unknown)}")
+    teams: dict[str, Team] = {}
+    for name, heroes in scenario["teams"].items():
+        if not isinstance(heroes, list) or not heroes:
+            raise BalanceError(f"team {name!r} should be a list of heroes")
+        jobs, seeds = [], []
+        for hero in heroes:
+            job, seed = (hero, None) if isinstance(hero, str) else (hero.get("job"), hero.get("seed")) if isinstance(hero, dict) else (None, None)
+            if not isinstance(job, str) or not (seed is None or isinstance(seed, int) and not isinstance(seed, bool)):
+                raise BalanceError(f'team {name!r}: a hero is a job key or {{"job": key, "seed": whole number}}, not {hero!r}')
+            if job not in content.jobs:
+                raise BalanceError(f"team {name!r} has no job {job!r} to use")
+            jobs.append(job)
+            seeds.append(seed)
+        teams[name] = Team(jobs, seeds)
+    return {**scenario, "teams": teams}
+
+
+def drawn_team(content: Content, rng: random.Random) -> list[str]:
+    return rng.sample(sorted(content.jobs), min(4, len(content.jobs)))
+
+
+def attrition(content: Content, teams: dict[str, Team | None], levels: list[int], fights: int, *, seed: int = 1,
+              difficulty: float = 1.0, sizes: tuple[int, int] | None = None, max_rounds: int = 60) -> dict:
+    """For each team (None: four jobs drawn for each fight) and level: what one fight costs a rested party."""
+    report: dict = {}
+    for name, team in teams.items():
+        report[name] = {}
+        for level in levels:
+            results = []
+            for number in range(fights):
+                rng = random.Random(f"{seed}:{name}:{level}:{number}")
+                jobs, seeds = team or (drawn_team(content, rng), None)
+                results.append(run_fight(content, jobs, level, rng, difficulty=difficulty, sizes=sizes, max_rounds=max_rounds, seeds=seeds))
+            report[name][level] = {
+                "fights": fights, "won": _mean([result.outcome == "won" for result in results]),
+                "life_lost": _mean([result.life_lost for result in results]), "mana_lost": _mean([result.mana_lost for result in results]),
+                "rounds": _mean([result.rounds for result in results]),
+            }
+    return report
+
+
+def stamina(content: Content, teams: dict[str, Team | None], levels: list[int], runs: int, *, seed: int = 1, cap: int = ENDURANCE_CAP,
+            difficulty: float = 1.0, sizes: tuple[int, int] | None = None, max_rounds: int = 60) -> dict:
+    """For each team and level: how many fights a party lasts with no rest, over $runs runs."""
+    report: dict = {}
+    for name, team in teams.items():
+        report[name] = {}
+        for level in levels:
+            plays = []
+            for number in range(runs):
+                rng = random.Random(f"{seed}:{name}:{level}:{number}")
+                jobs, seeds = team or (drawn_team(content, rng), None)
+                plays.append(endurance(content, jobs, level, rng, cap=cap, difficulty=difficulty, sizes=sizes, max_rounds=max_rounds, seeds=seeds))
+            counts = sorted(play.fights for play in plays)
+            report[name][level] = {
+                "runs": runs, "fights": _mean(counts), "median": counts[len(counts) // 2], "fewest": counts[0], "most": counts[-1],
+                "capped": _mean([not play.wiped for play in plays]), "cap": cap,
+            }
+    return report
+
+
+def format_attrition(report: dict) -> str:
+    lines = ["What one fight costs a rested party (averages):"]
+    for name, levels in report.items():
+        lines.append(f"  {name}")
+        lines.append(f"    {'level':>5} {'won':>5} {'life lost':>10} {'mana lost':>10} {'rounds':>7}")
+        for level, row in levels.items():
+            lines.append(f"    {level:5d} {row['won']:5.0%} {row['life_lost']:10.0%} {row['mana_lost']:10.0%} {row['rounds']:7.1f}")
+    return "\n".join(lines) + "\n"
+
+
+def format_stamina(report: dict) -> str:
+    lines = ["How many fights a party lasts with no rest and nobody raised:"]
+    for name, levels in report.items():
+        lines.append(f"  {name}")
+        lines.append(f"    {'level':>5} {'average':>8} {'median':>7} {'fewest':>7} {'most':>5} {'still up at the cap':>20}")
+        for level, row in levels.items():
+            lines.append(f"    {level:5d} {row['fights']:8.1f} {row['median']:7d} {row['fewest']:7d} {row['most']:5d} {row['capped']:>14.0%} ({row['cap']})")
+    return "\n".join(lines) + "\n"
 
 
 def _mean(values: list[float]) -> float:
@@ -367,37 +550,63 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m terraforma.tools.balance", description=__doc__.split("\n\n")[0])
     parser.add_argument("--content", type=Path, required=True, help="the game's seed folder")
     parser.add_argument("--rules", help="the game's rules class, module:Class (the engine's own if left out)")
-    parser.add_argument("--levels", default="1,5,10,20,30,40,50", help="comma-separated hero levels (default %(default)s)")
-    parser.add_argument("--fights", type=int, default=100, help="fights at each level (default %(default)s)")
+    parser.add_argument("--scenario", type=Path, help="a JSON file of named teams and settings, for the attrition and endurance modes (see the top of balance.py)")
+    parser.add_argument("--mode", choices=("report", "attrition", "endurance"), default="report",
+                        help="report: what each job did (default); attrition: what one fight costs a rested party; endurance: fights lasted with no rest")
+    parser.add_argument("--levels", help="comma-separated hero levels (default 1,5,10,20,30,40,50)")
+    parser.add_argument("--fights", type=int, help="fights at each level (default 100)")
+    parser.add_argument("--runs", type=int, help="endurance runs of each team at each level (default 30)")
+    parser.add_argument("--cap", type=int, help=f"the most fights an endurance run plays (default {ENDURANCE_CAP})")
     parser.add_argument("--team", help="comma-separated job keys; four different jobs are drawn for each fight if left out")
-    parser.add_argument("--difficulty", type=float, default=1.0, help="the encounter's strength as a multiple of the team's (default %(default)s)")
+    parser.add_argument("--difficulty", type=float, help="the encounter's strength as a multiple of the team's (default 1)")
     parser.add_argument("--foes", help="fewest-most monsters in an encounter, such as 3-5, at every level (by default 3-5 at level 1 rising to 4-30 at level 50)")
     parser.add_argument("--max-rounds", type=int, default=60, help="a fight that lasts longer is a timeout (default %(default)s)")
-    parser.add_argument("--seed", type=int, default=1, help="the dice (default %(default)s)")
+    parser.add_argument("--seed", type=int, help="the dice (default 1)")
     parser.add_argument("--json", type=Path, help="also write the numbers here")
     args = parser.parse_args(argv)
     try:
         content = load_content(args.content, rules_from(args.rules))
+        scenario = load_scenario(args.scenario, content) if args.scenario else {}
+
+        def setting(name: str, default):
+            """The command line's value if given, else the scenario file's, else the default."""
+            given = getattr(args, name)
+            return given if given is not None else scenario.get(name, default)
+
         team = args.team.split(",") if args.team else None
         for job in team or []:
             if job not in content.jobs:
                 raise BalanceError(f"there is no job {job!r}")
-        levels = [int(level) for level in args.levels.split(",")]
+        levels = setting("levels", "1,5,10,20,30,40,50")
+        levels = [int(level) for level in (levels.split(",") if isinstance(levels, str) else levels)]
+        foes = setting("foes", None)
         sizes = None
-        if args.foes:
-            fewest, _, most = args.foes.partition("-")
+        if foes:
+            fewest, _, most = str(foes).partition("-")
             sizes = (int(fewest), int(most or fewest))
             if not 1 <= sizes[0] <= sizes[1]:
                 raise BalanceError("--foes wants fewest-most, such as 3-5")
-        report = summarize(simulate(
-            content, levels, args.fights, team=team, seed=args.seed, difficulty=args.difficulty, sizes=sizes, max_rounds=args.max_rounds,
-        ))
+        options = {"seed": setting("seed", 1), "difficulty": setting("difficulty", 1.0), "sizes": sizes, "max_rounds": args.max_rounds}
+        shown = {key: str(value) for key, value in {**vars(args), **options}.items()}
+        if args.mode == "report":
+            if scenario:
+                raise BalanceError("--scenario holds the teams of the attrition and endurance modes; pick one with --mode (report plays --team)")
+            report = summarize(simulate(content, levels, setting("fights", 100), team=team, **options))
+            print(format_report(report))
+            if args.json:
+                args.json.write_text(json.dumps({"settings": shown, "levels": report}, indent=1))
+            return 0
+        teams = scenario["teams"] if scenario else {"team" if team else "random": Team.of(team) if team else None}
+        if args.mode == "attrition":
+            report, text = attrition(content, teams, levels, setting("fights", 100), **options), format_attrition
+        else:
+            report, text = stamina(content, teams, levels, setting("runs", 30), cap=setting("cap", ENDURANCE_CAP), **options), format_stamina
+        print(text(report))
+        if args.json:
+            args.json.write_text(json.dumps({"settings": shown, "teams": report}, indent=1))
     except (BalanceError, ValueError, KeyError) as error:
         print(f"balance: {error}", file=sys.stderr)
         return 1
-    print(format_report(report))
-    if args.json:
-        args.json.write_text(json.dumps({"settings": {key: str(value) for key, value in vars(args).items()}, "levels": report}, indent=1))
     return 0
 
 
