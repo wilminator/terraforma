@@ -19,6 +19,8 @@ def _effect(effect: EffectSpec) -> dict:
         "effect": effect.effect, "targets": effect.targets, "base": effect.base, "added": effect.added, "attribute": effect.attribute,
         "status": effect.status, "duration": effect.duration,
     }
+    if effect.status_chance != 100:  # (likewise)
+        raw["status_chance"] = effect.status_chance
     if effect.friendly:  # (only written when set, like an unremovable token: a stored fight's state reads back as it was written)
         raw["friendly"] = True
     return raw
@@ -80,6 +82,8 @@ def _item(item: ItemSpec) -> dict:
         "use_effect": _effect(item.use_effect), "stat_bonus": dict(item.stat_bonus), "stat_percent": dict(item.stat_percent),
         "attack_targets": item.attack_targets, "attack_count": item.attack_count,
         "attack_attribute": item.attack_attribute, "ammo_type": item.ammo_type,
+        **({"attack_status": item.attack_status, "attack_status_duration": item.attack_status_duration,
+            "attack_status_chance": item.attack_status_chance} if item.attack_status else {}),
         **({"requires": dict(item.requires)} if item.requires else {}),  # (only written when set, so a stored fight reads back as written)
     }
 
@@ -135,6 +139,8 @@ def _build_item(raw: dict) -> ItemSpec:
         use_effect=_build_effect(raw["use_effect"]), stat_bonus=dict(raw["stat_bonus"]), stat_percent=dict(raw["stat_percent"]),
         attack_targets=raw["attack_targets"], attack_count=raw["attack_count"],
         attack_attribute=raw["attack_attribute"], ammo_type=raw["ammo_type"], requires=dict(raw.get("requires", {})),
+        attack_status=raw.get("attack_status", ""), attack_status_duration=raw.get("attack_status_duration"),
+        attack_status_chance=raw.get("attack_status_chance", 100),
     )
 
 

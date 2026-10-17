@@ -314,6 +314,8 @@ def affected_by(fight, rules, rng, fighter, fighter_address, effect, target, tar
         )
         damage = status.adjusted_damage(fighter, target, damage, effect.attribute)
         inflict_damage(fight, rules, fighter_address, target, target_address, damage, critical, log)
+        if effect.status and target.get_current(rules, vital) > 0 and rules.attack_status_lands(rng, effect.status_chance):
+            place_status(fight, effect, fighter_address, target, target_address, log)
     elif command == Command.ITEM:
         do_effect(fight, rules, rng, effect, fighter_address, target, target_address, impact, 1, log)
     elif command == Command.SKILL:

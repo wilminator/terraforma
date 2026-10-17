@@ -177,6 +177,17 @@ def test_a_component_that_needs_another_may_not_be_on_while_that_one_is_off(tmp_
     assert section.check(section.switch(whole, "pack", False, "monsters"), {}) == [], "(turning off the user of a component is fine)"
 
 
+def test_an_item_whose_blow_leaves_a_status_needs_that_status(tmp_path):
+    venom = {"key": "pack_venom", "name": "Venom", "kind": "bad", "duration": 3, "ticks": [{"when": "round_end", "action": "damage", "amount": 2}]}
+    arrow = {"key": "pack_arrow", "name": "Venom arrow", "price": 2, "equip_slots": ["ammo"], "attack": {"ammo_type": "arrow", "status": {"status": "pack_venom"}}}
+    game = dataclasses.replace(EXAMPLE, addons=(pack(tmp_path, rows={"statuses": [venom], "items": [arrow], "abilities": [], "drop_tables": [], "monsters": [], "jobs": [], "job_abilities": []}, sections={}),))
+    section = Components(integrate(game, ["pack"]), game)
+    just = lambda kind, *keys: {"states": {"pack": on(*keys, kind=kind)}}  # noqa: E731
+    assert section.check(just("items", "pack_arrow"), {}) == ["pack: items 'pack_arrow' is on, but it needs statuses 'pack_venom', which is not on"]
+    both = {"states": {"pack": {**on("pack_arrow", kind="items"), **on("pack_venom", kind="statuses")}}}
+    assert section.check(both, {}) == []
+
+
 def test_a_game_with_no_addons_has_an_empty_section_that_reads_no_seed():
     section = Components(integrate(EXAMPLE, []), EXAMPLE)
     assert section.check(section.default(), {}) == [] and section.facts().owned == {}

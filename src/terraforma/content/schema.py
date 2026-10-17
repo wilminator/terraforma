@@ -139,13 +139,24 @@ class Ability(Strict):
     presentation: Presentation = Presentation()
 
 
+class AttackStatus(Strict):
+    """A bad status a blow may leave on whoever it hits: ``status`` is a key of statuses.json, ``duration`` the rounds it lasts (over the
+    status's own) and ``chance`` the odds out of 100 that a blow that landed leaves it."""
+
+    status: Key
+    duration: int | None = Field(default=None, ge=1)
+    chance: int = Field(default=100, ge=1, le=100)
+
+
 class Attack(Strict):
-    """What an equipped weapon does when it attacks."""
+    """What an equipped weapon does when it attacks. Ammunition has an attack too, and when a weapon is loaded the ammunition's
+    ``attribute`` and ``status`` are the ones that count (the weapon's own are for a weapon that needs no ammunition)."""
 
     targets: Targets = "individual"
     count: int = Field(default=1, ge=1)
     attribute: str = Field(default="none", max_length=32)
     ammo_type: str = Field(default="", max_length=32)
+    status: AttackStatus | None = None
 
 
 class Requires(Strict):
@@ -820,6 +831,14 @@ def check_seed(seed: dict[str, list[dict]], stats: tuple[str, ...] = STATS, reso
             problems.append(f"{kind}.json {row.key}: status names {effect.status!r}, which statuses.json doesn't have")
         elif kinds[effect.status] != wanted:
             problems.append(f"{kind}.json {row.key}: {effect.effect} names {effect.status!r}, which is a {kinds[effect.status]} status")
+    for row in checked["items"]:
+        rider = row.attack.status if row.attack is not None else None
+        if rider is None:
+            continue
+        if rider.status not in keys["statuses"]:
+            problems.append(f"items.json {row.key}: the attack's status names {rider.status!r}, which statuses.json doesn't have")
+        elif kinds[rider.status] != "bad":
+            problems.append(f"items.json {row.key}: the attack's status names {rider.status!r}, which is a {kinds[rider.status]} status (a blow places bad ones)")
     for row in checked["quest_templates"]:
         if row.slot is not None and row.slot not in keys["quest_slots"]:
             problems.append(f"quest_templates.json {row.key}: slot names {row.slot!r}, which quest_slots.json doesn't have")

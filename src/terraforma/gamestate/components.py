@@ -80,6 +80,8 @@ def _references(kind: str, row) -> Iterator[Row]:
         effect = row.effect if kind == "abilities" else row.use_effect
         if effect is not None and effect.status is not None:
             yield Row("statuses", effect.status)
+        if kind == "items" and row.attack is not None and row.attack.status is not None:  # (a blow that leaves a status)
+            yield Row("statuses", row.attack.status.status)
 
 
 class Components(Section):
