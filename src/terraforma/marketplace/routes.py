@@ -29,6 +29,17 @@ class Post(Strict):
     price_tokens: int = Field(default=0, ge=0, le=market.MAX_PRICE)
 
 
+class Auction(Strict):
+    guild: str = Field(min_length=1, max_length=64)
+    items: list[Stack] = Field(min_length=1, max_length=inventory.MAX_ITEMS)
+    start_gold: int = Field(ge=1, le=market.MAX_PRICE)
+
+
+class Bid(Strict):
+    amount: int = Field(ge=1, le=market.MAX_PRICE)
+    to_guild: str = Field(min_length=1, max_length=64)
+
+
 class Buy(Strict):
     to_guild: str = Field(min_length=1, max_length=64)
 
@@ -70,6 +81,36 @@ async def post_listing(
             "id": listing.id, "guild": listing.guild, "price_gold": listing.price_gold, "price_tokens": listing.price_tokens,
             "goods": await market.goods(db, listing), "expires_at": listing.expires_at,
         }
+    except (service.HeroError, market.MarketplaceError) as error:
+        raise refuse(error) from error
+
+
+@router.post("/api/heroes/{hero_id}/auctions")
+async def post_auction(
+    hero_id: Id, body: Auction, request: Request, account: ActingAccount, db: Db, economy: GameEconomy, fees: GameFees, marketplace: GameMarketplace,
+) -> dict:
+    await limited(request, ratelimit.MARKET_BY_ACCOUNT, str(account.id))
+    try:
+        hero = await service.own_hero(db, account, hero_id)
+        listing = await market.post(db, economy, fees, marketplace, hero, body.guild, [(s.position, s.qty) for s in body.items], body.start_gold, auction=True)
+        return {
+            "id": listing.id, "guild": listing.guild, "start_gold": listing.price_gold, "goods": await market.goods(db, listing),
+            "expires_at": listing.expires_at,
+        }
+    except (service.HeroError, market.MarketplaceError) as error:
+        raise refuse(error) from error
+
+
+@router.post("/api/heroes/{hero_id}/listings/{listing_id}/bid")
+async def bid_on_auction(
+    hero_id: Id, listing_id: Id, body: Bid, request: Request, account: ActingAccount, db: Db, economy: GameEconomy, fees: GameFees,
+    marketplace: GameMarketplace, storage: GameStorage,
+) -> dict:
+    await limited(request, ratelimit.MARKET_BY_ACCOUNT, str(account.id))
+    try:
+        hero = await service.own_hero(db, account, hero_id)
+        listing = await market.bid(db, economy, fees, marketplace, storage, hero, listing_id, body.amount, body.to_guild)
+        return {"id": listing.id, "bid_gold": listing.bid_gold, "expires_at": listing.expires_at}
     except (service.HeroError, market.MarketplaceError) as error:
         raise refuse(error) from error
 
