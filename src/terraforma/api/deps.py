@@ -12,6 +12,7 @@ from ..economy import Economy, TeamGold
 from ..storage.hooks import NoStorage, Storage
 from ..guild.fees import Fees
 from ..marketplace.hooks import Marketplace
+from ..contracts.hooks import Contracts
 from ..alliances.hooks import Alliances
 from ..relations.hooks import Relations
 from ..pvp.hooks import PvpZones
@@ -90,6 +91,19 @@ def get_marketplace(request: Request) -> Marketplace:
 
 
 GameMarketplace = Annotated[Marketplace, Depends(get_marketplace)]
+
+
+def get_contracts(request: Request) -> Contracts:
+    """The game's contract rules (the engine's standard terms, when the app runs without a game)."""
+    game = request.app.state.game
+    if game:
+        return game.contracts
+    from ..contracts.terms import StandardTerms
+
+    return StandardTerms()
+
+
+GameContracts = Annotated[Contracts, Depends(get_contracts)]
 
 
 def get_relations(request: Request) -> Relations:
