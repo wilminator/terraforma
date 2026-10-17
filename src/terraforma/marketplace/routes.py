@@ -22,15 +22,22 @@ class Stack(Strict):
     qty: int = Field(default=1, ge=1, le=inventory.MAX_ITEM_QTY)
 
 
+class Ask(Strict):
+    item: str = Field(min_length=1, max_length=64)
+    qty: int = Field(default=1, ge=1, le=inventory.MAX_ITEM_QTY)
+
+
 class Post(Strict):
     guild: str = Field(min_length=1, max_length=64)
     items: list[Stack] = Field(min_length=1, max_length=inventory.MAX_ITEMS)
     price_gold: int = Field(default=0, ge=0, le=market.MAX_PRICE)
     price_tokens: int = Field(default=0, ge=0, le=market.MAX_PRICE)
+    asks: list[Ask] = Field(default_factory=list, max_length=market.MAX_ASKS)
 
 
 class Buy(Strict):
     to_guild: str = Field(min_length=1, max_length=64)
+    pay_items: list[Stack] = Field(default_factory=list, max_length=inventory.MAX_ITEMS)
 
 
 def refuse(error: ValueError) -> HTTPException:
@@ -64,11 +71,12 @@ async def post_listing(
     try:
         hero = await service.own_hero(db, account, hero_id)
         listing = await market.post(
-            db, economy, fees, marketplace, hero, body.guild, [(s.position, s.qty) for s in body.items], body.price_gold, body.price_tokens
+            db, economy, fees, marketplace, hero, body.guild, [(s.position, s.qty) for s in body.items], body.price_gold, body.price_tokens,
+            [(a.item, a.qty) for a in body.asks],
         )
         return {
             "id": listing.id, "guild": listing.guild, "price_gold": listing.price_gold, "price_tokens": listing.price_tokens,
-            "goods": await market.goods(db, listing), "expires_at": listing.expires_at,
+            "asks": await market.asks_of(db, listing), "goods": await market.goods(db, listing), "expires_at": listing.expires_at,
         }
     except (service.HeroError, market.MarketplaceError) as error:
         raise refuse(error) from error
@@ -82,7 +90,7 @@ async def buy_listing(
     await limited(request, ratelimit.MARKET_BY_ACCOUNT, str(account.id))
     try:
         hero = await service.own_hero(db, account, hero_id)
-        parcel = await market.buy(db, economy, fees, marketplace, hero, listing_id, body.to_guild)
+        parcel = await market.buy(db, economy, fees, marketplace, hero, listing_id, body.to_guild, [(s.position, s.qty) for s in body.pay_items])
         return _parcel(parcel, await delivery.contents(db, parcel))
     except (service.HeroError, market.MarketplaceError) as error:
         raise refuse(error) from error

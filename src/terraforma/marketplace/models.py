@@ -30,3 +30,15 @@ class Listing(Timestamps, Base):
     state: Mapped[str] = mapped_column(String(10), default=OPEN, index=True)
     buyer_team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), nullable=True)
     settled_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # wall clock, whole seconds
+
+
+class ListingAsk(Base):
+    """One kind of item a listing asks for in payment, besides any gold or tokens (barter): ``qty`` of the item, which the buyer's pack
+    must give up whole."""
+
+    __tablename__ = "listing_asks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    listing_id: Mapped[int] = mapped_column(ForeignKey("listings.id"), index=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("items.id"))
+    qty: Mapped[int] = mapped_column(Integer)
