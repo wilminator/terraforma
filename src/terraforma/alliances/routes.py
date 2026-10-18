@@ -66,6 +66,10 @@ class Spend(Deposit):
     to_team_id: int = Field(ge=1)
 
 
+class SetTax(Governed):
+    percent: int = Field(ge=0, le=100)
+
+
 class SetRule(Governed):
     action: str = Field(min_length=1, max_length=24)
     role: str = Field(default="", max_length=ROLE_MAX * 2)
@@ -237,6 +241,24 @@ async def spend(alliance_id: Id, body: Spend, account: ActingAccount, db: Db, al
     """The acting team pays gold from the treasury to a member team."""
     try:
         return await _do(db, alliances, account, alliance_id, body, "spend", to_team_id=body.to_team_id, amount=body.amount)
+    except FAILURES as error:
+        raise refuse(error) from error
+
+
+@router.post("/alliances/{alliance_id}/fight-tax")
+async def set_fight_tax(alliance_id: Id, body: SetTax, account: ActingAccount, db: Db, alliances: GameAlliances) -> dict:
+    """Sets the share of what member teams earn from fights that the alliance keeps."""
+    try:
+        return await _do(db, alliances, account, alliance_id, body, "set_fight_tax", percent=body.percent)
+    except FAILURES as error:
+        raise refuse(error) from error
+
+
+@router.post("/alliances/{alliance_id}/sales-tax")
+async def set_sales_tax(alliance_id: Id, body: SetTax, account: ActingAccount, db: Db, alliances: GameAlliances) -> dict:
+    """Sets the share of what member teams earn selling on a market that the alliance keeps."""
+    try:
+        return await _do(db, alliances, account, alliance_id, body, "set_sales_tax", percent=body.percent)
     except FAILURES as error:
         raise refuse(error) from error
 

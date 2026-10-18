@@ -658,3 +658,26 @@ def test_gold_goes_into_the_treasury_and_out_again_over_the_calls(world):
     assert paid["gold"] == 150
     send(mike_headers, f"{url}/spend", {**mike, "to_team_id": ids["scouts"], "amount": 1}, 404)  # not a member
     send(mike_headers, f"{url}/spend", {**mike, "to_team_id": ids["rivals"], "amount": 151}, 409)
+
+
+def test_the_two_tax_rates_are_set_over_the_calls(world):
+    client, ids = world
+    mike_headers = login(client, "Mike")
+
+    def send(headers, url, body, status=200):
+        return expect(client.post(url, json=body, headers=headers), status).json()
+
+    alliance = send(mike_headers, "/api/alliances", {"team_id": ids["vanguard"], "name": "Iron Pact"}, 201)["id"]
+    url = f"/api/alliances/{alliance}"
+    mike, zed = {"team_id": ids["vanguard"]}, {"team_id": ids["rivals"]}
+    send(mike_headers, f"{url}/invite", {**mike, "target_team_id": ids["rivals"]})
+    zed_headers = login(client, "Zed")
+    send(zed_headers, f"/api/teams/{ids['rivals']}/invitations/accept", {"alliance_id": alliance})
+
+    send(zed_headers, f"{url}/fight-tax", {**zed, "percent": 5}, 403)  # a member can't
+    mike_headers = login(client, "Mike")
+    send(mike_headers, f"{url}/fight-tax", {**mike, "percent": 101}, 422)
+    send(mike_headers, f"{url}/fight-tax", {**mike, "percent": 51}, 409)  # over the game's limit
+    assert send(mike_headers, f"{url}/fight-tax", {**mike, "percent": 10})["fight_tax"] == 10
+    both = send(mike_headers, f"{url}/sales-tax", {**mike, "percent": 4})
+    assert (both["fight_tax"], both["sales_tax"]) == (10, 4)

@@ -20,6 +20,10 @@ class Alliance(Timestamps, Base):
     name_key: Mapped[str] = mapped_column(String(NAME_MAX), unique=True)
     #: The treasury: gold the member teams have given and the alliance has not spent (``alliances.treasury``).
     gold: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
+    #: Whole percents of the gold its member teams earn that the alliance keeps: from fighting, and from selling on a market
+    #: (``alliances.taxes``). Nothing until the alliance sets a rate.
+    fight_tax: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    sales_tax: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
 class AllianceMember(Base):

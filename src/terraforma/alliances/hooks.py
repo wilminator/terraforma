@@ -27,8 +27,9 @@ from . import roles
 #: a team to a role, ``revoke`` a team's role (it returns to the default role), ``hand_over`` the commander's seat,
 #: ``disband`` the alliance, ``speak`` for it in relationships, ``open_ballot`` and ``close_ballot`` (put a question to a
 #: vote and close it early), ``vote`` in ballots, and ``edit_roles`` (define, change and remove roles of tier 3). The
-#: last six: ``deposit`` and ``spend`` the alliance's gold (``alliances.treasury``), ``set_fight_tax`` and ``set_sales_tax``,
-#: handling its ``inventory``, and signing a ``contract`` for it; the last four belong to what comes next and nothing uses them yet.
+#: last six: ``deposit`` and ``spend`` the alliance's gold (``alliances.treasury``), ``set_fight_tax`` and ``set_sales_tax``
+#: (``alliances.taxes``), handling its ``inventory``, and signing a ``contract`` for it; the last two belong to what comes next and
+#: nothing uses them yet.
 #:
 #: ``set_rules`` sets which actions need a vote. Three more are the members' own, each always by a vote: a team of tier 3
 #: may put it to the members to make a team a subcommander (``elect_subcommander``) or take that away
@@ -68,6 +69,8 @@ class Alliances:
     #: ``max_shares`` months. Teams that left the alliance still share.
     share_month: int = 30 * 24 * 3600
     max_shares: int = 12
+    #: The highest tax rate (whole percent of what a member team earns) an alliance may set, on fights and on sales.
+    max_tax_percent: int = 50
     #: How many teams an alliance holds, and how many alliances a team may be in.
     max_members: int = 20
     max_per_team: int = 3

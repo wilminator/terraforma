@@ -246,7 +246,7 @@ async def _title(session: AsyncSession, run: str, args: dict) -> str:
     name = args.get("target_team_id", args.get("team_id", args.get("to_team_id")))
     team = None if name is None else await session.get(Team, name)
     what = run.replace("_", " ")
-    extra = " ".join(str(value) for key, value in args.items() if key in ("role", "name", "action", "amount") and value)
+    extra = " ".join(str(value) for key, value in args.items() if key in ("role", "name", "action", "amount", "percent") and value not in ("", None))
     return " ".join(part for part in (what.capitalize(), team.name if team else "", extra) if part)[:TITLE_MAX]
 
 

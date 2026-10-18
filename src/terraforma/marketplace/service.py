@@ -20,7 +20,7 @@ from ..challenge import service as challenge
 from ..content.models import Item
 from ..delivery import service as delivery
 from ..delivery.models import Shipment
-from ..economy import Economy, NotEnoughGold
+from ..economy import SALES, Economy, NotEnoughGold
 from ..escrow import service as escrow
 from ..escrow.models import EscrowItem
 from ..guild.fees import Fees
@@ -211,7 +211,7 @@ async def buy(
                 raise MarketplaceError(str(error)) from error
         seller = await session.get(Team, seller_team)
         if price_gold:
-            await economy.credit_team(session, seller_team, price_gold)
+            await economy.credit_earnings(session, seller_team, price_gold, SALES)
         if price_tokens:
             await challenge.change(session, seller.account_id, price_tokens, SALE)
         try:
@@ -310,7 +310,7 @@ async def _close_auction(session: AsyncSession, economy: Economy, marketplace: M
             raise MarketplaceError("that auction is settled already")
         try:
             await escrow.release(session, bid_escrow, seller)
-            await economy.credit_team(session, seller, amount)
+            await economy.credit_earnings(session, seller, amount, SALES)
             contents = await escrow.release(session, goods_escrow, buyer)
             await delivery.send_goods(session, buyer, to_guild, PURCHASE, str(listing_id), delay=marketplace.delivery(guild, to_guild).delay, items=contents["items"])
         except (escrow.EscrowError, delivery.DeliveryError) as error:
