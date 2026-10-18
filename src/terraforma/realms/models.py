@@ -1,6 +1,6 @@
 """Realms (kingdoms) and the settlements that belong to them: the living world's towns, villages and ruins."""
 
-from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db.base import Base, Timestamps
@@ -44,3 +44,33 @@ class Settlement(Timestamps, Base):
     name: Mapped[str] = mapped_column(String(64))
     state: Mapped[str] = mapped_column(String(16), default=LIVE, index=True)
     tier: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+
+class Material(Timestamps, Base):
+    """A raw material the world's crafters work from (iron, leather, a rare ore). The game picks the ``key``."""
+
+    __tablename__ = "materials"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String(64), unique=True)
+    name: Mapped[str] = mapped_column(String(64))
+
+
+class SettlementSupply(Timestamps, Base):
+    """How much of a material a settlement has, and what moves it. Time is the world clock (``World.tick``), and the level is only brought
+    up to date when it is read or changed (``realms.supply.settle``): from ``as_of_tick`` on, every tick adds ``rate`` (the settlement's own
+    sources) cut by ``cut`` percent (an event: a raid, a closed road), and takes away ``drain`` (what its crafters and people use up).
+    The level stays between 0 and ``capacity``."""
+
+    __tablename__ = "settlement_supplies"
+    __table_args__ = (UniqueConstraint("settlement_id", "material_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    settlement_id: Mapped[int] = mapped_column(ForeignKey("settlements.id"), index=True)
+    material_id: Mapped[int] = mapped_column(ForeignKey("materials.id"), index=True)
+    level: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    capacity: Mapped[int] = mapped_column(Integer, default=100, server_default="100")
+    rate: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    drain: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    cut: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    as_of_tick: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")

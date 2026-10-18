@@ -18,6 +18,8 @@ class Alliance(Timestamps, Base):
     # Kept as typed; unique ignoring case and spacing.
     name: Mapped[str] = mapped_column(String(NAME_MAX))
     name_key: Mapped[str] = mapped_column(String(NAME_MAX), unique=True)
+    #: The treasury: gold the member teams have given and the alliance has not spent (``alliances.treasury``).
+    gold: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
 
 
 class AllianceMember(Base):
@@ -33,6 +35,17 @@ class AllianceMember(Base):
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     #: Set for a subcommander the members voted in: until then (wall clock, seconds) no one but a vote of the members removes the role.
     protected_until: Mapped[int | None] = mapped_column(BigInteger)
+
+
+class AllianceAlumnus(Base):
+    """A team that was in the alliance and left or was removed. If the alliance dissolves it still has a share of the treasury."""
+
+    __tablename__ = "alliance_alumni"
+    __table_args__ = (UniqueConstraint("alliance_id", "team_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    alliance_id: Mapped[int] = mapped_column(ForeignKey("alliances.id"), index=True)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), index=True)
 
 
 class AllianceRole(Base):

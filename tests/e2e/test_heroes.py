@@ -243,7 +243,7 @@ def test_a_team_plays_as_a_party_and_the_nearby_list_reads_the_heroes_place(page
 def test_the_menu_lists_the_engines_panels(page, live_server):
     open_game(page, live_server)
     names = page.get_by_role("navigation", name="Game menu").get_by_role("button")
-    expect(names).to_have_text(["Teams", "Party", "Nearby", "Talk", "Pack", "Market", "Chat", "Drops"])
+    expect(names).to_have_text(["Teams", "Party", "Nearby", "Talk", "Pack", "Market", "Chat", "Drops", "Quests"])
 
 
 class Capitals(Start):
