@@ -30,6 +30,16 @@ async def town(team_id: Id, account: CurrentAccount, db: Db) -> dict:
     return await service.view(db, team.id)
 
 
+@router.get("/visited")
+async def visited(team_id: Id, account: CurrentAccount, db: Db, towns: GameTowns) -> dict:
+    """The towns this team has been to that are still towns: each is a place a warp may take it (``map``, ``x``, ``y``)."""
+    try:
+        team = await heroes.own_team(db, account, team_id)
+    except heroes.HeroError as error:
+        raise refuse(error) from error
+    return {"towns": await service.visited_towns(db, towns, [team.id])}
+
+
 @router.post("/ready")
 async def ready(team_id: Id, account: ActingAccount, db: Db, towns: GameTowns, rules: GameRules, relations: GameRelations) -> dict:
     """Leave Town: the team (with the teams it goes with) is ready to leave and waits for the rest of its party. The others are

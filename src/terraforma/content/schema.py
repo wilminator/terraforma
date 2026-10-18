@@ -797,7 +797,7 @@ def check_seed(seed: dict[str, list[dict]], stats: tuple[str, ...] = STATS, reso
         scripts = [(f"object {each.key}", each.script) for each in row.objects] + [(f"{direction} edge", script) for direction, script in row.edges.items()]
         for what, script in scripts:
             for parts in tags(script):
-                if parts[0] != "warp":
+                if parts[0] not in ("warp", "warp_visited"):
                     continue
                 target, x, y = parts[1], int(parts[2]), int(parts[3])
                 if target not in drawn:
@@ -814,11 +814,11 @@ def check_seed(seed: dict[str, list[dict]], stats: tuple[str, ...] = STATS, reso
         elif not (npc.x < drawn[npc.map].width and npc.y < drawn[npc.map].height):
             problems.append(f"npcs.json {npc.key}: stands at ({npc.x}, {npc.y}), which is off {npc.map!r}")
         for parts in tags(npc.dialog):
-            if parts[0] == "warp" and parts[1] not in drawn and parts[1] != "hub":
+            if parts[0] in ("warp", "warp_visited") and parts[1] not in drawn and parts[1] != "hub":
                 problems.append(f"npcs.json {npc.key}: the dialog warps to {parts[1]!r}, which maps.json doesn't have")
     for tree in checked["dialogs"]:
         for parts in tags(tree.text):
-            if parts[0] == "warp" and parts[1] not in drawn and parts[1] != "hub":
+            if parts[0] in ("warp", "warp_visited") and parts[1] not in drawn and parts[1] != "hub":
                 problems.append(f"dialogs.json {tree.key}: the text warps to {parts[1]!r}, which maps.json doesn't have")
     kinds = {row.key: row.kind for row in checked["statuses"]}
     effects =[(kind, row, effect) for kind, field in (("abilities", "effect"), ("items", "use_effect"))

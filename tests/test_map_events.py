@@ -518,3 +518,43 @@ async def test_a_party_in_a_fight_is_not_suspended_until_it_is_over(seeded, monk
     assert await towns.settle_hero(seeded, CellarTown(), hero.id) is None and not await towns.is_suspended(seeded, party.id)
     monkeypatch.undo()
     assert await towns.settle_hero(seeded, CellarTown(), hero.id) is not None
+
+
+# --- warp_visited ------------------------------------------------------------------------------------------------------
+
+WARP_VISITED = "`warp_visited,cellar,1,1,never`Gone.`end``label,never`You have not been there."
+
+
+async def test_warp_visited_takes_a_party_only_to_a_map_every_team_has_a_town_on_its_list(seeded):
+    await seeded.execute(MapObject.__table__.update().where(MapObject.key == "chest").values(dialog=WARP_VISITED))
+    _, hero, party = await crew(seeded)
+    chest = (await on_map(seeded, "chest")).id
+    cellar = await seeded.scalar(select(Map).where(Map.name == "cellar"))
+    refused = await objects.use(seeded, NPCS, REACH, hero, chest)
+    assert refused["events"] == [{"type": "text", "text": "You have not been there."}] and (party.x, party.y) == (2, 1)
+    await towns.record_visit(seeded, await parties.team_ids(seeded, party.id), cellar.id, 0, 0)
+    done = await objects.use(seeded, NPCS, REACH, hero, chest)
+    assert done["ended"] and done["events"] == []
+    assert (party.map_id, party.x, party.y) == (cellar.id, 1, 1), "the tile is the one the script names"
+
+
+async def test_warp_visited_refuses_a_party_when_one_of_its_teams_has_not_been(seeded):
+    await seeded.execute(MapObject.__table__.update().where(MapObject.key == "chest").values(dialog=WARP_VISITED))
+    _, hero, party = await crew(seeded)
+    zed = await create_account(seeded, "Zed", PASSWORD, email="zed@example.com", confirmed=True)
+    scouts = await heroes.create_team(seeded, zed, "Scouts")
+    await heroes.add_to_team(seeded, zed, scouts.id, (await heroes.create_hero(seeded, zed, "Cleo", "fighter")).id)
+    await parties.join_party(seeded, party.id, scouts.id, 20)
+    teams = await parties.team_ids(seeded, party.id)
+    cellar = await seeded.scalar(select(Map).where(Map.name == "cellar"))
+    await towns.record_visit(seeded, teams[:1], cellar.id, 0, 0)
+    frame = await objects.use(seeded, NPCS, REACH, hero, (await on_map(seeded, "chest")).id)
+    assert frame["events"] == [{"type": "text", "text": "You have not been there."}]
+    assert party.map_id != cellar.id
+
+
+def test_warp_visited_is_checked_like_warp():
+    with pytest.raises(ContentError, match="warps to 'dungeon', which maps.json doesn't have"):
+        check_seed(seed(edges={"north": "`warp_visited,dungeon,0,0,end`"}))
+    with pytest.raises(ContentError, match="warp_visited tag takes 4 parameters"):
+        check_seed(seed(edges={"north": "`warp_visited,cellar,1,1`"}))

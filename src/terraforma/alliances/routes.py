@@ -19,7 +19,8 @@ from ..relations.hooks import Change, Ref
 from ..relations.routes import Other, SetRelationship
 from ..relations.routes import refuse as refuse_relation
 from . import service
-from .models import NAME_MAX
+from .hooks import ACTIONS
+from .models import NAME_MAX, ROLE_MAX
 
 router = APIRouter(prefix="/api")
 
@@ -37,8 +38,17 @@ class OnTeam(Acting):
     target_team_id: int = Field(ge=1)
 
 
-class SetRole(OnTeam):
-    role: str = Field(min_length=1, max_length=16)
+class Appoint(OnTeam):
+    role: str = Field(min_length=1, max_length=ROLE_MAX * 2)
+
+
+class DefineRole(Acting):
+    name: str = Field(min_length=1, max_length=ROLE_MAX * 2)
+    actions: list[Annotated[str, Field(min_length=1, max_length=32)]] = Field(max_length=len(ACTIONS))
+
+
+class RoleName(Acting):
+    name: str = Field(min_length=1, max_length=ROLE_MAX * 2)
 
 
 class Answer(Strict):
@@ -138,11 +148,41 @@ async def remove(alliance_id: Id, body: OnTeam, account: ActingAccount, db: Db, 
         raise refuse(error) from error
 
 
-@router.post("/alliances/{alliance_id}/role")
-async def role(alliance_id: Id, body: SetRole, account: ActingAccount, db: Db, alliances: GameAlliances) -> dict:
+@router.post("/alliances/{alliance_id}/appoint")
+async def appoint(alliance_id: Id, body: Appoint, account: ActingAccount, db: Db, alliances: GameAlliances) -> dict:
     try:
         alliance, team = await _act(db, account, alliance_id, body.team_id)
-        await service.set_role(db, alliances, alliance, team.id, body.target_team_id, body.role)
+        await service.appoint(db, alliances, alliance, team.id, body.target_team_id, body.role)
+        return await service.view(db, alliances, alliance, team.id)
+    except FAILURES as error:
+        raise refuse(error) from error
+
+
+@router.post("/alliances/{alliance_id}/revoke")
+async def revoke(alliance_id: Id, body: OnTeam, account: ActingAccount, db: Db, alliances: GameAlliances) -> dict:
+    try:
+        alliance, team = await _act(db, account, alliance_id, body.team_id)
+        await service.revoke(db, alliances, alliance, team.id, body.target_team_id)
+        return await service.view(db, alliances, alliance, team.id)
+    except FAILURES as error:
+        raise refuse(error) from error
+
+
+@router.post("/alliances/{alliance_id}/roles")
+async def define_role(alliance_id: Id, body: DefineRole, account: ActingAccount, db: Db, alliances: GameAlliances) -> dict:
+    try:
+        alliance, team = await _act(db, account, alliance_id, body.team_id)
+        await service.define_role(db, alliances, alliance, team.id, body.name, body.actions)
+        return await service.view(db, alliances, alliance, team.id)
+    except FAILURES as error:
+        raise refuse(error) from error
+
+
+@router.post("/alliances/{alliance_id}/roles/delete")
+async def delete_role(alliance_id: Id, body: RoleName, account: ActingAccount, db: Db, alliances: GameAlliances) -> dict:
+    try:
+        alliance, team = await _act(db, account, alliance_id, body.team_id)
+        await service.delete_role(db, alliances, alliance, team.id, body.name)
         return await service.view(db, alliances, alliance, team.id)
     except FAILURES as error:
         raise refuse(error) from error
