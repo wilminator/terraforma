@@ -1,4 +1,4 @@
-"""Alliances of teams: founding, invitations, roles the game defines, leaving and disbanding, and standing in relationships."""
+"""Alliances of teams: founding, invitations, the three tiers of roles, leaving and disbanding, and standing in relationships."""
 
 import json
 
@@ -9,7 +9,7 @@ from terraforma.accounts import ratelimit
 from terraforma.accounts.service import create_account
 from terraforma.alliances import service
 from terraforma.alliances.hooks import ACTIONS, Alliances
-from terraforma.alliances.models import Alliance, AllianceInvite, AllianceMember
+from terraforma.alliances.models import Alliance, AllianceInvite, AllianceMember, AllianceRole
 from terraforma.content.loader import load_content
 from terraforma.content.models import Job
 from terraforma.game import Game
@@ -57,11 +57,11 @@ async def count(db, table):
 # --- founding ---------------------------------------------------------------------------------------------------------------
 
 @anyio
-async def test_a_team_founds_an_alliance_and_holds_the_founder_role(db):
+async def test_a_team_founds_an_alliance_and_is_its_commander(db):
     mike = await account(db)
     (vanguard,) = await teams(db, mike, "Vanguard")
     alliance = await service.found(db, RULES, vanguard, "  The   Iron Pact ")
-    assert alliance.name == "The Iron Pact" and await roles(db, alliance) == {vanguard.id: "leader"}
+    assert alliance.name == "The Iron Pact" and await roles(db, alliance) == {vanguard.id: "commander"}
 
 
 @anyio
@@ -103,9 +103,9 @@ async def test_an_invited_team_joins_in_the_default_role(db):
     vanguard, rearguard = await teams(db, mike, "Vanguard", "Rearguard")
     alliance = await service.found(db, RULES, vanguard, "Pact")
     await service.invite(db, RULES, alliance, vanguard.id, rearguard.id)
-    assert await count(db, AllianceInvite) == 1 and await roles(db, alliance) == {vanguard.id: "leader"}
+    assert await count(db, AllianceInvite) == 1 and await roles(db, alliance) == {vanguard.id: "commander"}
     joined = await service.accept(db, RULES, rearguard, alliance.id)
-    assert joined.id == alliance.id and await roles(db, alliance) == {vanguard.id: "leader", rearguard.id: "member"}
+    assert joined.id == alliance.id and await roles(db, alliance) == {vanguard.id: "commander", rearguard.id: "member"}
     assert await count(db, AllianceInvite) == 0
 
 
@@ -119,8 +119,8 @@ async def test_only_a_role_that_may_invite_does_and_never_twice_or_to_a_member(d
         await service.invite(db, RULES, alliance, rearguard.id, scouts.id)  # a member
     with pytest.raises(service.Forbidden, match="not in the alliance"):
         await service.invite(db, RULES, alliance, cooks.id, scouts.id)  # an outsider
-    await service.set_role(db, RULES, alliance, vanguard.id, rearguard.id, "officer")
-    await service.invite(db, RULES, alliance, rearguard.id, scouts.id)  # an officer
+    await service.appoint(db, RULES, alliance, vanguard.id, rearguard.id, "recruiter")
+    await service.invite(db, RULES, alliance, rearguard.id, scouts.id)  # a recruiter
     with pytest.raises(service.AllianceError, match="invited already"):
         await service.invite(db, RULES, alliance, vanguard.id, scouts.id)
     with pytest.raises(service.AllianceError, match="already in the alliance"):
@@ -173,36 +173,138 @@ async def test_the_game_may_refuse_a_team_that_has_been_invited(db):
     await service.invite(db, Picky(), alliance, one.id, two.id)
     with pytest.raises(service.Forbidden, match="can't join"):
         await service.accept(db, Picky(), two, alliance.id)
-    assert await roles(db, alliance) == {one.id: "leader"}
+    assert await roles(db, alliance) == {one.id: "commander"}
 
 
 # --- running it ----------------------------------------------------------------------------------------------------------------------
 
 @anyio
-async def test_roles_decide_who_may_remove_whom_and_give_which_role(db):
+async def test_a_new_alliance_has_the_games_starting_roles_and_the_commander_holds_the_seat(db):
     mike = await account(db)
-    lead, officer, member, newbie = await teams(db, mike, "Lead", "Officer", "Member", "Newbie")
+    (lead,) = await teams(db, mike, "Lead")
     alliance = await service.found(db, RULES, lead, "Pact")
-    for team in (officer, member, newbie):
-        await join(db, alliance, lead, team)
-    await service.set_role(db, RULES, alliance, lead.id, officer.id, "officer")
-    with pytest.raises(service.Forbidden):
-        await service.set_role(db, RULES, alliance, officer.id, member.id, "officer")  # an officer may not set roles
-    with pytest.raises(service.Forbidden):
-        await service.set_role(db, RULES, alliance, lead.id, member.id, "leader")  # not the founder role: hand it over
-    with pytest.raises(service.Forbidden):
-        await service.set_role(db, RULES, alliance, lead.id, member.id, "captain")  # no such role
-    with pytest.raises(service.Forbidden):
-        await service.remove(db, RULES, alliance, officer.id, lead.id)  # nor remove one above
-    with pytest.raises(service.Forbidden):
-        await service.remove(db, RULES, alliance, member.id, newbie.id)  # members have no power
-    await service.set_role(db, RULES, alliance, lead.id, member.id, "member")
-    await service.remove(db, RULES, alliance, lead.id, officer.id)  # the leader may remove anyone below
-    assert await roles(db, alliance) == {lead.id: "leader", member.id: "member", newbie.id: "member"}
+    assert await service.role_names(db, RULES, alliance) == ["commander", "subcommander", "treasurer", "quartermaster", "diplomat", "recruiter", "member"]
+    assert await service.role_actions(db, alliance) == {name: sorted(held) for name, held in RULES.starting_roles.items()}
+    assert (await service.role_actions(db, alliance))["treasurer"] == ["deposit", "set_fight_tax", "set_sales_tax", "spend", "vote"]
+    assert await count(db, AllianceRole) == 5
 
 
 @anyio
-async def test_the_founder_hands_the_role_over_and_can_then_leave(db):
+async def test_the_commander_does_everything_and_a_subcommander_everything_but_to_the_commander(db):
+    mike = await account(db)
+    lead, deputy, other, newbie = await teams(db, mike, "Lead", "Deputy", "Other", "Newbie")
+    alliance = await service.found(db, RULES, lead, "Pact")
+    for team in (deputy, other, newbie):
+        await join(db, alliance, lead, team)
+    await service.appoint(db, RULES, alliance, lead.id, deputy.id, "subcommander")
+    await service.appoint(db, RULES, alliance, deputy.id, other.id, "treasurer")  # a subcommander appoints too
+    assert await roles(db, alliance) == {lead.id: "commander", deputy.id: "subcommander", other.id: "treasurer", newbie.id: "member"}
+    for attempt in (
+        service.remove(db, RULES, alliance, deputy.id, lead.id),
+        service.revoke(db, RULES, alliance, deputy.id, lead.id),
+        service.appoint(db, RULES, alliance, deputy.id, lead.id, "member"),
+        service.appoint(db, RULES, alliance, deputy.id, newbie.id, "commander"),  # the seat is taken
+        service.hand_over(db, RULES, alliance, deputy.id, newbie.id),  # the seat is the commander's to give
+        service.appoint(db, RULES, alliance, lead.id, newbie.id, "commander"),  # and is given by handing over
+        service.remove(db, RULES, alliance, lead.id, lead.id),  # nobody acts on themselves
+    ):
+        with pytest.raises(service.Forbidden):
+            await attempt
+    with pytest.raises(service.NotFound, match="no such role"):
+        await service.appoint(db, RULES, alliance, lead.id, newbie.id, "captain")
+    await service.revoke(db, RULES, alliance, deputy.id, other.id)
+    assert (await roles(db, alliance))[other.id] == "member"
+    with pytest.raises(service.AllianceError, match="holds no role"):
+        await service.revoke(db, RULES, alliance, lead.id, other.id)
+    await service.remove(db, RULES, alliance, deputy.id, newbie.id)
+    assert set(await roles(db, alliance)) == {lead.id, deputy.id, other.id}
+
+
+@anyio
+async def test_a_subcommander_fills_an_empty_seat_and_a_commander_leaves_it_empty_by_leaving_the_game(db):
+    mike = await account(db)
+    lead, deputy, other = await teams(db, mike, "Lead", "Deputy", "Other")
+    alliance = await service.found(db, RULES, lead, "Pact")
+    for team in (deputy, other):
+        await join(db, alliance, lead, team)
+    await service.appoint(db, RULES, alliance, lead.id, deputy.id, "subcommander")
+    await heroes.delete_team(db, mike, lead.id)
+    assert await roles(db, alliance) == {deputy.id: "subcommander", other.id: "member"}, "a subcommander is there to fill the seat"
+    await service.appoint(db, RULES, alliance, deputy.id, other.id, "commander")
+    assert await roles(db, alliance) == {deputy.id: "subcommander", other.id: "commander"}
+
+
+@anyio
+async def test_a_tier_three_role_acts_only_as_its_actions_say_and_only_on_its_own_tier(db):
+    mike = await account(db)
+    lead, clerk, deputy, member, scout = await teams(db, mike, "Lead", "Clerk", "Deputy", "Member", "Scout")
+    alliance = await service.found(db, RULES, lead, "Pact")
+    for team in (clerk, deputy, member):
+        await join(db, alliance, lead, team)
+    await service.appoint(db, RULES, alliance, lead.id, clerk.id, "recruiter")
+    await service.appoint(db, RULES, alliance, lead.id, deputy.id, "subcommander")
+    await service.invite(db, RULES, alliance, clerk.id, scout.id)  # a recruiter invites
+    await service.withdraw(db, RULES, alliance, clerk.id, scout.id)
+    for attempt in (
+        service.remove(db, RULES, alliance, clerk.id, member.id),  # it has no `remove`
+        service.appoint(db, RULES, alliance, clerk.id, member.id, "diplomat"),  # nor `appoint`
+        service.hand_over(db, RULES, alliance, clerk.id, member.id),
+        service.disband(db, RULES, alliance, clerk.id),
+    ):
+        with pytest.raises(service.Forbidden):
+            await attempt
+    await service.define_role(db, RULES, alliance, lead.id, "recruiter", ["invite", "withdraw", "remove", "appoint", "revoke", "vote"])
+    await service.appoint(db, RULES, alliance, clerk.id, member.id, "diplomat")  # now it appoints, but only within tier three
+    with pytest.raises(service.Forbidden):
+        await service.appoint(db, RULES, alliance, clerk.id, member.id, "subcommander")
+    for attempt in (
+        service.remove(db, RULES, alliance, clerk.id, deputy.id),
+        service.remove(db, RULES, alliance, clerk.id, lead.id),
+        service.revoke(db, RULES, alliance, clerk.id, deputy.id),
+    ):
+        with pytest.raises(service.Forbidden):
+            await attempt
+    await service.revoke(db, RULES, alliance, clerk.id, member.id)
+    await service.remove(db, RULES, alliance, clerk.id, member.id)
+
+
+@anyio
+async def test_an_alliance_defines_and_removes_its_own_roles(db):
+    mike = await account(db)
+    lead, clerk, member = await teams(db, mike, "Lead", "Clerk", "Member")
+    alliance = await service.found(db, RULES, lead, "Pact")
+    for team in (clerk, member):
+        await join(db, alliance, lead, team)
+    await service.define_role(db, RULES, alliance, lead.id, "  Scribe ", ["speak", "vote", "speak"])
+    assert (await service.role_actions(db, alliance))["Scribe"] == ["speak", "vote"]
+    await service.appoint(db, RULES, alliance, lead.id, clerk.id, "Scribe")
+    assert await service.speaking_team(db, RULES, mike, alliance)
+    with pytest.raises(service.Forbidden):
+        await service.define_role(db, RULES, alliance, clerk.id, "Spy", ["speak"])  # without `edit_roles`
+    for name, actions, message in (
+        ("", [], "1 to 16"), ("x" * 17, [], "1 to 16"), ("commander", [], "not roles to define"), ("subcommander", [], "not roles to define"),
+        ("Spy", ["fly"], "no such action"),
+    ):
+        with pytest.raises(service.AllianceError, match=message):
+            await service.define_role(db, RULES, alliance, lead.id, name, actions)
+
+    class Few(Alliances):
+        max_roles = 5
+
+    with pytest.raises(service.AllianceError, match="at most 5 roles"):
+        await service.define_role(db, Few(), alliance, lead.id, "Sixth", [])
+    await service.delete_role(db, RULES, alliance, lead.id, "Scribe")
+    assert (await roles(db, alliance))[clerk.id] == "member", "a team in a removed role is a plain member"
+    with pytest.raises(service.AllianceError, match="not removed"):
+        await service.delete_role(db, RULES, alliance, lead.id, "member")
+    with pytest.raises(service.NotFound):
+        await service.delete_role(db, RULES, alliance, lead.id, "Scribe")
+    await service.define_role(db, RULES, alliance, lead.id, "member", [])  # the default role may be changed
+    assert (await service.role_actions(db, alliance))["member"] == []
+
+
+@anyio
+async def test_the_commander_hands_the_seat_over_and_can_then_leave(db):
     mike = await account(db)
     lead, other = await teams(db, mike, "Lead", "Other")
     alliance = await service.found(db, RULES, lead, "Pact")
@@ -210,9 +312,9 @@ async def test_the_founder_hands_the_role_over_and_can_then_leave(db):
     with pytest.raises(service.AllianceError, match="hand the leadership over"):
         await service.leave(db, RULES, alliance, lead.id)
     await service.hand_over(db, RULES, alliance, lead.id, other.id)
-    assert await roles(db, alliance) == {lead.id: "officer", other.id: "leader"}
+    assert await roles(db, alliance) == {lead.id: "subcommander", other.id: "commander"}
     assert await service.leave(db, RULES, alliance, lead.id) is False
-    assert await roles(db, alliance) == {other.id: "leader"}
+    assert await roles(db, alliance) == {other.id: "commander"}
     with pytest.raises(service.Forbidden):
         await service.hand_over(db, RULES, alliance, lead.id, other.id)  # no longer in it
 
@@ -224,7 +326,7 @@ async def test_the_last_team_out_takes_the_alliance_with_it_and_so_does_disbandi
     alliance = await service.found(db, RULES, one, "Pact")
     await service.invite(db, RULES, alliance, one.id, two.id)
     assert await service.leave(db, RULES, alliance, one.id) is True
-    assert await count(db, Alliance) == 0 and await count(db, AllianceMember) == 0 and await count(db, AllianceInvite) == 0
+    assert await count(db, Alliance) == 0 and await count(db, AllianceMember) == 0 and await count(db, AllianceInvite) == 0 and await count(db, AllianceRole) == 0
     second = await service.found(db, RULES, one, "Second")
     await join(db, second, one, three)
     await relating.apply(db, Relations(), Change(Ref("alliance", second.id), Ref("team", two.id), score=-50))
@@ -235,45 +337,45 @@ async def test_the_last_team_out_takes_the_alliance_with_it_and_so_does_disbandi
 
 
 @anyio
-async def test_a_team_deleted_leaves_its_alliances_and_the_best_ranked_heir_takes_over(db):
+async def test_a_team_deleted_leaves_its_alliances_and_the_longest_standing_team_takes_an_unfilled_seat(db):
     mike = await account(db)
     lead, first, second, last = await teams(db, mike, "Lead", "First", "Second", "Last")
     alliance = await service.found(db, RULES, lead, "Pact")
     for team in (first, second, last):
         await join(db, alliance, lead, team)
-    await service.set_role(db, RULES, alliance, lead.id, second.id, "officer")
     await heroes.delete_team(db, mike, lead.id)
-    assert await roles(db, alliance) == {first.id: "member", second.id: "leader", last.id: "member"}, "the officer, not the longest-standing member"
-    await service.invite(db, RULES, alliance, second.id, (await teams(db, mike, "Guest"))[0].id)
+    assert await roles(db, alliance) == {first.id: "commander", second.id: "member", last.id: "member"}, "no subcommander to fill it: the longest-standing"
+    await service.invite(db, RULES, alliance, first.id, (await teams(db, mike, "Guest"))[0].id)
     for team in (first, second, last):
         await heroes.delete_team(db, mike, team.id)
-    assert await count(db, Alliance) == 0 and await count(db, AllianceMember) == 0 and await count(db, AllianceInvite) == 0
+    assert await count(db, Alliance) == 0 and await count(db, AllianceMember) == 0 and await count(db, AllianceInvite) == 0 and await count(db, AllianceRole) == 0
 
 
 # --- the game's own roles ----------------------------------------------------------------------------------------------------------------
 
 @anyio
-async def test_a_game_defines_its_own_roles_and_what_they_may_do(db):
+async def test_a_game_names_the_top_tiers_and_chooses_the_roles_a_new_alliance_starts_with(db):
     mike = await account(db)
     a, b, c = await teams(db, mike, "Aa", "Bb", "Cc")
 
     class Guild(Alliances):
-        roles = ("master", "warden", "knight", "squire")
-        founder_role, default_role = "master", "squire"
-        permissions = {"master": set(ACTIONS), "warden": {"invite", "remove", "speak"}, "knight": {"speak"}, "squire": set()}
+        commander_role, subcommander_role = "master", "warden"
+        default_role = "squire"
+        starting_roles = {"squire": {"vote"}, "herald": {"speak", "vote"}}
 
     guild = Guild()
     alliance = await service.found(db, guild, a, "Order")
     await join(db, alliance, a, b, guild)
     assert await roles(db, alliance) == {a.id: "master", b.id: "squire"}
-    await service.set_role(db, guild, alliance, a.id, b.id, "warden")
-    await service.invite(db, guild, alliance, b.id, c.id)  # a warden may
+    assert await service.role_names(db, guild, alliance) == ["master", "warden", "squire", "herald"]
+    await service.appoint(db, guild, alliance, a.id, b.id, "warden")
+    await service.invite(db, guild, alliance, b.id, c.id)  # a warden may do everything
     await service.accept(db, guild, c, alliance.id)
-    await service.set_role(db, guild, alliance, a.id, c.id, "knight")
+    await service.appoint(db, guild, alliance, a.id, c.id, "herald")
     with pytest.raises(service.Forbidden):
-        await service.remove(db, guild, alliance, c.id, b.id)  # a knight can't, and could not remove a warden anyway
+        await service.remove(db, guild, alliance, c.id, b.id)  # a herald can't
     await service.hand_over(db, guild, alliance, a.id, b.id)
-    assert await roles(db, alliance) == {a.id: "warden", b.id: "master", c.id: "knight"}
+    assert await roles(db, alliance) == {a.id: "warden", b.id: "master", c.id: "herald"}
 
 
 @anyio
@@ -287,7 +389,7 @@ async def test_the_game_can_say_otherwise_with_allowed(db):
 
     alliance = await service.found(db, Equals(), one, "Pact")
     await join(db, alliance, one, two, Equals())
-    await service.remove(db, Equals(), alliance, two.id, one.id)  # the member removes the founder
+    await service.remove(db, Equals(), alliance, two.id, one.id)  # the member removes the commander
     assert await roles(db, alliance) == {two.id: "member"}
 
 
@@ -361,18 +463,20 @@ def test_an_alliance_is_founded_joined_and_run_over_the_calls(world):
     client, ids = world
     found = post(client, "Mike", "/api/alliances", {"team_id": ids["vanguard"], "name": "Iron Pact"}, 201)
     alliance = found["id"]
-    assert found["roles"] == ["leader", "officer", "member"] and found["you"] == {"team_id": ids["vanguard"], "role": "leader"}
+    assert found["roles"] == ["commander", "subcommander", "treasurer", "quartermaster", "diplomat", "recruiter", "member"]
+    assert found["you"] == {"team_id": ids["vanguard"], "role": "commander"} and "appoint" in found["can"] and found["appointable"] == found["roles"][1:]
     post(client, "Mike", f"/api/alliances/{alliance}/invite", {"team_id": ids["vanguard"], "target_team_id": ids["rivals"]})
     login(client, "Zed")
     waiting = expect(client.get(f"/api/teams/{ids['rivals']}/invitations"), 200).json()
     assert [row["alliance"] for row in waiting] == ["Iron Pact"]
     joined = post(client, "Zed", f"/api/teams/{ids['rivals']}/invitations/accept", {"alliance_id": alliance})
-    assert [(row["team"], row["role"]) for row in joined["members"]] == [("Vanguard", "leader"), ("Rivals", "member")] and joined["can"] == ["vote"]
+    assert [(row["team"], row["role"]) for row in joined["members"]] == [("Vanguard", "commander"), ("Rivals", "member")] and joined["can"] == ["vote"]
+    assert joined["appointable"] == [] and [row["appoint"] for row in joined["members"]] == [False, False]
     post(client, "Zed", f"/api/alliances/{alliance}/invite", {"team_id": ids["rivals"], "target_team_id": ids["scouts"]}, 403)  # a member
-    post(client, "Mike", f"/api/alliances/{alliance}/role", {"team_id": ids["vanguard"], "target_team_id": ids["rivals"], "role": "officer"})
-    post(client, "Zed", f"/api/alliances/{alliance}/invite", {"team_id": ids["rivals"], "target_team_id": ids["scouts"]})  # now an officer
+    post(client, "Mike", f"/api/alliances/{alliance}/appoint", {"team_id": ids["vanguard"], "target_team_id": ids["rivals"], "role": "recruiter"})
+    post(client, "Zed", f"/api/alliances/{alliance}/invite", {"team_id": ids["rivals"], "target_team_id": ids["scouts"]})  # now a recruiter
     listing = expect(client.get("/api/alliances"), 200).json()
-    assert [(row["name"], row["team"], row["role"]) for row in listing["alliances"]] == [("Iron Pact", "Rivals", "officer")]
+    assert [(row["name"], row["team"], row["role"]) for row in listing["alliances"]] == [("Iron Pact", "Rivals", "recruiter")]
     post(client, "Mike", f"/api/alliances/{alliance}/hand-over", {"team_id": ids["vanguard"], "target_team_id": ids["rivals"]})
     post(client, "Mike", f"/api/alliances/{alliance}/leave", {"team_id": ids["vanguard"]})
     assert post(client, "Zed", f"/api/alliances/{alliance}/disband", {"team_id": ids["rivals"]}) == {"disbanded": True}
@@ -431,7 +535,8 @@ def test_the_calls_take_only_what_they_define_and_are_rate_limited(world, monkey
         ("/api/alliances", {"team_id": 0, "name": "x"}),
         ("/api/alliances", {"team_id": ids["vanguard"], "name": "x", "motto": "no"}),
         ("/api/alliances", {"team_id": ids["vanguard"], "name": "x" * 65}),
-        ("/api/alliances/1/role", {"team_id": 1, "target_team_id": 2}),
+        ("/api/alliances/1/appoint", {"team_id": 1, "target_team_id": 2}),
+        ("/api/alliances/1/roles", {"team_id": 1, "name": "x", "actions": "all"}),
         ("/api/alliances/1/leave", {}),
     ):
         expect(client.post(url, json=body, headers=mike), 422)
@@ -442,16 +547,51 @@ def test_the_calls_take_only_what_they_define_and_are_rate_limited(world, monkey
 
 
 class Guild(Alliances):
-    roles = ("master", "knight")
-    founder_role, default_role = "master", "knight"
-    permissions = {"master": set(ACTIONS), "knight": {"speak"}}
+    commander_role, subcommander_role = "master", "warden"
+    default_role = "knight"
+    starting_roles = {"knight": {"speak"}}
 
 
 @pytest.mark.parametrize("game", [Guild()], indirect=True)
 def test_the_games_roles_are_what_the_calls_use(world):
     client, ids = world
     found = post(client, "Mike", "/api/alliances", {"team_id": ids["vanguard"], "name": "Order"}, 201)
-    assert found["roles"] == ["master", "knight"] and found["you"]["role"] == "master"
+    assert found["roles"] == ["master", "warden", "knight"] and found["you"]["role"] == "master"
     post(client, "Mike", f"/api/alliances/{found['id']}/invite", {"team_id": ids["vanguard"], "target_team_id": ids["rivals"]})
     joined = post(client, "Zed", f"/api/teams/{ids['rivals']}/invitations/accept", {"alliance_id": found["id"]})
     assert joined["you"]["role"] == "knight" and joined["can"] == ["speak"]
+
+
+def test_roles_are_defined_appointed_revoked_and_removed_over_the_calls(world):
+    client, ids = world
+    mike_headers = login(client, "Mike")
+
+    def send(headers, url, body, status=200):
+        return expect(client.post(url, json=body, headers=headers), status).json()
+
+    alliance = send(mike_headers, "/api/alliances", {"team_id": ids["vanguard"], "name": "Iron Pact"}, 201)["id"]
+    send(mike_headers, f"/api/alliances/{alliance}/invite", {"team_id": ids["vanguard"], "target_team_id": ids["rivals"]})
+    zed_headers = login(client, "Zed")
+    send(zed_headers, f"/api/teams/{ids['rivals']}/invitations/accept", {"alliance_id": alliance})
+    url = f"/api/alliances/{alliance}"
+    mike, zed = {"team_id": ids["vanguard"]}, {"team_id": ids["rivals"]}
+    send(zed_headers, f"{url}/roles", {**zed, "name": "Scribe", "actions": ["speak"]}, 403)  # a member can't
+
+    mike_headers = login(client, "Mike")
+    made = send(mike_headers, f"{url}/roles", {**mike, "name": "Scribe", "actions": ["speak", "vote"]})
+    assert made["role_actions"]["Scribe"] == ["speak", "vote"] and "Scribe" in made["roles"]
+    send(mike_headers, f"{url}/roles", {**mike, "name": "Scribe", "actions": ["fly"]}, 409)
+    send(mike_headers, f"{url}/appoint", {**mike, "target_team_id": ids["rivals"], "role": "Scribe"})
+    send(mike_headers, f"{url}/appoint", {**mike, "target_team_id": ids["rivals"], "role": "captain"}, 404)
+    zed_headers = login(client, "Zed")
+    assert send(zed_headers, f"{url}/relationships/set", {"id": ids["strangers"], "score": 5})["score"] == 5, "a Scribe speaks for the alliance"
+
+    mike_headers = login(client, "Mike")
+    revoked = send(mike_headers, f"{url}/revoke", {**mike, "target_team_id": ids["rivals"]})
+    assert [(row["team"], row["role"]) for row in revoked["members"]] == [("Vanguard", "commander"), ("Rivals", "member")]
+    send(mike_headers, f"{url}/revoke", {**mike, "target_team_id": ids["rivals"]}, 409)
+    send(mike_headers, f"{url}/appoint", {**mike, "target_team_id": ids["rivals"], "role": "Scribe"})
+    removed = send(mike_headers, f"{url}/roles/delete", {**mike, "name": "Scribe"})
+    assert "Scribe" not in removed["roles"] and removed["members"][1]["role"] == "member"
+    send(mike_headers, f"{url}/roles/delete", {**mike, "name": "member"}, 409)
+    send(mike_headers, f"{url}/roles/delete", {**mike, "name": "Scribe"}, 404)
