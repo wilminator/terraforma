@@ -137,3 +137,45 @@ def test_a_party_that_joined_is_on_the_stage_when_the_replay_reaches_it(page, li
     expect(stage).to_have_attribute("data-over", "true", timeout=SLOW)
     expect(page.locator(".fighter")).to_have_count(3)
     expect(page.locator("[data-fighter='2.0.0']")).to_contain_text("Bryn")
+
+
+def test_a_team_keeps_a_fight_by_hand_and_lets_it_go(page, live_server):
+    fight_id, _guid = start(page, live_server)
+    page.goto("/fights/")
+    row = page.locator(f"#fights-team li[data-fight='{fight_id}']")
+    expect(row).to_have_attribute("data-kept", "false")
+    expect(page.locator("#fights-kept-count")).to_contain_text("Kept by hand: 0 of")
+    row.get_by_role("button", name=f"Keep fight {fight_id}").click()
+    expect(row).to_have_attribute("data-kept", "true")
+    expect(page.locator("#fights-kept-count")).to_contain_text("Kept by hand: 1 of")
+    page.reload()  # what is shown is the server's, so it is still kept
+    expect(page.locator(f"#fights-team li[data-fight='{fight_id}']")).to_have_attribute("data-kept", "true")
+    expect(page.locator("#fights-kept-count")).to_contain_text("Kept by hand: 1 of")
+    page.get_by_role("button", name=f"Let go of fight {fight_id}").click()
+    expect(page.locator(f"#fights-team li[data-fight='{fight_id}']")).to_have_attribute("data-kept", "false")
+    expect(page.locator("#fights-kept-count")).to_contain_text("Kept by hand: 0 of")
+
+
+def test_the_teams_best_fights_are_listed_as_the_server_has_them(page, live_server):
+    fight_id, _guid = start(page, live_server)
+    team = Player(page, "Mike").get("/api/teams")[0]["id"]
+    held = {kind: tag for kind, tag in Player(page, "Mike").get(f"/api/teams/{team}/fight-tags")["tags"].items() if tag}
+    page.goto("/fights/")
+    expect(page.locator("#fights-kept-count")).to_be_visible()
+    if held:
+        rows = page.locator("#fights-tag-list li")
+        expect(rows).to_have_count(len(held))
+        for kind, tag in held.items():
+            expect(page.locator(f"#fights-tag-list li[data-kind='{kind}'] a")).to_have_attribute("href", f"?fight={tag['fight_id']}")
+    else:
+        expect(page.locator("#fights-tags-none")).to_be_visible()
+
+
+def test_a_second_team_has_its_own_tags_and_kept_fights(page, live_server):
+    fight_id, _guid = start(page, live_server)
+    Player(page, "Mike").post("/api/teams", {"name": "Beta", "heroes": [{"name": "Bryn", "job": "fighter"}]})
+    page.goto("/fights/")
+    page.locator("#fights-team-pick").select_option(label="Beta")
+    expect(page.locator("#fights-team-none")).to_be_visible()  # Beta has fought nothing, so none of Alpha's fights show
+    expect(page.locator(f"#fights-team li[data-fight='{fight_id}']")).to_have_count(0)
+    expect(page.locator("#fights-kept-count")).to_contain_text("Kept by hand: 0 of")
