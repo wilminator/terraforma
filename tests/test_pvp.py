@@ -18,7 +18,7 @@ from terraforma.testing import in_app_db
 from terraforma.towns import service as towns_service
 from terraforma.towns.hooks import Towns
 from terraforma.world.start import ensure_start
-from terraforma.models import Account
+from terraforma.models import Account, Map
 from terraforma.game import Game
 from terraforma.pvp import service
 from terraforma.pvp.hooks import PvpZones
@@ -202,8 +202,11 @@ async def test_a_game_can_forbid_fighting_at_any_range(db):
 
 
 async def test_a_party_on_another_map_is_not_here(db):
-    mike, _zed, team, _party, foes = await two_parties(db)
-    foes.map_id += 1
+    mike, _zed, team, party, foes = await two_parties(db)
+    elsewhere = Map(world_id=(await db.get(Map, party.map_id)).world_id, name="crypt", width=10, height=10)
+    db.add(elsewhere)
+    await db.flush()
+    foes.map_id = elsewhere.id
     await db.flush()
     with pytest.raises(PvpError, match="not here"):
         await start_pvp_fight(db, Everywhere(), Levelled(), mike, team.id, foes.id)
