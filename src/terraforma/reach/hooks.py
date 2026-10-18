@@ -83,6 +83,6 @@ class Reach:
         return None if distance(found, (actor.x, actor.y), (party.x, party.y)) <= 1 else "that party is too far away"
 
     async def lists_parties(self, session: AsyncSession, action: str, hero: Hero) -> bool:
-        """Whether the nearby list for the action shows other parties after the NPCs. By default it does for a talk and an
-        invitation, and not for the rest (a chest is opened, not talked to)."""
-        return action in (TALK, INVITE)
+        """Whether the nearby list for the action shows other parties after the NPCs. By default it does for a talk, an
+        invitation and help, and not for the rest (a chest is opened, not talked to)."""
+        return action in (TALK, INVITE, HELP)

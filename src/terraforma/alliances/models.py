@@ -8,6 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from ..db.base import Base, Timestamps, utcnow
 
 NAME_MAX = 32
+ROLE_MAX = 16
 
 
 class Alliance(Timestamps, Base):
@@ -28,8 +29,21 @@ class AllianceMember(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     alliance_id: Mapped[int] = mapped_column(ForeignKey("alliances.id"), index=True)
     team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), index=True)
-    role: Mapped[str] = mapped_column(String(16))
+    role: Mapped[str] = mapped_column(String(ROLE_MAX))
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AllianceRole(Base):
+    """A role of tier 3 an alliance has defined (see ``hooks``): a name and the actions it may do. The commander and
+    subcommanders are not here; their powers are the tiers'."""
+
+    __tablename__ = "alliance_roles"
+    __table_args__ = (UniqueConstraint("alliance_id", "name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    alliance_id: Mapped[int] = mapped_column(ForeignKey("alliances.id"), index=True)
+    name: Mapped[str] = mapped_column(String(ROLE_MAX))
+    actions: Mapped[list] = mapped_column(JSON)
 
 
 class AllianceInvite(Base):

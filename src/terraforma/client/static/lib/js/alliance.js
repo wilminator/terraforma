@@ -33,16 +33,15 @@ const act = (work) => attempt(shell, problem, async () => {
 function memberRow(member) {
   const me = member.team_id === view.you.team_id;
   const can = ctx.can;
-  const myRank = view.roles.indexOf(view.you.role);
-  const roles = view.roles.filter((role, index) => index > myRank || role === member.role);
+  const roles = view.roles.filter((role) => view.appointable.includes(role) || role === member.role);
   const name = member.page ? h("a", { href: `/p/team/${member.page}` }, member.name) : member.name;
   const handle = member.handle ? (member.player ? h("a", { href: `/p/${member.player}` }, member.handle) : member.handle) : null;
-  const choose = !me && can.has("set_role")
+  const choose = !me && view.members.find((each) => each.team_id === member.team_id)?.appoint && view.appointable.length > 0
     ? h(
         "select",
         {
           "aria-label": t("alliance.role_of", { name: member.name }),
-          onchange: (event) => act(() => api.post(calls("/role"), { team_id: ctx.teamId, target_team_id: member.team_id, role: event.target.value })),
+          onchange: (event) => act(() => api.post(calls("/appoint"), { team_id: ctx.teamId, target_team_id: member.team_id, role: event.target.value })),
         },
         roles.map((role) => h("option", { value: role, selected: role === member.role }, role)),
       )

@@ -70,8 +70,8 @@ def test_a_player_founds_an_alliance_and_lands_on_its_page(page, live_server):
     form.get_by_role("button", name="Found alliance").click()
     expect(page).to_have_url(re.compile(r"/alliance/\d+"))
     expect(page.get_by_role("heading", name="Iron Pact", exact=True)).to_be_visible()
-    expect(page.locator("#you")).to_have_text("You act as Vanguard, role: leader.")
-    expect(page.locator("[data-team='Vanguard']")).to_contain_text("leader")
+    expect(page.locator("#you")).to_have_text("You act as Vanguard, role: commander.")
+    expect(page.locator("[data-team='Vanguard']")).to_contain_text("commander")
 
     page.get_by_role("link", name="Your alliances").click()
     expect(page.locator("[data-alliance='Iron Pact']")).to_contain_text("Vanguard")
@@ -115,7 +115,7 @@ def test_an_invited_team_accepts_or_declines_and_the_inviter_can_withdraw(page, 
     zed_page.locator("[data-invitation='Iron Pact']").get_by_role("button", name="Accept").click()
     expect(zed_page).to_have_url(re.compile(r"/alliance/\d+"))
     expect(zed_page.locator("#you")).to_have_text("You act as Strangers, role: member.")
-    expect(zed_page.locator("[data-team='Vanguard']")).to_contain_text("leader")
+    expect(zed_page.locator("[data-team='Vanguard']")).to_contain_text("commander")
     expect(zed_page.locator("#invite-form")).to_have_count(0)  # a member's role may not invite
 
     page.reload()
@@ -176,7 +176,7 @@ def test_a_slow_answer_does_not_draw_the_page_over_a_newer_one(page, new_page, l
             held.append((route, route.fetch()))
 
     page.route("**/roster", hold_the_first)
-    page.locator("[data-team='Strangers']").get_by_label("Role of Strangers").select_option("officer")
+    page.locator("[data-team='Strangers']").get_by_label("Role of Strangers").select_option("subcommander")
     while not held:
         page.wait_for_timeout(20)
     page.locator("[data-team='Wanderers']").get_by_role("button", name="Remove Wanderers").click()
@@ -187,7 +187,7 @@ def test_a_slow_answer_does_not_draw_the_page_over_a_newer_one(page, new_page, l
     expect(page.locator("[data-team='Wanderers']")).to_have_count(0)
 
 
-def test_a_leader_finds_a_team_by_name_and_invites_it_without_its_number(page, new_page, live_server):
+def test_a_commander_finds_a_team_by_name_and_invites_it_without_its_number(page, new_page, live_server):
     live_server.make_account("Mike")
     mike = sign_in(page, "Mike")
     vanguard = make_team(mike, "Vanguard")
@@ -216,8 +216,8 @@ def test_a_leader_finds_a_team_by_name_and_invites_it_without_its_number(page, n
     expect(page.locator("[data-found='Vanguard']")).to_contain_text("yours")  # one's own teams are always found
 
 
-def test_a_leader_sets_roles_hands_over_removes_and_the_others_leave(page, new_page, live_server, console):
-    console.allow("status of 409")  # the founder can't leave while others remain
+def test_a_commander_sets_roles_hands_over_removes_and_the_others_leave(page, new_page, live_server, console):
+    console.allow("status of 409")  # the commander can't leave while others remain
     live_server.make_account("Mike")
     mike = sign_in(page, "Mike")
     vanguard = make_team(mike, "Vanguard")
@@ -230,20 +230,20 @@ def test_a_leader_sets_roles_hands_over_removes_and_the_others_leave(page, new_p
 
     page.goto(f"/alliance/{alliance['id']}")
     strangers = page.locator("[data-team='Strangers']")
-    strangers.get_by_label("Role of Strangers").select_option("officer")
-    expect(strangers.get_by_label("Role of Strangers")).to_have_value("officer")
+    strangers.get_by_label("Role of Strangers").select_option("subcommander")
+    expect(strangers.get_by_label("Role of Strangers")).to_have_value("subcommander")
     expect(page.locator("[data-team='Vanguard']").get_by_label("Role of Vanguard")).to_have_count(0)  # not on yourself
 
     page.locator("[data-team='Wanderers']").get_by_role("button", name="Remove Wanderers").click()
     expect(page.locator("[data-team='Wanderers']")).to_have_count(0)
 
-    page.get_by_role("button", name="Leave alliance").click()  # the founder can't leave while others remain: the server says so
+    page.get_by_role("button", name="Leave alliance").click()  # the commander can't leave while others remain: the server says so
     page.get_by_role("button", name="Really leave").click()
     expect(page.locator("#alliance-problem")).not_to_be_empty()
 
     strangers.get_by_role("button", name="Hand over to Strangers").click()
-    expect(page.locator("#you")).to_have_text("You act as Vanguard, role: officer.")
-    expect(page.locator("[data-team='Strangers']")).to_contain_text("leader")
+    expect(page.locator("#you")).to_have_text("You act as Vanguard, role: subcommander.")
+    expect(page.locator("[data-team='Strangers']")).to_contain_text("commander")
 
     page.get_by_role("button", name="Leave alliance").click()
     page.get_by_role("button", name="Really leave").click()
@@ -271,7 +271,7 @@ def test_someone_outside_an_alliance_is_told_there_is_no_such_alliance(page, new
     expect(outsider.get_by_role("heading", name="No such alliance")).to_be_visible()
 
 
-def test_a_leader_makes_the_alliance_page_and_writes_what_it_says(page, new_page, live_server):
+def test_a_commander_makes_the_alliance_page_and_writes_what_it_says(page, new_page, live_server):
     live_server.make_account("Mike")
     mike = sign_in(page, "Mike")
     vanguard = make_team(mike, "Vanguard")
@@ -294,7 +294,7 @@ def test_a_leader_makes_the_alliance_page_and_writes_what_it_says(page, new_page
     expect(visitor.get_by_text("We hold the pass.")).to_be_visible()
 
 
-def test_a_member_without_the_role_does_not_get_the_leaders_controls(page, new_page, live_server):
+def test_a_member_without_the_role_does_not_get_the_commanders_controls(page, new_page, live_server):
     live_server.make_account("Mike")
     mike = sign_in(page, "Mike")
     vanguard = make_team(mike, "Vanguard")
@@ -312,7 +312,7 @@ def test_a_member_without_the_role_does_not_get_the_leaders_controls(page, new_p
     expect(zed_page.get_by_role("button", name="Leave alliance")).to_be_visible()
 
 
-def test_the_alliance_votes_on_a_question_and_the_leader_closes_it(page, new_page, live_server):
+def test_the_alliance_votes_on_a_question_and_the_commander_closes_it(page, new_page, live_server):
     live_server.make_account("Mike")
     mike = sign_in(page, "Mike")
     vanguard = make_team(mike, "Vanguard")
@@ -345,7 +345,7 @@ def test_the_alliance_votes_on_a_question_and_the_leader_closes_it(page, new_pag
     expect(ballot.get_by_role("button", name="Vote Yes")).to_have_count(0)
 
 
-def test_a_leader_closes_a_ballot_early_and_a_secret_ballot_hides_who_voted(page, live_server):
+def test_a_commander_closes_a_ballot_early_and_a_secret_ballot_hides_who_voted(page, live_server):
     live_server.make_account("Mike")
     mike = sign_in(page, "Mike")
     vanguard = make_team(mike, "Vanguard")
@@ -425,4 +425,4 @@ def test_a_second_team_of_the_same_player_is_chosen_with_the_team_switch(page, l
     page.locator("[data-alliance='Iron Pact'][data-team='Rivals']").get_by_role("link", name="Iron Pact").click()
     expect(page.locator("#you")).to_have_text("You act as Rivals, role: member.")
     page.get_by_label("Act as").select_option("Vanguard")
-    expect(page.locator("#you")).to_have_text("You act as Vanguard, role: leader.")
+    expect(page.locator("#you")).to_have_text("You act as Vanguard, role: commander.")

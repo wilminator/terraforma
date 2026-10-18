@@ -1,49 +1,70 @@
 """The game's say in alliances: ``Alliances``, the class a game overrides (``Game(alliances=...)``).
 
 An alliance is a formal power structure of teams. The engine keeps who is in it, in what role, and who has been
-invited; the game decides what the roles are and what each may do, and how an alliance is run on top of that (the
-voting tooling comes in its own piece). The defaults are three roles, ``leader`` (everything), ``officer`` (invite,
-withdraw an invitation, speak for the alliance in its relationships) and ``member``:
+invited; the game decides what the roles start as and how an alliance is run on top of that. Roles come in three tiers:
+
+1. **The commander**, one team, who may do every action.
+2. **Subcommanders**, who may do every action except one that applies to the commander, and may fill the
+   commander's seat when it is empty.
+3. **Everything else**, with no rank among them: roles the alliance defines for itself (the ``edit_roles`` action), each
+   a set of actions, like roles in an access list. A new alliance starts with the game's ``starting_roles`` (by default
+   a treasurer, a quartermaster, a diplomat, a recruiter and a member) and the default role is what a team joins as.
+   A tier-3 role acts on teams of tier 3 only, and gives only tier-3 roles.
 
     class Guild(Alliances):
-        roles = ("master", "warden", "knight", "squire")
-        founder_role, default_role = "master", "squire"
-        permissions = {"master": set(ACTIONS), "warden": {"invite", "remove", "speak"}, "knight": {"speak"}, "squire": set()}
+        commander_role, subcommander_role = "master", "warden"
+        starting_roles = {"squire": {"vote"}, "herald": {"speak", "vote"}}
+        default_role = "squire"
 
-``roles`` runs from the highest rank to the lowest. A team may act on a team of a lower rank only (``remove``,
-``set_role``), and ``allowed`` is the one place a game can say otherwise. This is a public interface (the license
-exception covers it): the names and signatures are what games build on.
+``allowed`` is the one place a game can say otherwise. This is a public interface (the license exception covers it): the
+names and signatures are what games build on.
 """
 
-#: What a member can do for its alliance: ``invite`` teams, ``withdraw`` an invitation, ``remove`` a team, ``set_role``
-#: of a team, ``hand_over`` the founder role, ``disband`` the alliance, ``speak`` for it in relationships, ``open_ballot``
-#: and ``close_ballot`` (put a question to a vote and close it early), and ``vote`` in ballots.
-ACTIONS = ("invite", "withdraw", "remove", "set_role", "hand_over", "disband", "speak", "open_ballot", "close_ballot", "vote")
+from . import roles
+
+#: What a member can do for its alliance: ``invite`` teams, ``withdraw`` an invitation, ``remove`` a team, ``appoint``
+#: a team to a role, ``revoke`` a team's role (it returns to the default role), ``hand_over`` the commander's seat,
+#: ``disband`` the alliance, ``speak`` for it in relationships, ``open_ballot`` and ``close_ballot`` (put a question to a
+#: vote and close it early), ``vote`` in ballots, and ``edit_roles`` (define, change and remove roles of tier 3). The
+#: last six belong to what comes next and nothing uses them yet: ``deposit`` and ``spend`` the alliance's gold,
+#: ``set_fight_tax`` and ``set_sales_tax``, handling its ``inventory``, and signing a ``contract`` for it.
+ACTIONS = (
+    "invite", "withdraw", "remove", "appoint", "revoke", "hand_over", "disband", "speak", "open_ballot", "close_ballot", "vote", "edit_roles",
+    "deposit", "spend", "set_fight_tax", "set_sales_tax", "inventory", "contract",
+)
+
+COMMANDER, SUBCOMMANDER, OTHER = 1, 2, 3  # the tiers
 
 
 class Alliances:
-    roles: tuple[str, ...] = ("leader", "officer", "member")
-    #: The role of the team that founds an alliance, and of a team that joins.
-    founder_role: str = "leader"
+    commander_role: str = "commander"
+    subcommander_role: str = "subcommander"
+    #: The role of a team that joins; every alliance keeps it.
     default_role: str = "member"
-    #: What each role may do.
-    permissions: dict[str, set[str]] = {
-        "leader": set(ACTIONS),
-        "officer": {"invite", "withdraw", "speak", "open_ballot", "vote"},
+    #: The tier-3 roles a new alliance starts with, and what each may do. Must hold ``default_role``.
+    starting_roles: dict[str, set[str]] = {
+        "treasurer": {"deposit", "spend", "set_fight_tax", "set_sales_tax", "vote"},
+        "quartermaster": {"inventory", "vote"},
+        "diplomat": {"contract", "speak", "vote"},
+        "recruiter": {"invite", "withdraw", "vote"},
         "member": {"vote"},
     }
     #: How many teams an alliance holds, and how many alliances a team may be in.
     max_members: int = 20
     max_per_team: int = 3
+    #: How many roles of tier 3 an alliance may define.
+    max_roles: int = 20
     #: Ballots (``alliances.ballots``): how many may be open at once, how many options one has, and whether a ballot
     #: closes as soon as everyone who may vote has.
     max_open_ballots: int = 5
     option_limits: tuple[int, int] = (2, 10)
     close_when_all_voted: bool = True
 
-    def rank(self, role: str) -> int:
-        """0 is the highest role."""
-        return self.roles.index(role)
+    def tier(self, role: str) -> int:
+        """1 for the commander, 2 for a subcommander, 3 for any other role."""
+        if role == self.commander_role:
+            return COMMANDER
+        return SUBCOMMANDER if role == self.subcommander_role else OTHER
 
     async def may_found(self, session, team) -> bool:
         """Whether ``team`` may found an alliance. Yes by default."""
@@ -55,16 +76,20 @@ class Alliances:
 
     async def allowed(self, session, alliance, actor, action: str, target=None, role: str | None = None) -> bool:
         """Whether the member ``actor`` may do ``action`` (``target`` is the member it acts on, ``role`` the role it gives).
-        By default the role's ``permissions`` say, and a team may act only on a team of a lower rank, and give only a
-        role lower than its own."""
-        if action not in self.permissions.get(actor.role, ()):
+        By default the tiers say so (see the top of this module); no one acts on itself."""
+        if action not in ACTIONS or target is not None and target.id == actor.id:
             return False
-        if target is not None and not self.rank(actor.role) < self.rank(target.role):
+        tier = self.tier(actor.role)
+        if tier == OTHER:
+            if action not in await roles.actions(session, alliance.id, actor.role):
+                return False
+            return (target is None or self.tier(target.role) == OTHER) and (role is None or self.tier(role) == OTHER)
+        if action == "hand_over":
+            return tier == COMMANDER
+        if tier == SUBCOMMANDER and target is not None and self.tier(target.role) == COMMANDER:
             return False
-        if role is not None and role not in self.roles:
-            return False
-        if role is not None and not self.rank(actor.role) < self.rank(role):
-            return False
+        if role == self.commander_role:  # the seat is handed over, or filled by a subcommander when it is empty
+            return tier == SUBCOMMANDER and action == "appoint" and await roles.seat_empty(session, alliance.id, self.commander_role)
         return True
 
     # --- ballots ---------------------------------------------------------------------------------------------------

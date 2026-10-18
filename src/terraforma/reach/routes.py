@@ -3,13 +3,16 @@ must be the caller's."""
 
 from typing import Annotated
 
-from fastapi import APIRouter, Path
+from fastapi import APIRouter, Path, Request
+from pydantic import Field
 
-from ..api.deps import CurrentAccount, Db, GameReach, GameRules
-from ..heroes import service as heroes
+from ..accounts import ratelimit
+from ..accounts.routes import Strict, limited
+from ..api.deps import ActingAccount, CurrentAccount, Db, GameReach, GameRelations, GameRules
+from ..heroes import inventory, service as heroes
 from ..heroes.routes import Id
 from ..heroes.routes import refuse as refuse_hero
-from . import service
+from . import helping, service
 
 router = APIRouter(prefix="/api/heroes/{hero_id}")
 
@@ -27,3 +30,26 @@ async def nearby(hero_id: Id, action: Action, account: CurrentAccount, db: Db, r
     except heroes.HeroError as error:
         raise refuse_hero(error) from error
     return await service.nearby(db, reach, rules, hero, action)
+
+
+class HelpWithItem(Strict):
+    """$position is the item's place in the caller's hero's pack; the target is hero number $member (from 0) of party $party_id,
+    in the order the party lists its heroes."""
+
+    position: int = Field(ge=0, le=inventory.MAX_ITEMS)
+    party_id: int = Field(ge=1)
+    member: int = Field(ge=0, le=64)
+
+
+@router.post("/help/use-item")
+async def help_with_item(
+    hero_id: Id, body: HelpWithItem, request: Request, account: ActingAccount, db: Db, reach: GameReach, rules: GameRules, relations: GameRelations
+) -> dict:
+    """Spends one of the hero's items on a hero of a party in reach (healing, mana, a revive) unless the hero's team counts that
+    party as an enemy. The target's resources before and after come back; the other player is not asked."""
+    await limited(request, ratelimit.HELP_BY_ACCOUNT, str(account.id))
+    try:
+        hero = await heroes.own_hero(db, account, hero_id)
+        return await helping.help_with_item(db, reach, rules, relations, hero, body.position, body.party_id, body.member)
+    except (heroes.HeroError, inventory.InventoryError) as error:
+        raise refuse_hero(error) from error
