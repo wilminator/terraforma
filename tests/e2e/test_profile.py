@@ -125,7 +125,7 @@ def test_anyone_with_the_link_reads_the_page_and_follows_it_to_the_team_and_the_
     expect(visitor).to_have_url(re.compile(r"/p/alliance/"))
     expect(visitor.get_by_role("heading", name="Iron Pact")).to_be_visible()
     expect(visitor.get_by_text("We hold the pass.")).to_be_visible()
-    expect(visitor.locator("[data-team='Vanguard']")).to_contain_text("leader")
+    expect(visitor.locator("[data-team='Vanguard']")).to_contain_text("commander")
 
 
 def test_an_address_that_goes_nowhere_says_so(page, console):

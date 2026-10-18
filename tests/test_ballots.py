@@ -36,7 +36,7 @@ async def account(db, name="Mike"):
 
 
 async def alliance_of(db, rules=RULES, members=2):
-    """An alliance with its leader (Lead) and ``members`` more teams (T1, T2, ...), one officer among them if there are two or more."""
+    """An alliance with its commander (Lead) and ``members`` more teams (T1, T2, ...), all plain members."""
     mike = await account(db)
     lead = await heroes.create_team(db, mike, "Lead")
     alliance = await service.found(db, rules, lead, "Pact")
@@ -58,7 +58,8 @@ async def count(db, table):
 @anyio
 async def test_a_role_that_may_opens_a_ballot_and_members_may_not(db):
     _mike, alliance, lead, (officer, member) = await alliance_of(db)
-    await service.set_role(db, RULES, alliance, lead.id, officer.id, "officer")
+    await service.define_role(db, RULES, alliance, lead.id, "clerk", ["open_ballot", "vote"])
+    await service.appoint(db, RULES, alliance, lead.id, officer.id, "clerk")
     ballot = await ballots.open_ballot(db, RULES, alliance, officer.id, "  Take   the   ford? ", ["Yes", "No"])
     assert (ballot.title, ballot.options, ballot.secret, ballot.closes_at) == ("Take the ford?", ["Yes", "No"], False, None)
     with pytest.raises(service.Forbidden, match="role can't"):
@@ -145,11 +146,9 @@ async def test_who_may_vote_and_for_what(db):
     with pytest.raises(service.Forbidden, match="not in the alliance"):
         await ballots.cast(db, RULES, alliance, 999_999, ballot, 0)
 
-    class NoVoting(Alliances):
-        permissions = {**Alliances.permissions, "member": set()}
-
+    await service.define_role(db, RULES, alliance, lead.id, "member", [])  # a member that may not vote
     with pytest.raises(service.Forbidden, match="can't vote"):
-        await ballots.cast(db, NoVoting(), alliance, one.id, ballot, 0)
+        await ballots.cast(db, RULES, alliance, one.id, ballot, 0)
 
 
 # --- closing and counting --------------------------------------------------------------------------------------------------------
@@ -222,7 +221,7 @@ async def test_close_due_closes_every_ballot_that_is_due_for_a_games_own_schedul
 async def test_the_game_weighs_votes_and_decides_who_wins(db):
     class Weighted(Alliances):
         async def vote_weight(self, session, alliance, member):
-            return {"leader": 3, "officer": 2}.get(member.role, 1)
+            return {"commander": 3, "subcommander": 2}.get(member.role, 1)
 
         async def decide(self, session, alliance, ballot, totals, eligible):
             top = max(totals)
@@ -230,7 +229,7 @@ async def test_the_game_weighs_votes_and_decides_who_wins(db):
 
     rules = Weighted()
     _mike, alliance, lead, (officer, member) = await alliance_of(db, rules)
-    await service.set_role(db, rules, alliance, lead.id, officer.id, "officer")
+    await service.appoint(db, rules, alliance, lead.id, officer.id, "subcommander")
     ballot = await ballots.open_ballot(db, rules, alliance, lead.id, "Q", OPTIONS)
     await ballots.cast(db, rules, alliance, officer.id, ballot, 0)  # 2
     await ballots.cast(db, rules, alliance, member.id, ballot, 1)  # 1

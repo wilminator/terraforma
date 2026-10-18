@@ -7,7 +7,7 @@ and leave the rolling back to the caller's transaction. What a role may do is th
 
 import re
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,8 +17,9 @@ from ..models import Account
 from ..profiles.models import AllianceProfile
 from ..relations import service as relations
 from ..relations.hooks import Ref
-from .hooks import Alliances
-from .models import NAME_MAX, Alliance, AllianceInvite, AllianceMember, Ballot, BallotVote, BallotVoter
+from . import roles
+from .hooks import ACTIONS, OTHER, SUBCOMMANDER, Alliances
+from .models import NAME_MAX, ROLE_MAX, Alliance, AllianceInvite, AllianceMember, AllianceRole, Ballot, BallotVote, BallotVoter
 
 
 class AllianceError(ValueError):
@@ -96,7 +97,7 @@ async def _acting(session, hooks: Alliances, alliance: Alliance, actor_team_id: 
 # --- founding, inviting, joining --------------------------------------------------------------------------------------------
 
 async def found(session: AsyncSession, hooks: Alliances, team: Team, name: str) -> Alliance:
-    """The team founds an alliance and holds its founder role."""
+    """The team founds an alliance and is its commander. The alliance starts with the game's ``starting_roles``."""
     name = check_name(name)
     if not await hooks.may_found(session, team):
         raise Forbidden("this team can't found an alliance")
@@ -109,7 +110,8 @@ async def found(session: AsyncSession, hooks: Alliances, team: Team, name: str) 
             await session.flush()
     except IntegrityError as error:
         raise AllianceError("an alliance already has that name") from error
-    session.add(AllianceMember(alliance_id=alliance.id, team_id=team.id, role=hooks.founder_role))
+    session.add(AllianceMember(alliance_id=alliance.id, team_id=team.id, role=hooks.commander_role))
+    session.add_all(AllianceRole(alliance_id=alliance.id, name=name, actions=sorted(actions)) for name, actions in hooks.starting_roles.items())
     await session.flush()
     return alliance
 
@@ -179,6 +181,7 @@ async def _delete_alliance(session: AsyncSession, alliance: Alliance) -> None:
     await session.execute(delete(Ballot).where(Ballot.alliance_id == alliance.id))
     await session.execute(delete(AllianceMember).where(AllianceMember.alliance_id == alliance.id))
     await session.execute(delete(AllianceInvite).where(AllianceInvite.alliance_id == alliance.id))
+    await session.execute(delete(AllianceRole).where(AllianceRole.alliance_id == alliance.id))
     await session.execute(delete(AllianceProfile).where(AllianceProfile.alliance_id == alliance.id))
     await session.execute(delete(AllianceTop).where(AllianceTop.alliance_id == alliance.id))
     await session.execute(delete(AllianceKept).where(AllianceKept.alliance_id == alliance.id))
@@ -188,8 +191,8 @@ async def _delete_alliance(session: AsyncSession, alliance: Alliance) -> None:
 
 
 async def leave(session: AsyncSession, hooks: Alliances, alliance: Alliance, team_id: int) -> bool:
-    """The team leaves. The last team out takes the alliance with it (True); the only team holding the founder role
-    can't leave while others remain: it hands the role over first."""
+    """The team leaves. The last team out takes the alliance with it (True); the commander can't leave while others
+    remain: it hands the seat over first."""
     row = await member_row(session, alliance.id, team_id)
     if row is None:
         raise NotFound("that team is not in the alliance")
@@ -197,7 +200,7 @@ async def leave(session: AsyncSession, hooks: Alliances, alliance: Alliance, tea
     if not others:
         await _delete_alliance(session, alliance)
         return True
-    if row.role == hooks.founder_role and not any(other.role == hooks.founder_role for other in others):
+    if row.role == hooks.commander_role:
         raise AllianceError("hand the leadership over before leaving")
     await _forget_votes(session, team_id, alliance.id)
     await session.delete(row)
@@ -212,20 +215,80 @@ async def remove(session: AsyncSession, hooks: Alliances, alliance: Alliance, ac
     await session.flush()
 
 
-async def set_role(session: AsyncSession, hooks: Alliances, alliance: Alliance, actor_team_id: int, target_team_id: int, role: str) -> AllianceMember:
-    _, target = await _acting(session, hooks, alliance, actor_team_id, "set_role", target_team_id, role)
+async def appoint(session: AsyncSession, hooks: Alliances, alliance: Alliance, actor_team_id: int, target_team_id: int, role: str) -> AllianceMember:
+    """The acting team gives another a role of the alliance. (The commander's seat is handed over, or filled by a
+    subcommander when it is empty.)"""
+    if role not in await role_names(session, hooks, alliance):
+        raise NotFound("the alliance has no such role")
+    _, target = await _acting(session, hooks, alliance, actor_team_id, "appoint", target_team_id, role)
     target.role = role
     await session.flush()
     return target
 
 
-async def hand_over(session: AsyncSession, hooks: Alliances, alliance: Alliance, actor_team_id: int, target_team_id: int) -> None:
-    """The acting team gives the founder role to another team and drops to the next role down."""
-    actor, target = await _acting(session, hooks, alliance, actor_team_id, "hand_over", target_team_id)
-    target.role = hooks.founder_role
-    below = hooks.roles.index(hooks.founder_role) + 1
-    actor.role = hooks.roles[below] if below < len(hooks.roles) else hooks.default_role
+async def revoke(session: AsyncSession, hooks: Alliances, alliance: Alliance, actor_team_id: int, target_team_id: int) -> AllianceMember:
+    """The acting team takes a team's role away: it is a plain member again (the default role)."""
+    _, target = await _acting(session, hooks, alliance, actor_team_id, "revoke", target_team_id)
+    if target.role == hooks.default_role:
+        raise AllianceError("that team holds no role to take away")
+    target.role = hooks.default_role
     await session.flush()
+    return target
+
+
+async def hand_over(session: AsyncSession, hooks: Alliances, alliance: Alliance, actor_team_id: int, target_team_id: int) -> None:
+    """The commander gives the seat to another team and becomes a subcommander."""
+    actor, target = await _acting(session, hooks, alliance, actor_team_id, "hand_over", target_team_id)
+    target.role = hooks.commander_role
+    actor.role = hooks.subcommander_role
+    await session.flush()
+
+
+# --- the roles of tier 3 ---------------------------------------------------------------------------------------------------------
+
+async def role_names(session: AsyncSession, hooks: Alliances, alliance: Alliance) -> list[str]:
+    """Every role the alliance has, highest tier first: the commander, subcommanders, then the roles it defined."""
+    return [hooks.commander_role, hooks.subcommander_role, *await roles.names(session, alliance.id)]
+
+
+async def role_actions(session: AsyncSession, alliance: Alliance) -> dict[str, list[str]]:
+    rows = await session.execute(select(AllianceRole.name, AllianceRole.actions).where(AllianceRole.alliance_id == alliance.id).order_by(AllianceRole.id))
+    return {name: sorted(held) for name, held in rows.all()}
+
+
+async def define_role(session: AsyncSession, hooks: Alliances, alliance: Alliance, actor_team_id: int, name: str, actions: list[str]) -> dict[str, list[str]]:
+    """Makes a role of tier 3 or changes the actions of one the alliance has (the default role included)."""
+    await _acting(session, hooks, alliance, actor_team_id, "edit_roles")
+    name = " ".join(name.split())
+    if not 1 <= len(name) <= ROLE_MAX or not name.isprintable():
+        raise AllianceError(f"a role's name is 1 to {ROLE_MAX} characters")
+    if hooks.tier(name) != OTHER:
+        raise AllianceError("the commander and subcommanders are not roles to define")
+    unknown = sorted(set(actions) - set(ACTIONS))
+    if unknown:
+        raise AllianceError(f"there's no such action: {', '.join(unknown)}")
+    row = await session.scalar(select(AllianceRole).where(AllianceRole.alliance_id == alliance.id, AllianceRole.name == name))
+    if row is None:
+        if len(await roles.names(session, alliance.id)) >= hooks.max_roles:
+            raise AllianceError(f"an alliance has at most {hooks.max_roles} roles of its own")
+        session.add(AllianceRole(alliance_id=alliance.id, name=name, actions=sorted(set(actions))))
+    else:
+        row.actions = sorted(set(actions))
+    await session.flush()
+    return await role_actions(session, alliance)
+
+
+async def delete_role(session: AsyncSession, hooks: Alliances, alliance: Alliance, actor_team_id: int, name: str) -> dict[str, list[str]]:
+    """Removes a role of tier 3; the teams that held it become plain members. The default role stays."""
+    await _acting(session, hooks, alliance, actor_team_id, "edit_roles")
+    if name == hooks.default_role:
+        raise AllianceError("the role a team joins as can be changed but not removed")
+    gone = await session.execute(delete(AllianceRole).where(AllianceRole.alliance_id == alliance.id, AllianceRole.name == name))
+    if gone.rowcount == 0:
+        raise NotFound("the alliance has no such role")
+    await session.execute(update(AllianceMember).where(AllianceMember.alliance_id == alliance.id, AllianceMember.role == name).values(role=hooks.default_role))
+    await session.flush()
+    return await role_actions(session, alliance)
 
 
 async def disband(session: AsyncSession, hooks: Alliances, alliance: Alliance, actor_team_id: int) -> None:
@@ -234,8 +297,8 @@ async def disband(session: AsyncSession, hooks: Alliances, alliance: Alliance, a
 
 
 async def remove_team(session: AsyncSession, hooks: Alliances, team_id: int) -> None:
-    """A team is going: it leaves every alliance (an alliance left without a founder gives the role to the best-ranked,
-    longest-standing team left; the last team out takes the alliance) and its invitations go."""
+    """A team is going: it leaves every alliance (a commander's seat left empty stays so for the subcommanders to fill,
+    and goes to the longest-standing team when there are none; the last team out takes the alliance) and its invitations go."""
     await session.execute(delete(AllianceInvite).where(AllianceInvite.team_id == team_id))
     for row in list((await session.scalars(select(AllianceMember).where(AllianceMember.team_id == team_id))).all()):
         alliance = await session.get(Alliance, row.alliance_id)
@@ -243,9 +306,8 @@ async def remove_team(session: AsyncSession, hooks: Alliances, team_id: int) -> 
         if not others:
             await _delete_alliance(session, alliance)
             continue
-        if row.role == hooks.founder_role and not any(other.role == hooks.founder_role for other in others):
-            heir = min(others, key=lambda other: (hooks.rank(other.role), other.id))
-            heir.role = hooks.founder_role
+        if row.role == hooks.commander_role and not any(hooks.tier(other.role) == SUBCOMMANDER for other in others):
+            min(others, key=lambda other: other.id).role = hooks.commander_role
         await session.delete(row)
     await _forget_votes(session, team_id)
     await session.flush()
@@ -258,12 +320,17 @@ async def view(session: AsyncSession, hooks: Alliances, alliance: Alliance, view
     rows = await members(session, alliance.id)
     names = {team.id: team.name for team in (await session.scalars(select(Team).where(Team.id.in_([row.team_id for row in rows])))).all()}
     me = next(row for row in rows if row.team_id == viewer_team_id)
+    every = await role_names(session, hooks, alliance)
+    can = [action for action in ACTIONS if await hooks.allowed(session, alliance, me, action)]
     shown = {
-        "id": alliance.id, "name": alliance.name, "roles": list(hooks.roles), "you": {"team_id": me.team_id, "role": me.role},
-        "can": sorted(hooks.permissions.get(me.role, ())),
-        "members": [{"team_id": row.team_id, "team": names.get(row.team_id), "role": row.role} for row in rows],
+        "id": alliance.id, "name": alliance.name, "roles": every, "role_actions": await role_actions(session, alliance), "you": {"team_id": me.team_id, "role": me.role},
+        "can": can, "appointable": [role for role in every if await hooks.allowed(session, alliance, me, "appoint", role=role)],
+        "members": [
+            {"team_id": row.team_id, "team": names.get(row.team_id), "role": row.role, "appoint": await hooks.allowed(session, alliance, me, "appoint", row)}
+            for row in rows
+        ],
     }
-    if "invite" in hooks.permissions.get(me.role, ()) or "withdraw" in hooks.permissions.get(me.role, ()):
+    if "invite" in can or "withdraw" in can:
         pending = (await session.scalars(select(AllianceInvite).where(AllianceInvite.alliance_id == alliance.id).order_by(AllianceInvite.id))).all()
         invited = {team.id: team.name for team in (await session.scalars(select(Team).where(Team.id.in_([row.team_id for row in pending])))).all()}
         shown["invited"] = [{"team_id": row.team_id, "team": invited.get(row.team_id)} for row in pending]
@@ -293,7 +360,7 @@ async def speaking_team(session: AsyncSession, hooks: Alliances, account: Accoun
     owned = [row for row in await members(session, alliance.id) if (await session.get(Team, row.team_id)).account_id == account.id]
     if not owned:
         raise NotFound("there's no such alliance")
-    for row in sorted(owned, key=lambda each: hooks.rank(each.role)):
+    for row in sorted(owned, key=lambda each: (hooks.tier(each.role), each.id)):
         if await hooks.allowed(session, alliance, row, action):
             return row
     raise Forbidden("your role can't do that")
