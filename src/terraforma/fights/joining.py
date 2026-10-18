@@ -101,7 +101,7 @@ async def _score(session: AsyncSession, relations: Relations, subject: int, obje
     return row.score
 
 
-async def _stance(session: AsyncSession, rules: Rules, relations: Relations, mine: list[int], theirs: list[int]) -> str:
+async def stance_toward(session: AsyncSession, rules: Rules, relations: Relations, mine: list[int], theirs: list[int]) -> str:
     """How the teams $mine count the teams $theirs together (``Rules.party_stance``), forming the relationships they lack."""
     return rules.party_stance([relations.stance(await _score(session, relations, team, other)) for team in mine for other in theirs])
 
@@ -136,11 +136,11 @@ async def join(session: AsyncSession, rules: Rules, relations: Relations, fight_
     mine = list(teams)
     for index, party in fight.parties.items():
         yours = list(party.teams)
-        if (stance := await _stance(session, rules, relations, mine, yours)) != "neutral":
+        if (stance := await stance_toward(session, rules, relations, mine, yours)) != "neutral":
             (allies if stance == "ally" else enemies).add(index)
         before_allies, before_enemies = rules.alignment(fight, index)
         kept_allies, kept_enemies = set(before_allies) - {index}, set(before_enemies)
-        if (stance := await _stance(session, rules, relations, yours, mine)) != "neutral":
+        if (stance := await stance_toward(session, rules, relations, yours, mine)) != "neutral":
             (kept_allies if stance == "ally" else kept_enemies).add(number)
         others[str(index)] = [sorted(kept_allies), sorted(kept_enemies)]
     joined = Party({group: Group(dict(enumerate(members))) for group, members in live._groups(fighters, rules.group_size).items()}, allies, enemies, teams)

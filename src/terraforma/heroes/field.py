@@ -2,7 +2,7 @@
 
 The item's own ``use_effect`` says what it does; ``Rules.field_use`` turns it into new HP and MP (a game can allow more or
 less). A hero resting between fights keeps its HP and MP in ``Hero.vitals`` (None means all full). Only the caller's own
-heroes can be the user and the target, neither may be in a fight that is still running (the fight has its own item
+heroes can be the user and the target (``terraforma.reach.helping`` lets a hero help one of another party), neither may be in a fight that is still running (the fight has its own item
 command), and a use that would change nothing is refused, so the item isn't wasted. The roll comes from the world's
 stream for this hero, item and stack size, so it repeats for the same state and a stack's uses differ.
 """
@@ -36,27 +36,28 @@ def vitals_of(hero: Hero, rules: Rules) -> tuple[dict[str, int], dict[str, int]]
     return {name: min(max(0, (hero.vitals or {}).get(name, maximum)), maximum) for name, maximum in maximums.items()}, maximums
 
 
-async def use_item(session: AsyncSession, user: Hero, position: int, target: Hero, rules: Rules) -> dict:
-    """$user spends one of the item at $position on $target (the same hero, or another of the caller's). Returns the
-    target's resources before and after."""
+async def use_item(session: AsyncSession, user: Hero, position: int, target: Hero, rules: Rules, *, helping: bool = False) -> dict:
+    """$user spends one of the item at $position on $target (the same hero, or another of the caller's; with $helping, a hero of
+    another player, which the caller has already checked is in reach and not an enemy). Returns the target's resources
+    before and after."""
     found = next(((stack, item) for stack, item in await stacks(session, user) if stack.position == position), None)
     if found is None:
         raise FieldUseError("there's nothing in that position")
     stack, item = found
-    result = await apply_use(session, user, item, stack.qty, target, rules)
+    result = await apply_use(session, user, item, stack.qty, target, rules, helping=helping)
     if item.one_use:
         await remove_item(session, user, position, 1)
     await session.flush()
     return result
 
 
-async def apply_use(session: AsyncSession, user: Hero, item: Item, stack_qty: int, target: Hero, rules: Rules) -> dict:
+async def apply_use(session: AsyncSession, user: Hero, item: Item, stack_qty: int, target: Hero, rules: Rules, *, helping: bool = False) -> dict:
     """The effect of $user using $item (from a stack of $stack_qty) on $target: checks it can be done, changes the target's
     resources and returns them before and after. Taking the item from wherever it was is the caller's job (``used_up`` says
     whether it goes)."""
     if not item.use_effect:
         raise FieldUseError(f"{item.name} can't be used")
-    if user.account_id != target.account_id:
+    if user.account_id != target.account_id and not helping:
         raise FieldUseError("you can only use it on your own heroes")
     for hero in {user.id: user, target.id: target}.values():
         if await in_running_fight(session, hero):

@@ -397,6 +397,12 @@ class Rules:
             return "neutral"
         return "ally" if allies else "enemy"
 
+    def may_help(self, stance: str) -> str | None:
+        """Whether a hero may use an item on a hero of another party it has reached (``terraforma.reach.helping``), given the stance
+        ("ally", "enemy" or "neutral", from ``party_stance``) its team holds toward that party: None if so, otherwise why not. By
+        default anyone but an enemy is helped, so strangers (who count as enemies) are not until they are friends."""
+        return "You can't help an enemy." if stance == "enemy" else None
+
     # --- monster-party play ---------------------------------------------------------------------------------------
     #: How long a volunteer for the monsters' side may go without checking in (``monsterplay.service.check_in``) before the queue
     #: stops counting them as waiting.

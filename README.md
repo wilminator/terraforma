@@ -385,7 +385,7 @@ Distances count a diagonal step as one tile and go round a wrapped edge of a map
 
 `GET /api/heroes/{hero_id}/nearby/{action}` (login; the hero must be the caller's; `action` is lowercase letters and underscores, up to 32) answers `{"action", "valid_for", "nearby"}`. `nearby` lists the NPCs first, then the map objects whose `action` it is, then the parties, each group nearest first and ties by name and id, at most `Rules.nearby_limit` (20) in all so a crowd does not flood it. An NPC is `{"kind": "npc", "id", "key", "name", "distance"}`; an object is `{"kind": "object", "id", "key", "name", "object": <its kind>, "distance"}`; a party is `{"kind": "party", "id", "teams": [{"id", "name"}], "distance"}`, naming only the teams their players made visible (a hidden team is just part of the party). The hero's own party and parties in a town are left out. `GET /api/heroes/{hero_id}/npcs` still lists only the NPCs the hero can talk to.
 
-Not built yet: talking to a party and helping it, and fighting a party from range instead of the same tile.
+Helping a party with an item is built (see Using items in the field). Not built yet: talking to a party, helping with abilities, and fighting a party from range instead of the same tile.
 
 ## Shops
 
@@ -615,6 +615,8 @@ Alliances are sides in relationships too (see Relationships): a team can have a 
 ## Using items in the field
 
 A potion, an ether or a revive can be used outside a fight: `POST /api/heroes/{id}/use-item` (login and CSRF token; a strict body: the item's `position` and an optional `target_hero_id`, the user's own hero when left out) spends one of the item on one of the *caller's own* heroes (`terraforma.heroes.field.use_item`). What it does is `Rules.field_use(rng, effect, vitals, maximums)`: by default the item's own `use_effect` as in a fight (heal and restore mana for the living, revive for the dead; anything else is for fights only), and a game overrides it to allow more or less. The new HP and MP are kept on the hero (`Hero.vitals`). A hero in a fight that is still running can neither use nor receive an item (the fight has its own item command), and a use that would change nothing is refused and costs nothing. The roll comes from the world's stream for that hero, item and stack size, so it never uses the `random` module.
+
+**Helping another party.** `POST /api/heroes/{id}/help/use-item` (login and CSRF token, limited to 120 an hour per account; a strict body: `position`, the item's place in the hero's pack, `party_id`, and `member`, the place of the target in that party's heroes, counting from 0 team by team) spends the item on a hero of a party in reach, the same field use as above (`terraforma.reach.helping`). The target is named by its place so a player never learns the id of a hero in a team they cannot see, and the answer carries `party_id`, `member`, `before`, `after` and `used_up` but no hero id. The party must be in range for the `help` action (`Reach.party`, one tile by default, and the nearby list for `help` shows parties), and the hero's team must not count it as an enemy: `Rules.may_help(stance)` gets the stance `Rules.party_stance` gives (ally, neutral or enemy; teams that never met count as enemies, as in any fight) and returns None or why not, and by default refuses only an enemy. A party's own members need no stance. The other player is not asked, since helping only gives. Only items so far; abilities used on a friendly party come later.
 
 ## Chat
 
