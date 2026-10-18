@@ -20,6 +20,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .. import wallclock
 from ..fights.models import JoinOffer
 from ..heroes.models import Hero, Team, TeamMember
 from ..instances.models import InstanceParty, QuestInstance
@@ -117,9 +118,11 @@ async def play(session: AsyncSession, team_id: int, party_size: int) -> Party:
     team = await _team(session, team_id)
     party = await party_of(session, team.id)
     if party is not None:
+        team.last_played_at = wallclock.timestamp()
         return party
     if await team_size(session, team.id) == 0:
         raise PartyError("a team needs a hero to play")
+    team.last_played_at = wallclock.timestamp()
     return await create_party(session, team.id, party_size)
 
 

@@ -4,7 +4,10 @@ The tooling, not the politics: a role that may (``open_ballot``) puts a title an
 teams whose roles may ``vote`` each vote once (weighted as the game says: ``Alliances.vote_weight``), and the ballot
 closes when its time is up, when everyone who could vote has, or when a role that may (``close_ballot``) closes it. The
 game decides who wins (``Alliances.decide``) and what follows (``Alliances.on_ballot_closed``, from the ballot's ``kind`` and
-``payload``, which the engine keeps and never reads). Nothing waits on a timer: a ballot is closed, if its time is up, the
+``payload``, which the engine keeps and never reads). The exception is a ballot that carries an action (``kind`` ``"action"``):
+see ``perform``. It passes when its ``threshold`` percent of the *active* teams who may vote vote yes (a team is active if it
+was selected to play within ``Alliances.active_within``), as soon as that is so or when its time is up, and the engine then
+does the action. Nothing waits on a timer: a ballot is closed, if its time is up, the
 next time anyone looks at it or votes, and ``close_due`` closes every ballot that is due, for a game to call on its own schedule.
 
 *Public* ballots show who voted for what, and a team may change its vote until it closes. *Secret* ballots keep who has
@@ -21,13 +24,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import wallclock
 from ..heroes.models import Team
 from . import service
-from .hooks import Alliances
+from .hooks import GOVERNED, Alliances
 from .models import Alliance, AllianceMember, Ballot, BallotVote, BallotVoter
 
 TITLE_MAX = 120
 OPTION_MAX = 60
 KIND_MAX = 32
 PAYLOAD_MAX = 2000
+ACTION = "action"  # the ballot kind that carries an action
 LONGEST = 30 * 24 * 3600
 SHORTEST = 60
 
@@ -49,10 +53,12 @@ async def get_ballot(session: AsyncSession, alliance: Alliance, ballot_id: int) 
     return ballot
 
 
-async def _eligible(session: AsyncSession, hooks: Alliances, alliance: Alliance) -> list[tuple[AllianceMember, int]]:
-    """The member teams that may vote, each with its weight (a weight of 0 may not)."""
+async def _eligible(session: AsyncSession, hooks: Alliances, alliance: Alliance, ballot: Ballot | None = None) -> list[tuple[AllianceMember, int]]:
+    """The member teams that may vote, each with its weight (a weight of 0 may not). A ballot may keep it to some roles."""
     eligible = []
     for member in await service.members(session, alliance.id):
+        if ballot is not None and ballot.electorate is not None and member.role not in ballot.electorate:
+            continue
         if await hooks.allowed(session, alliance, member, "vote"):
             weight = await hooks.vote_weight(session, alliance, member)
             if weight > 0:
@@ -72,15 +78,50 @@ async def _totals(session: AsyncSession, ballot: Ballot) -> list[int]:
     return totals
 
 
+async def _active_weight(session: AsyncSession, hooks: Alliances, alliance: Alliance, ballot: Ballot) -> int:
+    """The weight of the teams who may vote in the ballot and have played within the last ``active_within`` seconds."""
+    since = wallclock.timestamp() - hooks.active_within
+    weight = 0
+    for member, each in await _eligible(session, hooks, alliance, ballot):
+        played = await session.scalar(select(Team.last_played_at).where(Team.id == member.team_id))
+        if played is not None and played >= since:
+            weight += each
+    return weight
+
+
+async def _passes(session: AsyncSession, hooks: Alliances, alliance: Alliance, ballot: Ballot, totals: list[int]) -> tuple[bool, int]:
+    """Whether an action ballot's yes has the percent it needs of the active teams, and how heavy the active teams are."""
+    active = await _active_weight(session, hooks, alliance, ballot)
+    return active > 0 and totals[0] * 100 >= ballot.threshold * active, active
+
+
 async def _close(session: AsyncSession, hooks: Alliances, alliance: Alliance, ballot: Ballot) -> None:
-    eligible = await _eligible(session, hooks, alliance)
+    eligible = await _eligible(session, hooks, alliance, ballot)
     totals = await _totals(session, ballot)
-    winner = await hooks.decide(session, alliance, ballot, totals, sum(weight for _, weight in eligible))
+    if ballot.kind == ACTION:
+        passed, active = await _passes(session, hooks, alliance, ballot, totals)
+        winner, extra = (0 if passed else None), {"threshold": ballot.threshold, "active": active, "passed": passed}
+    else:
+        winner, extra = await hooks.decide(session, alliance, ballot, totals, sum(weight for _, weight in eligible)), {}
     if winner is not None and not 0 <= winner < len(ballot.options):
         raise BallotError("the game's rules named an option that is not on the ballot")
-    ballot.result = {"winner": winner, "totals": totals, "turnout": len(await _turnout(session, ballot)), "eligible": len(eligible)}
+    ballot.result = {"winner": winner, "totals": totals, "turnout": len(await _turnout(session, ballot)), "eligible": len(eligible), **extra}
     ballot.closed_at = wallclock.timestamp()
     await session.flush()
+    ballot_id = ballot.id
+    if ballot.kind == ACTION and extra["passed"]:
+        error = None
+        try:
+            async with session.begin_nested():
+                await service.run_approved(session, hooks, alliance, ballot.payload["by"], ballot.payload["run"], ballot.payload["args"])
+        except service.AllianceError as refused:  # (the team that put it lost its say, the team acted on left, ...)
+            error = str(refused)
+        closed = await session.get(Ballot, ballot_id)  # (an alliance that disbands takes its ballots with it)
+        if closed is None:
+            return
+        closed.result = {**closed.result, "executed": error is None, "error": error}
+        await session.flush()
+        ballot = closed
     await hooks.on_ballot_closed(session, alliance, ballot, dict(ballot.result))
 
 
@@ -90,8 +131,10 @@ async def refresh(session: AsyncSession, hooks: Alliances, alliance: Alliance, b
         return ballot
     if ballot.closes_at is not None and wallclock.timestamp() >= ballot.closes_at:
         await _close(session, hooks, alliance, ballot)
+    elif ballot.kind == ACTION and (await _passes(session, hooks, alliance, ballot, await _totals(session, ballot)))[0]:
+        await _close(session, hooks, alliance, ballot)  # (no vote that comes later can take the yes away)
     elif hooks.close_when_all_voted:
-        eligible = {member.team_id for member, _ in await _eligible(session, hooks, alliance)}
+        eligible = {member.team_id for member, _ in await _eligible(session, hooks, alliance, ballot)}
         if eligible and eligible <= set(await _turnout(session, ballot)):
             await _close(session, hooks, alliance, ballot)
     return ballot
@@ -131,8 +174,8 @@ async def open_ballot(
     """Puts a question to the alliance. ``closes_in`` is seconds from now (None: it closes when everyone has voted or a role that may closes it)."""
     await service._acting(session, hooks, alliance, actor_team_id, "open_ballot")
     title, options = check_options(hooks, title, options)
-    if len(kind) > KIND_MAX:
-        raise BallotError(f"a kind is at most {KIND_MAX} characters")
+    if len(kind) > KIND_MAX or kind == ACTION:
+        raise BallotError(f"a kind is at most {KIND_MAX} characters, and {ACTION!r} is the engine's")
     if payload is not None and len(json.dumps(payload)) > PAYLOAD_MAX:
         raise BallotError("the payload is too large")
     if closes_in is not None and not SHORTEST <= closes_in <= LONGEST:
@@ -160,7 +203,8 @@ async def cast(session: AsyncSession, hooks: Alliances, alliance: Alliance, team
     member = await service.member_row(session, alliance.id, team_id)
     if member is None:
         raise service.Forbidden("that team is not in the alliance")
-    weight = await hooks.vote_weight(session, alliance, member) if await hooks.allowed(session, alliance, member, "vote") else 0
+    kept_out = ballot.electorate is not None and member.role not in ballot.electorate
+    weight = await hooks.vote_weight(session, alliance, member) if not kept_out and await hooks.allowed(session, alliance, member, "vote") else 0
     if weight <= 0:
         raise service.Forbidden("your role can't vote")
     if not 0 <= option < len(ballot.options):
@@ -192,6 +236,75 @@ async def close(session: AsyncSession, hooks: Alliances, alliance: Alliance, act
     return ballot
 
 
+# --- ballots that carry an action ---------------------------------------------------------------------------------------------------
+
+class _Preview(Exception):
+    """Raised to roll back the trial run of an action that is going to a vote."""
+
+
+async def _title(session: AsyncSession, run: str, args: dict) -> str:
+    name = args.get("target_team_id", args.get("team_id"))
+    team = None if name is None else await session.get(Team, name)
+    what = run.replace("_", " ")
+    extra = " ".join(str(value) for key, value in args.items() if key in ("role", "name", "action") and value)
+    return " ".join(part for part in (what.capitalize(), team.name if team else "", extra) if part)[:TITLE_MAX]
+
+
+async def propose(
+    session: AsyncSession, hooks: Alliances, alliance: Alliance, actor_team_id: int, run: str, args: dict, percent: int,
+    *, electorate: list[str] | None = None, closes_in: int | None = None,
+) -> Ballot:
+    """Puts an action to a vote of the alliance: ``percent`` of the active teams who may vote must vote yes. The acting team
+    must be allowed to do it as things stand (it is tried and taken back), and votes yes itself if it may vote."""
+    try:
+        async with session.begin_nested():
+            with service.approved():
+                await service.RUNS[run][1](session, hooks, alliance, actor_team_id, **args)
+            raise _Preview
+    except _Preview:
+        pass
+    for each in (await session.scalars(select(Ballot).where(Ballot.alliance_id == alliance.id, Ballot.closed_at.is_(None)))).all():
+        await refresh(session, hooks, alliance, each)
+    open_now = await session.scalar(select(func.count()).select_from(Ballot).where(Ballot.alliance_id == alliance.id, Ballot.closed_at.is_(None)))
+    if open_now >= hooks.max_open_ballots:
+        raise BallotError(f"an alliance has at most {hooks.max_open_ballots} ballots open")
+    now = wallclock.timestamp()
+    ballot = Ballot(
+        alliance_id=alliance.id, kind=ACTION, title=await _title(session, run, args), options=["Yes", "No"], secret=False,
+        payload={"run": run, "args": args, "by": actor_team_id}, threshold=percent, electorate=electorate,
+        opened_by_team_id=actor_team_id, opened_at=now, closes_at=now + (hooks.action_ballot_seconds if closes_in is None else closes_in),
+    )
+    session.add(ballot)
+    await session.flush()
+    proposer = await service.member_row(session, alliance.id, actor_team_id)
+    if (ballot.electorate is None or proposer.role in ballot.electorate) and await hooks.allowed(session, alliance, proposer, "vote"):
+        await cast(session, hooks, alliance, actor_team_id, ballot, 0)
+    return ballot
+
+
+async def perform(
+    session: AsyncSession, hooks: Alliances, alliance: Alliance, actor_team_id: int, run: str, args: dict,
+    *, vote: bool = False, closes_in: int | None = None,
+) -> Ballot | None:
+    """Does an action for a team (``run`` names it: ``service.RUNS``; ``args`` are what it takes besides the alliance and the team),
+    or, when the alliance's rules ask for a vote for a team in that role, when the action is one of the members' own, or when the team
+    asks for one (``vote``), puts it to a ballot and returns that. Returns None when it was done."""
+    action, runner = service.RUNS[run]
+    actor = await service.member_row(session, alliance.id, actor_team_id)
+    if actor is None:
+        raise service.Forbidden("that team is not in the alliance")
+    electorate = None
+    percent = service.builtin_percent(hooks, action)
+    if action == "remove_commander":
+        electorate = [hooks.subcommander_role]
+    if percent is None and action in GOVERNED:
+        percent = await service.rule_percent(session, alliance.id, action, actor.role)
+    if percent is None and not vote:
+        await runner(session, hooks, alliance, actor_team_id, **args)
+        return None
+    return await propose(session, hooks, alliance, actor_team_id, run, args, percent or hooks.voluntary_percent, electorate=electorate, closes_in=closes_in)
+
+
 # --- what the player sees ----------------------------------------------------------------------------------------------------------
 
 async def view(session: AsyncSession, hooks: Alliances, alliance: Alliance, ballot: Ballot, viewer_team_id: int) -> dict:
@@ -200,7 +313,7 @@ async def view(session: AsyncSession, hooks: Alliances, alliance: Alliance, ball
     shown = {
         "id": ballot.id, "kind": ballot.kind, "title": ballot.title, "options": list(ballot.options), "payload": ballot.payload,
         "secret": ballot.secret, "opened_at": ballot.opened_at, "closes_at": ballot.closes_at, "closed": ballot.closed_at is not None,
-        "turnout": len(voters), "you_voted": viewer_team_id in voters,
+        "turnout": len(voters), "you_voted": viewer_team_id in voters, "threshold": ballot.threshold,
     }
     if ballot.closed_at is not None:
         shown["result"] = ballot.result

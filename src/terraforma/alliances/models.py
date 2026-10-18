@@ -31,6 +31,8 @@ class AllianceMember(Base):
     team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), index=True)
     role: Mapped[str] = mapped_column(String(ROLE_MAX))
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    #: Set for a subcommander the members voted in: until then (wall clock, seconds) no one but a vote of the members removes the role.
+    protected_until: Mapped[int | None] = mapped_column(BigInteger)
 
 
 class AllianceRole(Base):
@@ -44,6 +46,20 @@ class AllianceRole(Base):
     alliance_id: Mapped[int] = mapped_column(ForeignKey("alliances.id"), index=True)
     name: Mapped[str] = mapped_column(String(ROLE_MAX))
     actions: Mapped[list] = mapped_column(JSON)
+
+
+class AllianceRule(Base):
+    """A voting requirement: ``action`` done by a team in ``role`` (empty: any role without a rule of its own) needs a ballot that
+    ``percent`` of the alliance's active teams vote yes in. No rule, no vote needed."""
+
+    __tablename__ = "alliance_rules"
+    __table_args__ = (UniqueConstraint("alliance_id", "action", "role"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    alliance_id: Mapped[int] = mapped_column(ForeignKey("alliances.id"), index=True)
+    action: Mapped[str] = mapped_column(String(24))
+    role: Mapped[str] = mapped_column(String(ROLE_MAX), default="")
+    percent: Mapped[int] = mapped_column(Integer)
 
 
 class AllianceInvite(Base):
@@ -76,6 +92,11 @@ class Ballot(Base):
     opened_at: Mapped[int] = mapped_column(BigInteger)
     closes_at: Mapped[int | None] = mapped_column(BigInteger)
     closed_at: Mapped[int | None] = mapped_column(BigInteger)
+    #: A ballot that carries an action (``kind`` ``"action"``; the ``payload`` says which) passes when this percent of the
+    #: active teams who may vote vote for option 0 (yes). None on a plain ballot.
+    threshold: Mapped[int | None] = mapped_column(Integer)
+    #: Only teams in these roles may vote (None: every team whose role may).
+    electorate: Mapped[list | None] = mapped_column(JSON)
     #: Set when it closes: ``{"winner": index or None, "totals": [...], "turnout": n, "eligible": n}``.
     result: Mapped[dict | None] = mapped_column(JSON)
 
