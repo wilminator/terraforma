@@ -385,7 +385,7 @@ Distances count a diagonal step as one tile and go round a wrapped edge of a map
 
 `GET /api/heroes/{hero_id}/nearby/{action}` (login; the hero must be the caller's; `action` is lowercase letters and underscores, up to 32) answers `{"action", "valid_for", "nearby"}`. `nearby` lists the NPCs first, then the map objects whose `action` it is, then the parties, each group nearest first and ties by name and id, at most `Rules.nearby_limit` (20) in all so a crowd does not flood it. An NPC is `{"kind": "npc", "id", "key", "name", "distance"}`; an object is `{"kind": "object", "id", "key", "name", "object": <its kind>, "distance"}`; a party is `{"kind": "party", "id", "teams": [{"id", "name"}], "distance"}`, naming only the teams their players made visible (a hidden team is just part of the party). The hero's own party and parties in a town are left out. `GET /api/heroes/{hero_id}/npcs` still lists only the NPCs the hero can talk to.
 
-Helping a party with an item is built (see Using items in the field). Not built yet: talking to a party, helping with abilities, and fighting a party from range instead of the same tile.
+Helping a party with an item is built (see Using items in the field). Fighting a party from range is built (see Fights between parties). Not built yet: talking to a party and helping with abilities.
 
 ## Shops
 
