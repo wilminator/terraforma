@@ -22,6 +22,7 @@ from terraforma.models import Account
 from terraforma.game import Game
 from terraforma.pvp import service
 from terraforma.pvp.hooks import PvpZones
+from terraforma.reach.hooks import Reach
 
 from .helpers import expect
 
@@ -158,10 +159,69 @@ async def test_a_party_cannot_fight_itself_a_missing_party_or_one_elsewhere(db):
     for target, reason in ((party.id, "itself"), (foes.id + 99, "no such party")):
         with pytest.raises(PvpError, match=reason):
             await start_pvp_fight(db, Everywhere(), Levelled(), mike, team.id, target)
+    foes.x += 5
+    await db.flush()
+    with pytest.raises(PvpError, match="too far"):
+        await start_pvp_fight(db, Everywhere(), Levelled(), mike, team.id, foes.id)
+
+
+class Wide(Reach):
+    """A game whose fights reach three tiles."""
+
+    async def party(self, session, action, actor, party):
+        return None if max(abs(actor.x - party.x), abs(actor.y - party.y)) <= 3 else "out of range"
+
+
+class Never(Reach):
+    async def party(self, session, action, actor, party):
+        return "no fighting here" if action == "fight" else None
+
+
+async def test_a_party_in_reach_but_not_on_the_same_tile_can_be_fought(db):
+    mike, _zed, team, party, foes = await two_parties(db)
     foes.x += 1
+    await db.flush()
+    record = await start_pvp_fight(db, Everywhere(), Levelled(), mike, team.id, foes.id)
+    assert (record.x, record.y) == (party.x, party.y), "the fight is where the attacker stands"
+
+
+async def test_the_games_reach_rule_decides_how_far_a_fight_reaches(db):
+    mike, _zed, team, _party, foes = await two_parties(db)
+    foes.x += 3
+    await db.flush()
+    with pytest.raises(PvpError, match="too far"):
+        await start_pvp_fight(db, Everywhere(), Levelled(), mike, team.id, foes.id)
+    assert await start_pvp_fight(db, Everywhere(), Levelled(), mike, team.id, foes.id, Wide()) is not None
+
+
+async def test_a_game_can_forbid_fighting_at_any_range(db):
+    mike, _zed, team, _party, foes = await two_parties(db)
+    with pytest.raises(PvpError, match="no fighting here"):
+        await start_pvp_fight(db, Everywhere(), Levelled(), mike, team.id, foes.id, Never())
+    assert await db.scalar(select(FightRecord.id)) is None
+
+
+async def test_a_party_on_another_map_is_not_here(db):
+    mike, _zed, team, _party, foes = await two_parties(db)
+    foes.map_id += 1
     await db.flush()
     with pytest.raises(PvpError, match="not here"):
         await start_pvp_fight(db, Everywhere(), Levelled(), mike, team.id, foes.id)
+
+
+async def test_a_fight_from_range_needs_pvp_to_be_allowed_on_the_targets_tile_too(db):
+    class OnlyHere(PvpZones):
+        async def allows_pvp(self, session, map_id, x, y):
+            return (x, y) == (0, 0)
+
+    mike, _zed, team, party, foes = await two_parties(db)
+    assert (party.x, party.y) == (0, 0)
+    foes.x += 1
+    await db.flush()
+    with pytest.raises(PvpError, match="not allowed here"):
+        await start_pvp_fight(db, OnlyHere(), Levelled(), mike, team.id, foes.id)
+    foes.x -= 1
+    assert await start_pvp_fight(db, OnlyHere(), Levelled(), mike, team.id, foes.id) is not None
 
 
 async def test_a_party_in_a_town_or_a_fight_cannot_pick_one(db):
@@ -181,12 +241,13 @@ async def test_a_hero_already_in_a_fight_blocks_a_second_fight(db):
 # --- the call ---------------------------------------------------------------------------------------------------------
 
 @pytest.fixture
-def game(tmp_path):
+def game(tmp_path, request):
+    """The game the call tests serve; a test may parametrize its Reach."""
     seed_dir = tmp_path / "seed"
     seed_dir.mkdir()
     for kind, content in SEED.items():
         (seed_dir / f"{kind}.json").write_text(json.dumps(content))
-    return Game(name="Test Game", seed_dir=seed_dir, pvp=Everywhere())
+    return Game(name="Test Game", seed_dir=seed_dir, pvp=Everywhere(), reach=getattr(request, "param", None) or Reach())
 
 
 def test_the_call_picks_a_fight_and_says_why_not(app_client):
@@ -212,3 +273,21 @@ def test_the_call_picks_a_fight_and_says_why_not(app_client):
     started = expect(app_client.post(url, json={"team_id": ids["team"], "party_id": ids["foes"]}, headers=headers), 201).json()
     assert started["fight"] and started["guid"]
     assert "already in a fight" in expect(app_client.post(url, json={"team_id": ids["team"], "party_id": ids["foes"]}, headers=headers), 409).json()["detail"]
+
+
+@pytest.mark.parametrize("game", [Never()], indirect=True)
+def test_the_call_asks_the_games_reach_rule(app_client):
+    in_app_db(app_client, lambda db: create_account(db, "Mike", PASSWORD, email="mike@example.com", confirmed=True))
+    token = app_client.post("/api/login", json={"username": "Mike", "password": PASSWORD}).json()["csrf_token"]
+    ids = {}
+
+    async def setup(db):
+        zed = await create_account(db, "Zed", PASSWORD, email="zed@example.com", confirmed=True)
+        mike = await db.scalar(select(Account).where(Account.username == "Mike"))
+        team, _party = await a_party(db, mike, "Vanguard", "Aria")
+        _other, foes = await a_party(db, zed, "Scouts", "Cleo")
+        ids.update(team=team.id, foes=foes.id)
+
+    in_app_db(app_client, setup)
+    answer = app_client.post("/api/pvp/fights", json={"team_id": ids["team"], "party_id": ids["foes"]}, headers={"X-CSRF-Token": token})
+    assert "no fighting here" in expect(answer, 409).json()["detail"]

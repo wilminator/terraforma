@@ -1,4 +1,4 @@
-"""Starting a fight against another party: the place's flag, then the rules' range window."""
+"""Starting a fight against another party: the game's reach rule, the place's flag, then the rules' range window."""
 
 from datetime import timedelta
 
@@ -18,6 +18,7 @@ from ..instances import service as instances
 from ..heroes.models import Hero, Team
 from ..models import Account, Map
 from ..parties import service as parties
+from ..reach.hooks import FIGHT, Reach
 from ..towns import service as towns
 from .hooks import PvpZones
 
@@ -42,11 +43,14 @@ class PvpError(ValueError):
     """Why a party may not pick that fight: the message says what."""
 
 
-async def start_pvp_fight(session: AsyncSession, zones: PvpZones, rules: Rules, account: Account, team_id: int, target_party_id: int) -> FightRecord:
+async def start_pvp_fight(
+    session: AsyncSession, zones: PvpZones, rules: Rules, account: Account, team_id: int, target_party_id: int, reach: Reach | None = None
+) -> FightRecord:
     """The party of $account's team $team_id picks a fight with the party $target_party_id (attacker is party 0, the target party 1; every
     player of either side commands their own heroes). Refused, with the reason, unless: the team is the account's and in a party;
-    the target is another party that stands at the same spot; neither party is in a town or in a fight; and the place permits
-    PvP and the target is inside the range window (``PvpZones.allows_pvp``, ``Rules.may_start_pvp``). Raises PvpError, or the
+    the target is another party in reach for a fight (``Reach.party`` with ``fight``: by default within one tile, on its map) and
+    in the same instance; neither party is in a town or in a fight; and the place permits PvP (the attacker's tile and the
+    target's) and the target is inside the range window (``PvpZones.allows_pvp``, ``Rules.may_start_pvp``). Raises PvpError, or the
     heroes' NotFound for a team that is not the account's."""
     team = await heroes.own_team(session, account, team_id)
     mine = await parties.party_of(session, team.id)
@@ -63,8 +67,8 @@ async def start_pvp_fight(session: AsyncSession, zones: PvpZones, rules: Rules, 
             raise PvpError("a party that is in a town can't fight")
         if await joining.offer_of(session, party.id) is not None:
             raise PvpError("a party the hub has offered a fight to join must answer it first")
-    if (mine.map_id, mine.x, mine.y) != (theirs.map_id, theirs.x, theirs.y):
-        raise PvpError("that party is not here")
+    if reason := await (reach or Reach()).party(session, FIGHT, mine, theirs):
+        raise PvpError(reason)
     if not await instances.same_place(session, mine.id, theirs.id):
         raise PvpError("that party is not here")
     sides, hero_ids, side_teams = [], [], []
@@ -86,8 +90,10 @@ async def start_pvp_fight(session: AsyncSession, zones: PvpZones, rules: Rules, 
         raise PvpError("a hero of one of those parties is already in a fight")
     if reason := await disuse.blocked(session, hero_ids):
         raise PvpError(reason)
-    if reason := await refusal(session, zones, rules, sides[0], sides[1], mine.map_id, mine.x, mine.y, await instances.in_same_shared_instance(session, mine.id, theirs.id)):
-        raise PvpError(reason)
+    shared = await instances.in_same_shared_instance(session, mine.id, theirs.id)
+    for map_id, x, y in dict.fromkeys([(mine.map_id, mine.x, mine.y), (theirs.map_id, theirs.x, theirs.y)]):  # (a fight from range needs both tiles to allow it)
+        if reason := await refusal(session, zones, rules, sides[0], sides[1], map_id, x, y, shared):
+            raise PvpError(reason)
     accounts = (await session.scalars(select(Hero.account_id).where(Hero.id.in_(hero_ids)).distinct())).all()
     multiplier = timing.fight_multiplier([await timing.multiplier_for(session, owner) for owner in accounts])
     fight = build_fight({number: _groups(fighters, rules.group_size) for number, fighters in enumerate(sides)}, await known_statuses(session), {}, [])
