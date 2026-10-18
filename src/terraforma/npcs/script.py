@@ -14,6 +14,8 @@ its command, followed by comma separated parameters. Text outside tags is shown.
     vend,item1,price1,...[,cancel]         a shop menu after the text that follows (the market answers it)
     hawk,margin,item1,price1,...[,cancel]  a sell-back menu likewise
     shop,key[,cancel]    a shop the game stocks by the area's economy level (``market.hooks.Market``): buying and selling back
+    market,guild[,cancel]  the guild's marketplace (``terraforma.marketplace``): search its listings, buy for delivery to this guild, post goods for sale
+                         here and collect parcels that have arrived, then go on with the text (the cancel label if given)
     inn,price,label      after the text that follows: Yes or No; No (or cancelling) jumps to the label, Yes lets the game rest the party
     services,prompt1,price1,label1,...  a menu of paid services (the game answers it)
     have_item,item,qty,scope,label    jump to the label unless the party has the item (at least qty, held by one hero)
@@ -86,7 +88,7 @@ There is always an implicit ``end`` label that goes to the end of the tree, and 
 is over at the top, and in an included tree control returns to the caller (``end_return``). Labels belong to their own tree, so two
 trees may use the same names and a jump never leaves its tree. A label that
 is neither defined nor ``end`` is refused when the text is checked (DragonStar would silently leave). The tags the engine
-does not act on itself (vend, hawk, shop, inn's Yes, services, heal, recharge, select_team, add_team, find_party, party_requests, resurrect, cure, uncurse) are
+does not act on itself (vend, hawk, shop, market, inn's Yes, services, heal, recharge, select_team, add_team, find_party, party_requests, resurrect, cure, uncurse) are
 handed to the game's ``Npcs.tag``; one it does not handle is passed to the browser as an *activity* to run, which it
 finishes by calling ``next`` again.
 """
@@ -184,6 +186,11 @@ def check_tag(parts: list[str]) -> list[str]:
         if not 1 <= len(args) <= 2:
             raise ScriptError(f"shop tag takes a shop key and, optionally, a cancel label, {len(args)} parameter(s) given")
         _name(command, args[0], "a shop key")
+        return args[1:]
+    elif command == "market":
+        if not 1 <= len(args) <= 2:
+            raise ScriptError(f"market tag takes a guild key and, optionally, a cancel label, {len(args)} parameter(s) given")
+        _name(command, args[0], "a guild key")
         return args[1:]
     elif command == "inn":
         count(2)
@@ -436,7 +443,7 @@ def _activity(command: str, args: list[str]) -> dict:
         cancel = args[-1] if (len(args) - 1) % 2 else None
     elif command in ("resurrect", "cure", "uncurse"):
         cancel = args[1]
-    elif command == "shop":
+    elif command in ("shop", "market"):
         cancel = args[1] if len(args) == 2 else None
     return {"type": "activity", "command": command, "parts": args, "cancel": cancel}
 
@@ -561,7 +568,7 @@ async def advance(script: Script, pos: int, prompt: dict | None, choice: int | N
         elif command == "inn":
             pending = {"type": "choice", "kind": "inn", "options": [{"text": "Yes", "label": ""}, {"text": "No", "label": args[1]}],
                        "cancel": args[1], "parts": args}
-        elif command in ("vend", "hawk", "shop"):
+        elif command in ("vend", "hawk", "shop", "market"):
             pending = _activity(command, args)
         elif command == "include":
             if len(stack) >= MAX_DEPTH:

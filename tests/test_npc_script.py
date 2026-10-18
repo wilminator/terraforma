@@ -252,6 +252,19 @@ async def test_a_shop_the_game_handles_is_not_shown_to_the_browser():
     assert said(frames) == "Welcome.\nBye." and frames[-1]["prompt"] is None
 
 
+async def test_a_market_is_an_activity_with_the_guild_and_an_optional_cancel_label():
+    frames = await run("`market,vanguard,leave`The board.\nBye.`jump,end``label,leave`Another time.")
+    assert frames[-1]["prompt"] == {"type": "activity", "command": "market", "parts": ["vanguard", "leave"], "cancel": "leave"}
+    plain = await run("`market,vanguard`The board.\nBye.")
+    assert plain[-1]["prompt"] == {"type": "activity", "command": "market", "parts": ["vanguard"], "cancel": None}
+
+
+async def test_a_market_tag_needs_one_guild_and_at_most_one_label():
+    for text in ("`market`Board.", "`market,a,b,c`Board.", "`market,,leave`Board."):
+        with pytest.raises(ScriptError, match="market tag"):
+            parse(text)
+
+
 async def test_an_inn_asks_yes_or_no_and_no_goes_to_its_label():
     text = "`inn,10,leave`A bed is 10 gold. Rest?`ack`Sleep well.`jump,end``label,leave`Another time."
     asked = (await run(text))[0]

@@ -6,6 +6,7 @@
 // $build gets { shell, roster, heroId, prompt (command and parts), finish (async: goes on with the dialog, as Next does),
 // problem (an element to show a refusal in) } and returns the element to show. The conversation goes on only when it calls finish().
 
+import { marketActivity } from "./market.js";
 import { shopActivity } from "./shop.js";
 
 export class Activities {
@@ -20,8 +21,9 @@ export class Activities {
     return this.#builds.get(command) ?? null;
   }
 
-  /** The engine's own: the three tags that open a shop. */
+  /** The engine's own: the three tags that open a shop, and the one that opens a guild's marketplace. */
   addEngine() {
     for (const command of ["vend", "hawk", "shop"]) this.add(command, shopActivity);
+    this.add("market", marketActivity);
   }
 }
