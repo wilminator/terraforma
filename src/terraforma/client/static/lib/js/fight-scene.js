@@ -42,6 +42,7 @@ export class FightScene {
     this.skipping = false;
     this.speed = 1;
     this.shown = 0; // how many events have been played since the scene opened
+    this.at = 0; // the round being played (a replay's source says where the fight stood at the start of one)
     this.run = 0; // changes when the scene closes, so a playback in progress stops
     this.moving = new Set(); // the animations in flight
     this.sprites = new Map(); // fighter key -> { canvas, loaded, frame, player, cue, hold } for each fighter whose personality has fight art
@@ -124,12 +125,13 @@ export class FightScene {
     }
   }
 
-  /** Asks the server how the fight stands, and shows that if nothing is being played. */
-  async #resync(run) {
-    if (this.playing || this.queue.length) return;
+  /** Asks the server how the fight stands, and shows that if nothing is being played. $force is for the playback itself, which has asked
+   * while it plays (a replay has all its rounds queued at once, so a queue is no sign that the view would be stale). */
+  async #resync(run, force = false) {
+    if (!force && (this.playing || this.queue.length)) return;
     try {
-      const view = await this.source.view(this.model.id);
-      if (run !== this.run || this.playing || this.queue.length) return;
+      const view = await this.source.view(this.model.id, this.at);
+      if (run !== this.run || (!force && (this.playing || this.queue.length))) return;
       this.model = new FightModel(view);
       this.#build();
       this.#data();
@@ -147,6 +149,7 @@ export class FightScene {
     this.#data();
     while (this.queue.length && run === this.run) {
       const round = this.queue.shift();
+      this.at = round.round;
       for (const event of round.events) {
         if (run !== this.run) return;
         const result = this.model.apply(event);
@@ -156,7 +159,7 @@ export class FightScene {
         await this.#play(run, result.marks);
         if (result.reload) {
           this.playing = false;
-          await this.#resync(run);
+          await this.#resync(run, Boolean(this.source.replay));
           this.playing = true;
         }
       }
@@ -229,6 +232,7 @@ export class FightScene {
 
   /** Asks the server what the player's heroes can do now and who has chosen (the menu's choices change as items and MP are spent). */
   async refreshMenu(run = this.run) {
+    if (this.source.replay) return; // (nobody commands a fight played back)
     try {
       const view = await this.source.view(this.model.id);
       if (run === this.run && this.model) {

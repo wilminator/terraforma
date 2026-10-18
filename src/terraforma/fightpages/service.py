@@ -13,6 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import wallclock
 from ..alliances.models import AllianceMember
 from ..fights import live, store
+from ..fights.events import Event, EventType
+from ..fights.replay import apply_events
+from ..fights.state import hydrate
 from ..fights.models import FightParticipant, FightRecord
 from ..fights.rules import Rules
 from ..fighttags import scoring
@@ -104,10 +107,25 @@ async def can_view(session: AsyncSession, me_id: int, fight_id: int) -> bool:
 
 
 async def replay(session: AsyncSession, rules: Rules, record: FightRecord) -> dict:
-    """The fight as it stands and every round played, with the events, so a page can play it back."""
+    """The fight as it stands and every round played, with the events, so a page can play it back. $start is the fight as a viewer first
+    sees it, before round 1, and $joins has, for each round that opens with a party joining, the fight just after that party arrived
+    (the events only say who joined, so a page that plays them back picks up from this)."""
+    logged = await store.actions(session, record)
+    fight = hydrate(record.initial_state)
+    start = await live.describe(session, record, rules, fight, 1, False, {}, set(), None)
+    joins = {}
+    for action in logged:
+        events = [Event.from_list(each) for each in action.events]
+        arrivals = [each for each in events if each.type is EventType.PARTY_JOINED]
+        if arrivals:  # (they come first in the round)
+            apply_events(fight, rules, arrivals)
+            joins[str(action.sequence)] = await live.describe(session, record, rules, fight, action.sequence, False, {}, set(), None)
+        apply_events(fight, rules, [each for each in events if each.type is not EventType.PARTY_JOINED])
     return {
         "fight": await live.view(session, record, rules),
-        "rounds": [{"round": action.sequence, "events": action.events} for action in await store.actions(session, record)],
+        "start": start,
+        "joins": joins,
+        "rounds": [{"round": action.sequence, "events": action.events} for action in logged],
     }
 
 

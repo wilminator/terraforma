@@ -436,10 +436,16 @@ async def view(session: AsyncSession, record: FightRecord, rules: Rules, account
     the caller's and have committed, and when the round plays."""
     fight, played = await store.load_state(session, record, rules)
     mine, ready = await owners(session, record), await waiting(session, record, played + 1)
+    return await describe(session, record, rules, fight, played + 1, fight.over or record.finished, mine, ready, account_id)
+
+
+async def describe(session: AsyncSession, record: FightRecord, rules: Rules, fight, round_: int, over: bool, mine: dict, ready: set, account_id: int | None) -> dict:
+    """``view`` of a given state of the fight (the replay pages show the ones it passed through): $round_ is the round it waits for,
+    $mine says who owns which fighter and $ready who has committed."""
     seat = await session.get(MonsterSeat, record.id)
     pictures = await looks(session, fight)
     view = {
-        "id": record.id, "guid": record.guid, "round": played + 1, "over": fight.over or record.finished, "vital": rules.vital,
+        "id": record.id, "guid": record.guid, "round": round_, "over": over, "vital": rules.vital,
         "monster_play": record.monster_play, "monsters_played": seat is not None,
         "deadline": aware(record.round_deadline).isoformat() if record.round_deadline else None,
         "fighters": [
