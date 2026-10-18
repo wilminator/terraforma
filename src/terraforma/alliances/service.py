@@ -13,28 +13,18 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..economy import NotEnoughGold
 from ..fighttags.models import AllianceKept, AllianceTop
-from ..heroes.models import Team
+from ..heroes.models import Hero, Team, TeamMember
 from ..models import Account
 from ..profiles.models import AllianceProfile
 from ..relations import service as relations
 from ..relations.hooks import Ref
 from .. import wallclock
-from . import roles
+from . import roles, treasury
+from .errors import AllianceError, Forbidden, NotFound
 from .hooks import ACTIONS, GOVERNED, MEMBERS_VOTE, OTHER, SUBCOMMANDER, Alliances
-from .models import NAME_MAX, ROLE_MAX, Alliance, AllianceInvite, AllianceMember, AllianceRole, AllianceRule, Ballot, BallotVote, BallotVoter
-
-
-class AllianceError(ValueError):
-    """Something the player can fix: the message says what."""
-
-
-class NotFound(AllianceError):
-    pass
-
-
-class Forbidden(AllianceError):
-    """The team's role in the alliance, or the game's rules, do not let it."""
+from .models import NAME_MAX, ROLE_MAX, Alliance, AllianceInvite, AllianceAlumnus, AllianceMember, AllianceRole, AllianceRule, Ballot, BallotVote, BallotVoter
 
 
 class NeedsVote(AllianceError):
@@ -196,6 +186,7 @@ async def accept(session: AsyncSession, hooks: Alliances, team: Team, alliance_i
     if await _count(session, AllianceMember, team_id=team.id) >= hooks.max_per_team:
         raise AllianceError(f"a team can be in {hooks.max_per_team} alliances")
     await session.delete(invitation)
+    await session.execute(delete(AllianceAlumnus).where(AllianceAlumnus.alliance_id == alliance.id, AllianceAlumnus.team_id == team.id))
     session.add(AllianceMember(alliance_id=alliance.id, team_id=team.id, role=hooks.default_role))
     await session.flush()
     return alliance
@@ -220,7 +211,9 @@ async def _forget_votes(session: AsyncSession, team_id: int, alliance_id: int | 
         Ballot.alliance_id == alliance_id if alliance_id is not None else Ballot.id.is_not(None)))))
 
 
-async def _delete_alliance(session: AsyncSession, alliance: Alliance) -> None:
+async def _delete_alliance(session: AsyncSession, hooks: Alliances, alliance: Alliance) -> None:
+    """Dissolves the alliance: its treasury is paid out in shares (``treasury.dissolve``), and everything of its own goes."""
+    await treasury.dissolve(session, hooks, alliance)
     ballots = select(Ballot.id).where(Ballot.alliance_id == alliance.id)
     await session.execute(delete(BallotVote).where(BallotVote.ballot_id.in_(ballots)))
     await session.execute(delete(BallotVoter).where(BallotVoter.ballot_id.in_(ballots)))
@@ -229,6 +222,7 @@ async def _delete_alliance(session: AsyncSession, alliance: Alliance) -> None:
     await session.execute(delete(AllianceInvite).where(AllianceInvite.alliance_id == alliance.id))
     await session.execute(delete(AllianceRole).where(AllianceRole.alliance_id == alliance.id))
     await session.execute(delete(AllianceRule).where(AllianceRule.alliance_id == alliance.id))
+    await session.execute(delete(AllianceAlumnus).where(AllianceAlumnus.alliance_id == alliance.id))
     await session.execute(delete(AllianceProfile).where(AllianceProfile.alliance_id == alliance.id))
     await session.execute(delete(AllianceTop).where(AllianceTop.alliance_id == alliance.id))
     await session.execute(delete(AllianceKept).where(AllianceKept.alliance_id == alliance.id))
@@ -245,11 +239,12 @@ async def leave(session: AsyncSession, hooks: Alliances, alliance: Alliance, tea
         raise NotFound("that team is not in the alliance")
     others = [other for other in await members(session, alliance.id) if other.team_id != team_id]
     if not others:
-        await _delete_alliance(session, alliance)
+        await _delete_alliance(session, hooks, alliance)
         return True
     if row.role == hooks.commander_role:
         raise AllianceError("hand the leadership over before leaving")
     await _forget_votes(session, team_id, alliance.id)
+    await treasury.remember(session, alliance.id, team_id)
     await session.delete(row)
     await session.flush()
     return False
@@ -258,6 +253,7 @@ async def leave(session: AsyncSession, hooks: Alliances, alliance: Alliance, tea
 async def remove(session: AsyncSession, hooks: Alliances, alliance: Alliance, actor_team_id: int, target_team_id: int) -> None:
     _, target = await _acting(session, hooks, alliance, actor_team_id, "remove", target_team_id)
     await _forget_votes(session, target_team_id, alliance.id)
+    await treasury.remember(session, alliance.id, target_team_id)
     await session.delete(target)
     await session.flush()
 
@@ -340,7 +336,7 @@ async def delete_role(session: AsyncSession, hooks: Alliances, alliance: Allianc
 
 async def disband(session: AsyncSession, hooks: Alliances, alliance: Alliance, actor_team_id: int) -> None:
     await _acting(session, hooks, alliance, actor_team_id, "disband")
-    await _delete_alliance(session, alliance)
+    await _delete_alliance(session, hooks, alliance)
 
 
 async def remove_team(session: AsyncSession, hooks: Alliances, team_id: int) -> None:
@@ -351,13 +347,38 @@ async def remove_team(session: AsyncSession, hooks: Alliances, team_id: int) -> 
         alliance = await session.get(Alliance, row.alliance_id)
         others = [other for other in await members(session, alliance.id) if other.team_id != team_id]
         if not others:
-            await _delete_alliance(session, alliance)
+            await _delete_alliance(session, hooks, alliance)
             continue
         if row.role == hooks.commander_role and not any(hooks.tier(other.role) == SUBCOMMANDER for other in others):
             min(others, key=lambda other: other.id).role = hooks.commander_role
         await session.delete(row)
     await _forget_votes(session, team_id)
     await session.flush()
+
+
+# --- the treasury -------------------------------------------------------------------------------------------------------------------
+
+async def deposit(session: AsyncSession, hooks: Alliances, alliance: Alliance, actor_team_id: int, amount: int) -> int:
+    """The acting team gives gold to the treasury, from the purse of its first hero (the team's, in a team economy). Returns the balance."""
+    await _acting(session, hooks, alliance, actor_team_id, "deposit")
+    treasury._check(amount)
+    hero = await session.scalar(select(Hero).join(TeamMember, TeamMember.hero_id == Hero.id).where(TeamMember.team_id == actor_team_id).order_by(TeamMember.slot).limit(1))
+    if hero is None:
+        raise treasury.TreasuryError("a team with no hero has no gold to give")
+    try:
+        await hooks.economy.debit(session, hero, amount)
+    except NotEnoughGold as error:
+        raise treasury.TreasuryError("not enough gold") from error
+    await treasury.put(session, alliance, amount)
+    return alliance.gold
+
+
+async def spend(session: AsyncSession, hooks: Alliances, alliance: Alliance, actor_team_id: int, to_team_id: int, amount: int) -> int:
+    """The acting team pays gold from the treasury to a member team. Returns the balance."""
+    await _acting(session, hooks, alliance, actor_team_id, "spend", to_team_id)
+    await treasury.take(session, alliance, amount)
+    await hooks.economy.credit_team(session, to_team_id, amount)
+    return alliance.gold
 
 
 # --- voting requirements and the members' own actions ---------------------------------------------------------------------------
@@ -429,6 +450,8 @@ RUNS = {
     "define_role": ("edit_roles", define_role),
     "delete_role": ("edit_roles", delete_role),
     "set_rule": ("set_rules", set_rule),
+    "deposit": ("deposit", deposit),
+    "spend": ("spend", spend),
     "elect_subcommander": ("elect_subcommander", elect_subcommander),
     "dismiss_subcommander": ("dismiss_subcommander", dismiss_subcommander),
     "remove_commander": ("remove_commander", remove_commander),
@@ -451,7 +474,7 @@ async def view(session: AsyncSession, hooks: Alliances, alliance: Alliance, view
     every = await role_names(session, hooks, alliance)
     can = [action for action in ACTIONS if await hooks.allowed(session, alliance, me, action)]
     shown = {
-        "id": alliance.id, "name": alliance.name, "roles": every, "role_actions": await role_actions(session, alliance), "rules": await rules(session, alliance), "you": {"team_id": me.team_id, "role": me.role},
+        "id": alliance.id, "name": alliance.name, "roles": every, "gold": alliance.gold, "role_actions": await role_actions(session, alliance), "rules": await rules(session, alliance), "you": {"team_id": me.team_id, "role": me.role},
         "can": can, "appointable": [role for role in every if await hooks.allowed(session, alliance, me, "appoint", role=role)],
         "members": [
             {"team_id": row.team_id, "team": names.get(row.team_id), "role": row.role, "appoint": await hooks.allowed(session, alliance, me, "appoint", row)}

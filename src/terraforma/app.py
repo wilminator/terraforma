@@ -35,6 +35,7 @@ from .game import Game
 from .heroes.inventory_routes import router as inventory_router
 from .storage.routes import router as storage_router
 from .heroes.routes import router as heroes_router
+from .alliances.hooks import Alliances
 from .alliances.ballot_routes import router as ballots_router
 from .alliances.routes import router as alliances_router
 from .challenge.routes import router as challenge_router
@@ -143,6 +144,8 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app = FastAPI(title=game.name if game else "TerraForma", lifespan=lifespan)
     app.state.settings = settings
     app.state.game = game
+    if game is not None and game.alliances.economy is Alliances.economy:  # (unless the game's own rules chose one) alliance gold is the game's gold
+        game.alliances.economy = game.economy
     app.state.state_sections = sections_by_name([Components(integrated, game), *(game.state_sections if game else ())])
     app.state.addons = integrated.addons
     app.state.asset_dirs = integrated.asset_dirs

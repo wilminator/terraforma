@@ -18,7 +18,7 @@ from ..relations import service as relations
 from ..relations.hooks import Change, Ref
 from ..relations.routes import Other, SetRelationship
 from ..relations.routes import refuse as refuse_relation
-from . import ballots, service
+from . import ballots, service, treasury
 from .hooks import ACTIONS
 from .models import NAME_MAX, ROLE_MAX, Alliance
 
@@ -56,6 +56,14 @@ class DefineRole(Governed):
 
 class RoleName(Governed):
     name: str = Field(min_length=1, max_length=ROLE_MAX * 2)
+
+
+class Deposit(Governed):
+    amount: int = Field(ge=1, le=treasury.MAX_AMOUNT)
+
+
+class Spend(Deposit):
+    to_team_id: int = Field(ge=1)
 
 
 class SetRule(Governed):
@@ -211,6 +219,24 @@ async def hand_over(alliance_id: Id, body: OnTeam, account: ActingAccount, db: D
 async def disband(alliance_id: Id, body: Governed, account: ActingAccount, db: Db, alliances: GameAlliances) -> dict:
     try:
         return await _do(db, alliances, account, alliance_id, body, "disband")
+    except FAILURES as error:
+        raise refuse(error) from error
+
+
+@router.post("/alliances/{alliance_id}/deposit")
+async def deposit(alliance_id: Id, body: Deposit, account: ActingAccount, db: Db, alliances: GameAlliances) -> dict:
+    """The acting team gives gold to the alliance's treasury (a gift: nothing comes back when a team leaves)."""
+    try:
+        return await _do(db, alliances, account, alliance_id, body, "deposit", amount=body.amount)
+    except FAILURES as error:
+        raise refuse(error) from error
+
+
+@router.post("/alliances/{alliance_id}/spend")
+async def spend(alliance_id: Id, body: Spend, account: ActingAccount, db: Db, alliances: GameAlliances) -> dict:
+    """The acting team pays gold from the treasury to a member team."""
+    try:
+        return await _do(db, alliances, account, alliance_id, body, "spend", to_team_id=body.to_team_id, amount=body.amount)
     except FAILURES as error:
         raise refuse(error) from error
 
