@@ -13,8 +13,8 @@ from sqlalchemy import select
 from ..accounts import ratelimit
 from ..accounts.routes import Strict, limited
 from ..api.deps import ActingAccount, CurrentAccount, Db
-from . import service
-from .models import Realm, Settlement
+from . import service, supply
+from .models import Material, Realm, Settlement
 
 router = APIRouter(prefix="/api/admin")
 
@@ -24,6 +24,13 @@ SettlementId = Annotated[int, Path(ge=1)]
 
 class NewStrength(Strict):
     strength: int = Field(ge=-1_000_000, le=1_000_000)
+
+
+MaterialKey = Annotated[str, Path(pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")]
+
+
+class NewCut(Strict):
+    cut: int = Field(ge=0, le=100)
 
 
 def only_admin(account) -> None:
@@ -74,5 +81,30 @@ async def found(settlement_id: SettlementId, request: Request, account: ActingAc
     await limited(request, ratelimit.REALM_BY_ACCOUNT, str(account.id))
     try:
         return {"settlement": service.settlement_view(await service.found(db, await service.settlement(db, settlement_id)))}
+    except service.RealmError as error:
+        raise refuse(error) from error
+
+
+@router.get("/settlements/{settlement_id}/supply")
+async def supplies(settlement_id: SettlementId, account: CurrentAccount, db: Db) -> dict:
+    """What a settlement has of each material, up to date with the world clock."""
+    only_admin(account)
+    try:
+        town = await service.settlement(db, settlement_id)
+        return {"supplies": [supply.view(material, row) for material, row in await supply.supplies(db, town)]}
+    except service.RealmError as error:
+        raise refuse(error) from error
+
+
+@router.post("/settlements/{settlement_id}/supply/{material}/cut")
+async def cut(settlement_id: SettlementId, material: MaterialKey, body: NewCut, request: Request, account: ActingAccount, db: Db) -> dict:
+    """An event (or an admin) cuts a settlement's own sources of a material by a percent; 0 puts them back."""
+    only_admin(account)
+    await limited(request, ratelimit.REALM_BY_ACCOUNT, str(account.id))
+    try:
+        town = await service.settlement(db, settlement_id)
+        row = await supply.set_cut(db, town, material, body.cut)
+        found = await db.get(Material, row.material_id)
+        return {"supply": supply.view(found, row)}
     except service.RealmError as error:
         raise refuse(error) from error

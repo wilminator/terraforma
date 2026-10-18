@@ -5,9 +5,9 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.dialect import upsert
-from ..models import Map
+from ..models import Map, World
 from ..towns.models import VisitedTown
-from .models import DORMANT, LIVE, RUINS, Realm, Settlement
+from .models import DORMANT, LIVE, RUINS, Material, Realm, Settlement, SettlementSupply
 
 
 class RealmError(Exception):
@@ -78,10 +78,16 @@ async def settlements(session: AsyncSession, realm: Realm, state: str | None = N
     return list((await session.scalars(query)).all())
 
 
-async def apply_realms(session: AsyncSession, world_id: int, realms: list, towns: list) -> int:
+async def apply_realms(session: AsyncSession, world_id: int, realms: list, towns: list, materials: list = ()) -> int:
     """Makes the world's realms and settlements match the seed rows ($realms: ``RealmSeed``, $towns: ``SettlementSeed``): new ones are added,
     known ones (by key) get their names, realm, map and tier rewritten. What the world has moved since stays: a realm's strength and a
-    settlement's state are only the seed's when the row is new. A row the seed no longer lists is left alone. Returns how many rows."""
+    settlement's state are only the seed's when the row is new, and so are a supply's level and cut. A row the seed no longer lists is left alone.
+    Returns how many rows ($materials: ``MaterialSeed``)."""
+    for row in materials:
+        await upsert(session, Material.__table__, {"key": row.key, "name": row.name}, ["key"])
+    await session.flush()
+    material_ids = {each.key: each.id for each in (await session.scalars(select(Material))).all()}
+    now = (await session.get(World, world_id)).tick
     for row in realms:
         await upsert(session, Realm.__table__, {"world_id": world_id, "key": row.key, "name": row.name, "strength": row.strength}, ["world_id", "key"], insert_only=["strength"])
     await session.flush()
@@ -90,7 +96,14 @@ async def apply_realms(session: AsyncSession, world_id: int, realms: list, towns
     for row in towns:
         values = {"world_id": world_id, "key": row.key, "name": row.name, "realm_id": realm_ids[row.realm], "map_id": map_ids[row.map], "tier": row.tier, "state": row.state}
         await upsert(session, Settlement.__table__, values, ["world_id", "key"], insert_only=["state"])
-    return len(realms) + len(towns)
+    await session.flush()
+    for row in towns:
+        town = await session.scalar(select(Settlement).where(Settlement.world_id == world_id, Settlement.key == row.key))
+        for supply in row.supplies:
+            values = {"settlement_id": town.id, "material_id": material_ids[supply.material], "capacity": supply.capacity, "rate": supply.rate,
+                      "drain": supply.drain, "level": supply.capacity if supply.level is None else supply.level, "cut": 0, "as_of_tick": now}
+            await upsert(session, SettlementSupply.__table__, values, ["settlement_id", "material_id"], insert_only=["level", "cut", "as_of_tick"])
+    return len(realms) + len(towns) + len(materials)
 
 
 async def realm(session: AsyncSession, realm_id: int) -> Realm:
