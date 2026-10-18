@@ -22,7 +22,7 @@ from terraforma.testing import in_app_db
 from terraforma.world.rng import WorldRng
 from terraforma.towns import service as towns_service
 from terraforma.towns.hooks import Towns
-from terraforma.towns.models import TownNotice, TownTeam, TownVisit
+from terraforma.towns.models import TownNotice, TownTeam, TownVisit, VisitedTown
 from terraforma.towns.service import TownError
 
 from .helpers import expect
@@ -434,3 +434,78 @@ def test_a_teams_owner_reads_and_acts_in_a_town_and_nobody_else_does(app_client)
     last = expect(app_client.post(f"/api/teams/{teams[1]}/town/ready", json={}, headers=mike), 200).json()
     assert last["result"] == "reformed" and last["fight"] is None, "this game has no monsters to meet"
     assert expect(app_client.get(f"/api/teams/{teams[1]}/town"), 200).json() == {"in_town": False}
+
+
+# --- the towns a team has been to --------------------------------------------------------------------------------------------
+
+async def test_coming_into_a_town_adds_it_to_the_list_of_every_team_of_the_party(db):
+    party, teams = await party_of_three(db)
+    row = await db.get(Party, party.id)
+    await towns_service.enter_town(db, TOWNS, party.id)
+    rows = (await db.scalars(select(VisitedTown).order_by(VisitedTown.team_id))).all()
+    assert [(each.team_id, each.map_id, each.x, each.y) for each in rows] == [(team, row.map_id, row.x, row.y) for team in teams]
+    for team in teams:
+        listed = await towns_service.visited_towns(db, TOWNS, [team])
+        assert [(each["map_id"], each["x"], each["y"]) for each in listed] == [(row.map_id, row.x, row.y)]
+
+
+async def test_a_second_visit_keeps_the_first_arrival_and_adds_no_row(db):
+    party, teams = await party_of_three(db)
+    row = await db.get(Party, party.id)
+    first = (row.map_id, row.x, row.y)
+    await towns_service.record_visit(db, teams, *first)
+    await towns_service.record_visit(db, teams, row.map_id, row.x + 1, row.y)
+    assert await count(db, VisitedTown) == 3
+    assert (await towns_service.visited_towns(db, TOWNS, [teams[0]]))[0]["x"] == row.x
+
+
+async def test_only_the_towns_all_the_teams_have_been_to_are_shared(db):
+    party, teams = await party_of_three(db)
+    row = await db.get(Party, party.id)
+    await towns_service.record_visit(db, [teams[0]], row.map_id, row.x, row.y)
+    assert len(await towns_service.visited_towns(db, TOWNS, [teams[0]])) == 1
+    assert await towns_service.visited_towns(db, TOWNS, [teams[0], teams[1]]) == []
+    assert await towns_service.visited_towns(db, TOWNS, []) == []
+    await towns_service.record_visit(db, [teams[1]], row.map_id, row.x, row.y)
+    assert len(await towns_service.visited_towns(db, TOWNS, [teams[0], teams[1]])) == 1
+    assert await towns_service.has_visited(db, [teams[0], teams[1]], row.map_id) is True
+    assert await towns_service.has_visited(db, teams, row.map_id) is False
+    assert await towns_service.has_visited(db, [], row.map_id) is False
+
+
+async def test_a_town_that_stopped_being_one_is_not_offered(db):
+    class Gone(Towns):
+        async def is_town(self, session, map_id, x, y):
+            return False
+
+    party, teams = await party_of_three(db)
+    await towns_service.enter_town(db, TOWNS, party.id)
+    assert await towns_service.visited_towns(db, Gone(), [teams[0]]) == []
+    assert len(await towns_service.visited_towns(db, TOWNS, [teams[0]])) == 1, "and it is back if it is a town again"
+
+
+async def test_deleting_a_team_deletes_its_visited_towns(db):
+    mike = await account(db)
+    team = await service.create_team(db, mike, "Vanguard")
+    await service.add_to_team(db, mike, team.id, (await service.create_hero(db, mike, "Aria", "fighter")).id)
+    game_map = (await db.scalars(select(Map))).first()
+    await towns_service.record_visit(db, [team.id], game_map.id, 0, 0)
+    assert await count(db, VisitedTown) == 1
+    await service.delete_team(db, mike, team.id)
+    assert await count(db, VisitedTown) == 0
+
+
+def test_a_team_reads_its_own_visited_towns_and_nobody_elses(app_client):
+    mike = sign_in(app_client, "Mike")
+    team = testing.make_team(app_client, mike, "Vanguard", heroes=("Aria",))["id"]
+    sign_in(app_client, "Zed")  # (now logged in as Zed)
+
+    async def form(db):
+        party = await parties.create_party(db, team, 20)
+        await towns_service.enter_town(db, TOWNS, party.id)
+
+    in_app_db(app_client, form)
+    expect(app_client.get(f"/api/teams/{team}/town/visited"), 404)  # Zed's login, but not his team
+    app_client.post("/api/login", json={"username": "Mike", "password": PASSWORD})
+    listed = expect(app_client.get(f"/api/teams/{team}/town/visited"), 200).json()["towns"]
+    assert len(listed) == 1 and set(listed[0]) == {"map_id", "map", "x", "y"}

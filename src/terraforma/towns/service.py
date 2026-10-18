@@ -22,7 +22,7 @@ from ..world.rng import WorldRng
 from ..parties import service as parties
 from ..parties.models import Party, PartyTeam
 from .hooks import Towns
-from .models import TownNotice, TownTeam, TownVisit
+from .models import TownNotice, TownTeam, TownVisit, VisitedTown
 
 
 class TownError(ValueError):
@@ -53,11 +53,51 @@ async def enter_town(session: AsyncSession, towns: Towns, party_id: int) -> Town
     visit = TownVisit(party_id=party.id, formation=list(formation))
     session.add(visit)
     await session.flush()
+    await record_visit(session, formation, party.map_id, party.x, party.y)
     for number, group in enumerate(groups):
         for team_id in group:
             session.add(TownTeam(visit_id=visit.id, team_id=team_id, group=number, waiting=False))
     await session.flush()
     return visit
+
+
+async def record_visit(session: AsyncSession, team_ids, map_id: int, x: int, y: int) -> None:
+    """Each team has been to the town on the map; a team that has been before keeps the spot it first arrived at."""
+    known = set((await session.scalars(select(VisitedTown.team_id).where(VisitedTown.map_id == map_id, VisitedTown.team_id.in_(list(team_ids))))).all())
+    for team_id in team_ids:
+        if team_id not in known:
+            session.add(VisitedTown(team_id=team_id, map_id=map_id, x=x, y=y))
+    await session.flush()
+
+
+async def has_visited(session: AsyncSession, team_ids, map_id: int) -> bool:
+    """Whether every one of the teams has been to a town on the map (False for no teams). Not whether it is still a town: see
+    ``visited_towns``."""
+    ids = set(team_ids)
+    seen = set((await session.scalars(select(VisitedTown.team_id).where(VisitedTown.map_id == map_id, VisitedTown.team_id.in_(ids)))).all())
+    return bool(ids) and seen == ids
+
+
+async def visited_towns(session: AsyncSession, towns: Towns, team_ids) -> list[dict]:
+    """The towns every one of the teams has been to and that are still there (the map exists and ``Towns.is_town`` still says the
+    first arrival spot is a town), by map name: ``map_id``, ``map`` and the spot ``x``, ``y`` of the first team's first arrival.
+    For one team that is its own list, a place it can be warped to; for two teams (an escort contract) the places both may go to."""
+    ids = list(dict.fromkeys(team_ids))
+    if not ids:
+        return []
+    rows = (await session.scalars(select(VisitedTown).where(VisitedTown.team_id.in_(ids)).order_by(VisitedTown.id))).all()
+    by_map: dict[int, dict[int, VisitedTown]] = {}
+    for row in rows:
+        by_map.setdefault(row.map_id, {}).setdefault(row.team_id, row)
+    found = []
+    for map_id, mine in by_map.items():
+        if len(mine) != len(ids):
+            continue
+        first = mine[ids[0]]
+        game_map = await session.get(Map, map_id)
+        if game_map is not None and await towns.is_town(session, map_id, first.x, first.y):
+            found.append({"map_id": map_id, "map": game_map.name, "x": first.x, "y": first.y})
+    return sorted(found, key=lambda each: each["map"])
 
 
 @dataclass(frozen=True)
