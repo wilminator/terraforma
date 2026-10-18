@@ -1,5 +1,5 @@
 // The panels of the game client: a row of buttons in the bar, and the panel they open over the stage's right side.
-// The engine adds its own (teams, party, nearby, talk, pack, market, chat); a game adds more with shell.panels.add(id, build) in its module:
+// The engine adds its own (teams, party, nearby, talk, pack, market, chat, quests); a game adds more with shell.panels.add(id, build) in its module:
 //
 //   shell.text.set({ "panel.inn": "Inn" });
 //   shell.panels.add("inn", (shell, roster) => h("div", { class: "panel" }, h("h2", {}, shell.text.get("panel.inn")), ...));
@@ -14,6 +14,7 @@ import { marketPanel } from "./market.js";
 import { nearbyPanel } from "./nearby.js";
 import { packPanel } from "./pack.js";
 import { partyPanel } from "./party.js";
+import { questsPanel } from "./quests.js";
 import { teamsPanel } from "./teams.js";
 
 export class Panels {
@@ -35,6 +36,7 @@ export class Panels {
     this.add("pack", packPanel);
     this.add("market", marketPanel);
     this.add("chat", chatPanel);
+    this.add("quests", questsPanel);
   }
 
   /** Opens the panel (leaving it open if it already is): the nearby list opens the talk panel when a conversation starts. */
