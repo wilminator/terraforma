@@ -184,6 +184,16 @@ async def test_the_game_says_who_may_hand_a_drop_out_and_to_whom(db):
     assert (drop.status, drop.winner_id) == ("awarded", bram.id)
     assert await stacks(db, bram) == [("potion", 2)]
     assert (await pending.view(db, drop, bram))["winner_id"] == bram.id
+    settled = await pending.view(db, drop, bram)
+    assert settled["winner"] == bram.name and "heroes" not in settled, "who can be handed it is said while it is open"
+
+
+async def test_a_drop_says_what_it_is_called_and_who_it_can_be_handed_to_while_it_is_open(db):
+    aria, bram, record = await pair_fight(db, Assigning())
+    (drop,) = await held(db, record)
+    seen = await pending.view(db, drop, aria)
+    assert seen["item"] == "potion" and seen["name"] == "Potion"
+    assert seen["heroes"] == sorted(({"id": each.id, "name": each.name} for each in (aria, bram)), key=lambda each: each["id"])
 
 
 async def test_by_default_the_parties_leader_hands_a_drop_out_and_nobody_else(db, monkeypatch):
@@ -219,6 +229,7 @@ async def test_a_hero_sees_their_own_answer_but_not_the_others_until_it_is_settl
     assert (await pending.view(db, drop, aria))["your_choice"] == "want"
     await pending.choose(db, bram, drop.id, "want")
     assert {each["hero_id"] for each in (await pending.view(db, drop, bram))["rolls"]} == {aria.id, bram.id}
+    assert {each["hero"] for each in (await pending.view(db, drop, bram))["rolls"]} == {aria.name, bram.name}
 
 
 # --- the calls -----------------------------------------------------------------------------------------------------------
