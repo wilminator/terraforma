@@ -321,14 +321,24 @@ class DialogState:
         """Moves the party the hero acts in (the hero alone, if on no team) to the tile of the map, which is on the hero's
         world. The label if the party cannot go now: apart in a town, or a hero of it in a fight. A map or tile that is not
         there, or that cannot be stood on, is a mistake in the text."""
+        return await self._warp("warp", map_key, x, y, label, visited=False)
+
+    async def warp_visited(self, map_key: str, x: str, y: str, label: str) -> str:
+        """``warp``, but only to a map that every team of the party has been to a town on (``towns.service.VisitedTown``): the
+        label if one has not. A hero on no team has been nowhere."""
+        return await self._warp("warp_visited", map_key, x, y, label, visited=True)
+
+    async def _warp(self, tag: str, map_key: str, x: str, y: str, label: str, visited: bool) -> str:
         here = await self.session.get(Map, self.hero.map_id)
         target = await self.session.scalar(select(Map).where(Map.world_id == here.world_id, Map.name == map_key))
         if target is None:
-            raise ScriptError(f"warp tag: there is no map {map_key!r}")
+            raise ScriptError(f"{tag} tag: there is no map {map_key!r}")
         spot = target.normalize(int(x), int(y))
         if spot != (int(x), int(y)) or not target.tile(*spot)["passable"]:
-            raise ScriptError(f"warp tag: ({x}, {y}) on {map_key} can't be stood on")
+            raise ScriptError(f"{tag} tag: ({x}, {y}) on {map_key} can't be stood on")
         acting = await self.party()
+        if visited and (acting is None or not await towns.has_visited(self.session, acting.team_ids, target.id)):
+            return label
         if acting is None:  # a hero on no team goes alone
             self.hero.map_id, self.hero.x, self.hero.y = target.id, spot[0], spot[1]
             return ""

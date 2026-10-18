@@ -60,6 +60,7 @@ its command, followed by comma separated parameters. Text outside tags is shown.
     instance_won,other|self,label       jump to the label unless the party's instance was won by another party (or by this party): how a shared dungeon tells the losers
     leave_instance,label                the party leaves its instance and stands where it came in; leaves the dialog (the label if it was in none)
     warp,map,x,y,label                  moves the party to that tile of that map and leaves the dialog (the label if it cannot: a party apart in a town, a hero in a fight)
+    warp_visited,map,x,y,label          like warp, but only when every team of the party has been to a town on that map (the label if one has not, or it cannot go)
     open_party,on|off,label             the leader opens or closes the party to requests (the label if not the leader)
     add_team[,tokens], find_party, party_requests  the guild's activities (guild.service): add one of your teams (for that many Challenge
                                         Tokens if given, taken only once the team is added), ask an open party, answer asks
@@ -97,7 +98,7 @@ from dataclasses import dataclass
 SCOPES = ("any", "lead", "each")
 OPS = ("eq", "ne", "lt", "le", "gt", "ge")
 #: The tags that read or change the game's state, which the engine itself runs (through ``advance``'s $state).
-STATE_TAGS = ("set_job", "lost", "have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker", "add_guild_points", "set_guild_rank", "guild_points", "guild_rank", "guild_rank_any", "party_gate", "open_party", "add_status", "has_status", "have_tokens", "spend_tokens", "add_tokens", "add_gold", "warp", "enter_instance", "complete_instance", "leave_instance", "instance_won", "weekly_quest", "slot_quest", "slot_template", "slot_boss", "manual_quest")
+STATE_TAGS = ("set_job", "lost", "have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker", "add_guild_points", "set_guild_rank", "guild_points", "guild_rank", "guild_rank_any", "party_gate", "open_party", "add_status", "has_status", "have_tokens", "spend_tokens", "add_tokens", "add_gold", "warp", "warp_visited", "enter_instance", "complete_instance", "leave_instance", "instance_won", "weekly_quest", "slot_quest", "slot_template", "slot_boss", "manual_quest")
 MAX_TEXT = 20000
 #: How many guilds one ``guild_rank_any`` may list.
 MAX_GUILD_CHOICES = 8
@@ -224,7 +225,7 @@ def check_tag(parts: list[str]) -> list[str]:
         if _whole(command, args[0], "the amount") < 1:
             raise ScriptError(f"{command} tag: the amount is at least 1")
         return [args[1]]
-    elif command == "warp":
+    elif command in ("warp", "warp_visited"):
         count(4)
         _name(command, args[0], "a map key")
         _whole(command, args[1], "x")
@@ -580,7 +581,7 @@ async def advance(script: Script, pos: int, prompt: dict | None, choice: int | N
             failed = await state(command, args)
             if failed:
                 pos = go(failed)
-            elif (command in ("warp", "enter_instance", "leave_instance") and not (command == "enter_instance" and args[1] == "public")) or (command == "slot_boss" and args[1] == "fight"):  # the hero is somewhere else now, or in a fight: the dialog is over
+            elif (command in ("warp", "warp_visited", "enter_instance", "leave_instance") and not (command == "enter_instance" and args[1] == "public")) or (command == "slot_boss" and args[1] == "fight"):  # the hero is somewhere else now, or in a fight: the dialog is over
                 return over()
         elif command == "ack":
             return stopped({"type": "ack"}, pos)

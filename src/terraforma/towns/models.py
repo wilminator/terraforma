@@ -1,4 +1,4 @@
-"""A party in a town: how it was put together, which of its teams are waiting to leave, and who has been told."""
+"""A party in a town: how it was put together, which of its teams are waiting to leave, and who has been told. And the towns each team has been to."""
 
 from sqlalchemy import JSON, Boolean, ForeignKey, Integer, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
@@ -37,3 +37,18 @@ class TownNotice(Timestamps, Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), index=True)
     about_team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"))
+
+
+class VisitedTown(Timestamps, Base):
+    """$team_id has been to a town on $map_id, first arriving at ($x, $y). One row per team and map, written when a party
+    the team is in comes into a town (``towns.service.enter_town``). It stays for as long as the team does; whether the
+    place is still a town is asked when it is read (``towns.service.visited_towns``), so a town that is gone is not offered."""
+
+    __tablename__ = "visited_towns"
+    __table_args__ = (UniqueConstraint("team_id", "map_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), index=True)
+    map_id: Mapped[int] = mapped_column(ForeignKey("maps.id"))
+    x: Mapped[int] = mapped_column(Integer)
+    y: Mapped[int] = mapped_column(Integer)
