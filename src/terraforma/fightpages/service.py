@@ -112,14 +112,14 @@ async def replay(session: AsyncSession, rules: Rules, record: FightRecord) -> di
     (the events only say who joined, so a page that plays them back picks up from this)."""
     logged = await store.actions(session, record)
     fight = hydrate(record.initial_state)
-    start = await live.describe(session, record, rules, fight, 1, False, {}, set(), None)
+    start = {**await live.describe(session, record, rules, fight, 1, False, {}, set(), None), "deadline": None}  # (nothing waits in a replay)
     joins = {}
     for action in logged:
         events = [Event.from_list(each) for each in action.events]
         arrivals = [each for each in events if each.type is EventType.PARTY_JOINED]
         if arrivals:  # (they come first in the round)
             apply_events(fight, rules, arrivals)
-            joins[str(action.sequence)] = await live.describe(session, record, rules, fight, action.sequence, False, {}, set(), None)
+            joins[str(action.sequence)] = {**await live.describe(session, record, rules, fight, action.sequence, False, {}, set(), None), "deadline": None}
         apply_events(fight, rules, [each for each in events if each.type is not EventType.PARTY_JOINED])
     return {
         "fight": await live.view(session, record, rules),

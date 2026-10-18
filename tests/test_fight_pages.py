@@ -321,7 +321,7 @@ async def test_a_replay_starts_from_the_fight_as_it_began(db):
     await live.submit_command(db, record, mike.id, HERO, Command.ATTACK_RIGHT, 0, FOE, RULES)
     await live.resolve_round(db, record, RULES)
     replay = await service.viewable_replay(db, RULES, mike.id, record.id)
-    assert replay["start"] == {**began, "deadline": None} and replay["start"]["round"] == 1 and not replay["start"]["over"]
+    assert replay["start"]["deadline"] is None and replay["start"] == {**began, "deadline": None} and replay["start"]["round"] == 1 and not replay["start"]["over"]
     assert replay["start"]["fighters"] != replay["fight"]["fighters"]  # (the blow landed: somebody's gauge fell)
     assert all(not each["yours"] and "menu" not in each for each in replay["start"]["fighters"])  # (a replay commands nobody)
 

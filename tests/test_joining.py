@@ -245,7 +245,7 @@ async def test_a_replay_picks_up_from_the_fight_just_after_a_party_joined(db):
     names = lambda view: [each["name"] for each in view["fighters"]]  # noqa: E731
     assert names(replay["start"]) == ["Cleo", "Slime"] and names(replay["fight"]) == ["Cleo", "Slime", "Aria"]
     assert list(replay["joins"]) == ["1"] and names(replay["joins"]["1"]) == ["Cleo", "Slime", "Aria"]
-    assert replay["joins"]["1"]["round"] == 1 and replay["joins"]["1"]["fighters"][1]["resources"] == replay["start"]["fighters"][1]["resources"]  # (nothing hit yet)
+    assert replay["joins"]["1"]["deadline"] is None and replay["joins"]["1"]["round"] == 1 and replay["joins"]["1"]["fighters"][1]["resources"] == replay["start"]["fighters"][1]["resources"]  # (nothing hit yet)
 
 
 async def test_the_joiner_earns_only_for_what_it_does_after_joining(db):
