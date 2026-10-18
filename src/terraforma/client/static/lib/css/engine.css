@@ -104,6 +104,7 @@ body.play { height: 100dvh; min-height: 0; overflow: hidden; }
 .play .centered { height: 100%; display: grid; place-items: center; padding: var(--gutter); }
 .play .game { height: 100%; display: grid; grid-template-rows: 1fr auto; }
 .stage-frame { position: relative; display: grid; place-items: center; min-height: 0; background: #000; overflow: hidden; }
+.stage-frame.replay { width: 100%; max-width: 960px; aspect-ratio: 16 / 9; }  /* a fight played back inside a regular page */
 .stage { overflow: hidden; background: #101612; image-rendering: pixelated; cursor: pointer; }
 .stage:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
 .stage-canvas { transform-origin: 0 0; }

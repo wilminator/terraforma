@@ -122,6 +122,12 @@ async def alliances() -> FileResponse:
     return page("alliances.html")
 
 
+@router.get("/fights/", include_in_schema=False)
+async def fights() -> FileResponse:
+    """Fights to watch: the public ones for anyone, and a signed-in player's own and their followed players' and alliances' (the browser asks the fight page calls)."""
+    return page("fights.html")
+
+
 @router.get("/admin/", include_in_schema=False)
 async def admin() -> FileResponse:
     """The admin's page: events, monsters and ending a slot's quest (the browser asks the admin calls, which answer only an admin)."""
