@@ -113,12 +113,12 @@ def test_the_game_asks_for_landscape_and_the_pages_do_not(new_page, live_server)
 
 def test_the_stage_scales_in_whole_steps(new_page, live_server):
     live_server.make_account()
-    page = new_page({"width": 1000, "height": 700})
+    page = new_page({"width": 1000, "height": 600})
     page.goto("/play/")
     log_in(page)
     expect(page.locator("#stage")).to_be_visible()
-    # 480 by 270 fits twice in 1000 by about 650 (the menu bar takes some of the height, and takes two rows once it has
-    # enough panels): scale 2, exactly 960 by 540.
+    # 480 by 270 fits twice in 1000 by about 560 (the menu bar takes some of the height, and stays one row that scrolls
+    # however many panels there are): scale 2, exactly 960 by 540.
     expect(page.locator("#stage")).to_have_attribute("data-scale", "2")
     box = page.locator("#stage").bounding_box()
     assert (box["width"], box["height"]) == (960, 540)
