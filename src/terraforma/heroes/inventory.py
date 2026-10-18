@@ -240,6 +240,7 @@ async def view(session: AsyncSession, hero: Hero, economy: Economy | None = None
         "items": [
             {"position": stack.position, "item": item.key, "name": item.name, "qty": stack.qty,
              "equipped_in": sorted(slots_of.get(stack.id, [])),
+             "wearable": bool(item.equip_slots), "sided": any(slot in SIDED for slot in item.equip_slots or ()), "usable": bool(item.use_effect),
              **({"refused": reason} if item.equip_slots and (reason := rules.equip_refusal(who, item_spec(item))) else {})}
             for stack, item in current
         ],

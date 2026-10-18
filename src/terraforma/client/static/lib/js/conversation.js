@@ -60,6 +60,12 @@ export class Conversation {
     this.#changed();
   }
 
+  /** Takes the frame a call answered with when the server already went on with the dialog (an activity that finishes it). */
+  take(frame) {
+    this.#take(frame);
+    this.#changed();
+  }
+
   /** Goes on: Next, or the answer picked ($choice, an option index); no $choice also cancels a question. */
   async next(choice = null) {
     this.#take(await api.post(`/api/heroes/${this.heroId}/dialog/next`, choice === null ? {} : { choice }));

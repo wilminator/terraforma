@@ -36,6 +36,8 @@ class Team(Timestamps, Base):
     name_key: Mapped[str] = mapped_column(String(24))
     # Where gold lives is the game's decision (``terraforma.economy``); by default it is here, on the team.
     gold: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
+    #: When the team was last selected to play (wall clock, seconds); None for a team never played. Alliances count a team active for a week after.
+    last_played_at: Mapped[int | None] = mapped_column(BigInteger)
 
 
 class TeamMember(Base):

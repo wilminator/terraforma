@@ -153,3 +153,62 @@ def test_a_game_with_no_storage_shows_none(page, live_server):
     expect(page.locator("[data-item='Potion']")).to_contain_text("×1")
     expect(page.locator("#pack-storage")).to_have_count(0)
     expect(page.get_by_role("button", name="Store Potion")).to_have_count(0)
+
+
+def test_a_hero_wields_a_sword_on_the_right_and_takes_it_off(page, live_server):
+    player = start(page, live_server, {"Alpha": ["Aria"]})
+    fill(live_server, player.heroes()["Aria"], items=[("short_sword", 1)])
+    page.get_by_role("button", name="Refresh").click()
+    row = page.locator("[data-item='Short Sword']")
+    expect(row).to_be_visible()
+    row.get_by_label("Which side for Short Sword").select_option("1")
+    page.get_by_role("button", name="Wear Short Sword").click()
+    expect(page.locator("#pack-note")).to_have_text("Short Sword is worn in rhand.")
+    expect(row).to_contain_text("(worn in rhand)")
+    expect(page.get_by_role("button", name="Wear Short Sword")).to_have_count(0)
+    page.get_by_role("button", name="Take off Short Sword").click()
+    expect(page.locator("#pack-note")).to_have_text("Short Sword is taken off.")
+    expect(row).not_to_contain_text("worn in")
+
+
+def test_wearing_something_already_in_the_way_says_so_in_the_servers_words(page, live_server, console):
+    console.allow("status of 409")  # the browser logs the refusal itself
+    player = start(page, live_server, {"Alpha": ["Aria"]})
+    fill(live_server, player.heroes()["Aria"], items=[("short_sword", 1), ("dagger", 1)])
+    page.get_by_role("button", name="Refresh").click()
+    page.get_by_label("Which side for Short Sword").select_option("1")
+    page.get_by_role("button", name="Wear Short Sword").click()
+    expect(page.locator("#pack-note")).to_have_text("Short Sword is worn in rhand.")
+    page.get_by_label("Which side for Dagger").select_option("1")
+    page.get_by_role("button", name="Wear Dagger").click()
+    expect(page.locator("#pack-problem")).to_have_text("something is already in the way: take it off first")
+
+
+def test_part_of_a_stack_is_thrown_away_and_an_item_with_no_use_offers_none(page, live_server):
+    player = start(page, live_server, {"Alpha": ["Aria"]})
+    fill(live_server, player.heroes()["Aria"], items=[("arrow", 3)])
+    page.get_by_role("button", name="Refresh").click()
+    row = page.locator("[data-item='Arrow']")
+    expect(row.get_by_role("button", name="Wear Arrow")).to_be_visible()  # (ammunition is worn: a bow takes it)
+    expect(row.get_by_role("button", name="Use Arrow")).to_have_count(0)
+    page.get_by_label("How many Arrow to give").fill("2")
+    page.get_by_role("button", name="Throw away Arrow").click()
+    expect(page.locator("#pack-note")).to_have_text("Threw away 2 × Arrow.")
+    expect(row).to_contain_text("×1")
+
+
+def test_a_potion_heals_a_hurt_teammate_from_the_pack(page, live_server):
+    player = start(page, live_server, {"Alpha": ["Aria", "Bram"]})
+    heroes = player.heroes()
+    fill(live_server, heroes["Aria"], items=[("potion", 2)])
+
+    async def hurt(db):
+        (await db.get(Hero, heroes["Bram"])).vitals = {"HP": 1}
+
+    live_server.in_db(hurt)
+    page.get_by_role("button", name="Refresh").click()
+    expect(page.get_by_role("button", name="Use Herb")).to_have_count(0)
+    page.get_by_label("Use Potion on").select_option(label="Bram")
+    page.get_by_role("button", name="Use Potion").click()
+    expect(page.locator("#pack-note")).to_contain_text("Potion used on Bram: HP 1 →")
+    expect(page.locator("[data-item='Potion']")).to_contain_text("×1")

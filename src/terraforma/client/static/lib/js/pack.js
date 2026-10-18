@@ -2,6 +2,8 @@
 // hero. Who may be given to is the game's call (its economy's trade policy; teammates by default), so the browser offers the player's own
 // heroes and a hero's number, and the server's answer says no, in its own words, when the game refuses. When the game keeps storage
 // (Game(storage=...)) the panel also shows it, with a Store button on each stack and Take and Use on the stored ones; a game with none shows nothing.
+// Each stack can be worn or wielded (and taken off), used on one of the player's heroes outside a fight, or thrown away; what the stack allows
+// (`wearable`, `sided`, `usable`, and `refused` when the game's rules bar this hero from wearing it) comes from the server, which decides each call.
 
 import * as api from "./api.js";
 import { h, replace } from "./dom.js";
@@ -72,6 +74,23 @@ export function packPanel(shell, roster) {
     });
   }
 
+  /** Wearing, taking off, using and throwing away; the pack is read again after, so what is shown is the server's. */
+  function handle(path, values, done) {
+    note.textContent = "";
+    attempt(shell, problem, async () => {
+      const answer = await api.post(`/api/heroes/${loaded}/${path}`, values);
+      await load();
+      note.textContent = done(answer);
+    });
+  }
+
+  /** What a use changed: each resource that moved, as "HP 10 → 25". */
+  const changes = (answer) =>
+    Object.keys(answer.after)
+      .filter((name) => answer.after[name] !== answer.before[name])
+      .map((name) => `${name} ${answer.before[name]} → ${answer.after[name]}`)
+      .join(", ");
+
   function recipients() {
     const others = roster.heroes.filter((hero) => hero.id !== loaded);
     const select = h(
@@ -111,12 +130,36 @@ export function packPanel(shell, roster) {
     );
   }
 
+  /** The buttons for what the hero can do with the stack itself. */
+  function ownUse(stack, qty) {
+    const buttons = [];
+    if (stack.equipped_in.length) {
+      buttons.push(h("button", { type: "button", "aria-label": t("pack.take_off_item", { name: stack.name }), onclick: () => handle("unequip", { position: stack.position }, () => t("pack.took_off", { name: stack.name })) }, t("pack.take_off")));
+    } else if (stack.wearable) {
+      const side = stack.sided ? h("select", { "aria-label": t("pack.side", { name: stack.name }) }, h("option", { value: "0" }, t("pack.left")), h("option", { value: "1" }, t("pack.right"))) : null;
+      buttons.push(
+        side,
+        h("button", { type: "button", disabled: Boolean(stack.refused), title: stack.refused ?? "", "aria-label": t("pack.wear_item", { name: stack.name }), onclick: () => handle("equip", { position: stack.position, side: Number(side?.value ?? 0) }, (answer) => t("pack.wore", { name: stack.name, slots: answer.slots.join(", ") })) }, t("pack.wear")),
+      );
+    }
+    if (stack.usable) {
+      const on = h("select", { "aria-label": t("pack.use_on", { name: stack.name }) }, roster.heroes.map((hero) => h("option", { value: String(hero.id), selected: hero.id === loaded }, hero.name)));
+      buttons.push(
+        on,
+        h("button", { type: "button", "aria-label": t("pack.use_item", { name: stack.name }), onclick: () => handle("use-item", { position: stack.position, target_hero_id: Number(on.value) }, (answer) => t("pack.used", { item: stack.name, name: heroName(answer.hero_id), change: changes(answer) })) }, t("pack.use")),
+      );
+    }
+    buttons.push(h("button", { type: "button", "aria-label": t("pack.discard_item", { name: stack.name }), onclick: () => handle("inventory/discard", { position: stack.position, qty: Number(qty.value) }, (answer) => t("pack.discarded", { count: answer.discarded, item: stack.name })) }, t("pack.discard")));
+    return buttons;
+  }
+
   function stackRow(stack) {
     const qty = h("input", { type: "number", min: "1", max: String(stack.qty), value: "1", class: "qty", "aria-label": t("pack.item_qty", { name: stack.name }) });
     return h(
       "li",
       { class: "row", "data-item": stack.name },
-      h("span", {}, h("strong", {}, stack.name), ` ×${stack.qty}`, stack.equipped_in.length ? h("span", { class: "muted small" }, ` ${t("pack.worn", { slots: stack.equipped_in.join(", ") })}`) : null),
+      h("span", {}, h("strong", {}, stack.name), ` ×${stack.qty}`, stack.equipped_in.length ? h("span", { class: "muted small" }, ` ${t("pack.worn", { slots: stack.equipped_in.join(", ") })}`) : null, stack.refused ? h("span", { class: "muted small" }, ` ${stack.refused}`) : null),
+      h("div", { class: "inline" }, ownUse(stack, qty)),
       h(
         "div",
         { class: "inline" },

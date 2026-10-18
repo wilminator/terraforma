@@ -65,6 +65,7 @@ from .gamestate.components import Components
 from .gamestate.document import sections_by_name
 from .quests.manual_routes import router as manual_quests_router
 from .quests.needs_routes import router as needs_router
+from .realms.routes import router as realms_router
 from .quests.rotation_routes import router as rotation_router
 from .quests.weekly_routes import router as weekly_quests_router
 from .relations.rating_routes import router as ratings_router
@@ -183,6 +184,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(weekly_quests_router)
     app.include_router(rotation_router)
     app.include_router(needs_router)
+    app.include_router(realms_router)
     app.include_router(manual_quests_router)
     app.include_router(content_router)
     app.include_router(gamestate_router)
