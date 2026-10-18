@@ -16,10 +16,11 @@ Who may trade is the economy's call too: ``can_trade`` asks its ``trade_policy``
 default, and ``related`` is the hook for the relationship a game defines between heroes of different teams.
 
 Gold moves with single statements (``gold = gold + n``, and a debit only where enough is there), so two calls at the same
-instant never lose one. A fight's gold is paid once (``credit_fight_gold``).
+instant never lose one. A fight's gold is paid once (``credit_fight_gold``). What teams earn from fights and sales passes the ``taxman`` first (``credit_earnings``).
 """
 
 from collections.abc import Iterable
+from typing import Protocol
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,9 +34,19 @@ class NotEnoughGold(ValueError):
     """The purse holds less than was asked for."""
 
 
+FIGHT, SALES = "fight", "sales"  # what a team can earn gold from, for ``credit_earnings``
+
+
+class Taxman(Protocol):
+    async def withhold(self, session: AsyncSession, team_id: int, kind: str, amount: int) -> int:
+        """Takes the tax on a team's earnings of $amount (``FIGHT`` or ``SALES``) and returns how much it took."""
+
+
 class Economy:
     #: Who may give gold and items to whom (``trading.policy``).
     trade_policy: TradePolicy = WithinTeam()
+    #: Whoever takes a share of what teams earn (``alliances.taxes``); ``create_app`` sets it. None: nobody.
+    taxman: Taxman | None = None
 
     async def can_trade(self, session: AsyncSession, giver: Hero, receiver: Hero, what: Trade) -> bool:
         """Whether $giver may give $receiver $what. Asks the ``trade_policy``; override it for more."""
@@ -52,6 +63,14 @@ class Economy:
     async def credit_team(self, session: AsyncSession, team_id: int, amount: int) -> None:
         """A team has earned $amount (a fight's gold, say): put it where this economy keeps it."""
         raise NotImplementedError
+
+    async def credit_earnings(self, session: AsyncSession, team_id: int, amount: int, kind: str) -> int:
+        """A team has earned $amount from fighting or selling ($kind): the ``taxman`` takes its share first, then ``credit_team`` pays
+        the rest. Returns the tax taken."""
+        tax = 0 if self.taxman is None or amount <= 0 else await self.taxman.withhold(session, team_id, kind, amount)
+        if amount - tax > 0:
+            await self.credit_team(session, team_id, amount - tax)
+        return tax
 
     async def balance(self, session: AsyncSession, hero: Hero) -> int:
         purse = await self.purse(session, hero)
@@ -121,6 +140,6 @@ async def credit_fight_gold(session: AsyncSession, economy: Economy, record: Fig
         return False
     for team_id, amount in payments:
         if amount > 0:
-            await economy.credit_team(session, team_id, amount)
+            await economy.credit_earnings(session, team_id, amount, FIGHT)
     await session.refresh(record, ["gold_paid"])
     return True

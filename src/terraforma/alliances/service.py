@@ -13,7 +13,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..economy import NotEnoughGold
+from ..economy import FIGHT, SALES, NotEnoughGold
 from ..fighttags.models import AllianceKept, AllianceTop
 from ..heroes.models import Hero, Team, TeamMember
 from ..models import Account
@@ -21,7 +21,7 @@ from ..profiles.models import AllianceProfile
 from ..relations import service as relations
 from ..relations.hooks import Ref
 from .. import wallclock
-from . import roles, treasury
+from . import roles, taxes, treasury
 from .errors import AllianceError, Forbidden, NotFound
 from .hooks import ACTIONS, GOVERNED, MEMBERS_VOTE, OTHER, SUBCOMMANDER, Alliances
 from .models import NAME_MAX, ROLE_MAX, Alliance, AllianceInvite, AllianceAlumnus, AllianceMember, AllianceRole, AllianceRule, Ballot, BallotVote, BallotVoter
@@ -381,6 +381,20 @@ async def spend(session: AsyncSession, hooks: Alliances, alliance: Alliance, act
     return alliance.gold
 
 
+async def set_fight_tax(session: AsyncSession, hooks: Alliances, alliance: Alliance, actor_team_id: int, percent: int) -> int:
+    """Sets the share of the gold member teams earn from fights that the alliance keeps. Returns the rate."""
+    await _acting(session, hooks, alliance, actor_team_id, "set_fight_tax")
+    await taxes.set_rate(session, hooks, alliance, FIGHT, percent)
+    return percent
+
+
+async def set_sales_tax(session: AsyncSession, hooks: Alliances, alliance: Alliance, actor_team_id: int, percent: int) -> int:
+    """Sets the share of the gold member teams earn selling on a market that the alliance keeps. Returns the rate."""
+    await _acting(session, hooks, alliance, actor_team_id, "set_sales_tax")
+    await taxes.set_rate(session, hooks, alliance, SALES, percent)
+    return percent
+
+
 # --- voting requirements and the members' own actions ---------------------------------------------------------------------------
 
 async def rules(session: AsyncSession, alliance: Alliance) -> list[dict]:
@@ -452,6 +466,8 @@ RUNS = {
     "set_rule": ("set_rules", set_rule),
     "deposit": ("deposit", deposit),
     "spend": ("spend", spend),
+    "set_fight_tax": ("set_fight_tax", set_fight_tax),
+    "set_sales_tax": ("set_sales_tax", set_sales_tax),
     "elect_subcommander": ("elect_subcommander", elect_subcommander),
     "dismiss_subcommander": ("dismiss_subcommander", dismiss_subcommander),
     "remove_commander": ("remove_commander", remove_commander),
@@ -474,7 +490,7 @@ async def view(session: AsyncSession, hooks: Alliances, alliance: Alliance, view
     every = await role_names(session, hooks, alliance)
     can = [action for action in ACTIONS if await hooks.allowed(session, alliance, me, action)]
     shown = {
-        "id": alliance.id, "name": alliance.name, "roles": every, "gold": alliance.gold, "role_actions": await role_actions(session, alliance), "rules": await rules(session, alliance), "you": {"team_id": me.team_id, "role": me.role},
+        "id": alliance.id, "name": alliance.name, "roles": every, "gold": alliance.gold, "fight_tax": alliance.fight_tax, "sales_tax": alliance.sales_tax, "role_actions": await role_actions(session, alliance), "rules": await rules(session, alliance), "you": {"team_id": me.team_id, "role": me.role},
         "can": can, "appointable": [role for role in every if await hooks.allowed(session, alliance, me, "appoint", role=role)],
         "members": [
             {"team_id": row.team_id, "team": names.get(row.team_id), "role": row.role, "appoint": await hooks.allowed(session, alliance, me, "appoint", row)}
