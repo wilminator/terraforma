@@ -243,10 +243,10 @@ class _Preview(Exception):
 
 
 async def _title(session: AsyncSession, run: str, args: dict) -> str:
-    name = args.get("target_team_id", args.get("team_id"))
+    name = args.get("target_team_id", args.get("team_id", args.get("to_team_id")))
     team = None if name is None else await session.get(Team, name)
     what = run.replace("_", " ")
-    extra = " ".join(str(value) for key, value in args.items() if key in ("role", "name", "action") and value)
+    extra = " ".join(str(value) for key, value in args.items() if key in ("role", "name", "action", "amount") and value)
     return " ".join(part for part in (what.capitalize(), team.name if team else "", extra) if part)[:TITLE_MAX]
 
 
@@ -262,7 +262,7 @@ async def propose(
                 await service.RUNS[run][1](session, hooks, alliance, actor_team_id, **args)
             raise _Preview
     except _Preview:
-        pass
+        await session.refresh(alliance)  # the trial run's rollback expired it (the treasury may have been touched)
     for each in (await session.scalars(select(Ballot).where(Ballot.alliance_id == alliance.id, Ballot.closed_at.is_(None)))).all():
         await refresh(session, hooks, alliance, each)
     open_now = await session.scalar(select(func.count()).select_from(Ballot).where(Ballot.alliance_id == alliance.id, Ballot.closed_at.is_(None)))

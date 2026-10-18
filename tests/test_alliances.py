@@ -472,7 +472,7 @@ def test_an_alliance_is_founded_joined_and_run_over_the_calls(world):
     waiting = expect(client.get(f"/api/teams/{ids['rivals']}/invitations"), 200).json()
     assert [row["alliance"] for row in waiting] == ["Iron Pact"]
     joined = post(client, "Zed", f"/api/teams/{ids['rivals']}/invitations/accept", {"alliance_id": alliance})
-    assert [(row["team"], row["role"]) for row in joined["members"]] == [("Vanguard", "commander"), ("Rivals", "member")] and joined["can"] == ["vote", "elect_subcommander", "dismiss_subcommander"]
+    assert [(row["team"], row["role"]) for row in joined["members"]] == [("Vanguard", "commander"), ("Rivals", "member")] and joined["can"] == ["vote", "deposit", "elect_subcommander", "dismiss_subcommander"]
     assert joined["appointable"] == [] and [row["appoint"] for row in joined["members"]] == [False, False]
     post(client, "Zed", f"/api/alliances/{alliance}/invite", {"team_id": ids["rivals"], "target_team_id": ids["scouts"]}, 403)  # a member
     post(client, "Mike", f"/api/alliances/{alliance}/appoint", {"team_id": ids["vanguard"], "target_team_id": ids["rivals"], "role": "recruiter"})
@@ -505,7 +505,7 @@ def test_an_alliance_is_read_as_the_member_team_asked_for(world):
     login(client, "Mike")
     assert expect(client.get(f"/api/alliances/{alliance}"), 200).json()["you"]["team_id"] == ids["vanguard"]  # the first, as before
     scouts = expect(client.get(f"/api/alliances/{alliance}?team_id={ids['scouts']}"), 200).json()
-    assert scouts["you"] == {"team_id": ids["scouts"], "role": "member"} and scouts["can"] == ["vote", "elect_subcommander", "dismiss_subcommander"]
+    assert scouts["you"] == {"team_id": ids["scouts"], "role": "member"} and scouts["can"] == ["vote", "deposit", "elect_subcommander", "dismiss_subcommander"]
     expect(client.get(f"/api/alliances/{alliance}?team_id={ids['rivals']}"), 404)  # not Mike's team
     login(client, "Zed")
     expect(client.get(f"/api/alliances/{alliance}?team_id={ids['rivals']}"), 404)  # Zed's team, but not in it
@@ -632,3 +632,29 @@ def test_a_rule_turns_an_action_into_a_ballot_the_members_settle_over_the_calls(
     assert [row["alliance"] for row in expect(client.get(f"/api/teams/{ids['scouts']}/invitations"), 200).json()] == ["Iron Pact"]
     voluntary = send(mike_headers, f"{url}/remove", {**mike, "target_team_id": ids["rivals"], "vote": True, "closes_in_hours": 2})["ballot"]
     assert voluntary["threshold"] == 50 and voluntary["closes_at"] - voluntary["opened_at"] == 2 * 3600
+
+
+def test_gold_goes_into_the_treasury_and_out_again_over_the_calls(world):
+    client, ids = world
+    mike_headers = login(client, "Mike")
+
+    def send(headers, url, body, status=200):
+        return expect(client.post(url, json=body, headers=headers), status).json()
+
+    alliance = send(mike_headers, "/api/alliances", {"team_id": ids["vanguard"], "name": "Iron Pact"}, 201)["id"]
+    url = f"/api/alliances/{alliance}"
+    mike, zed = {"team_id": ids["vanguard"]}, {"team_id": ids["rivals"]}
+    send(mike_headers, f"{url}/invite", {**mike, "target_team_id": ids["rivals"]})
+    zed_headers = login(client, "Zed")
+    send(zed_headers, f"/api/teams/{ids['rivals']}/invitations/accept", {"alliance_id": alliance})
+    in_app_db(client, lambda db: db.execute(update(Team).values(gold=500)))
+
+    assert send(zed_headers, f"{url}/deposit", {**zed, "amount": 200})["gold"] == 200, "a member may give"
+    send(zed_headers, f"{url}/deposit", {**zed, "amount": 301}, 409)  # more than the team holds
+    send(zed_headers, f"{url}/deposit", {**zed, "amount": 0}, 422)
+    send(zed_headers, f"{url}/spend", {**zed, "to_team_id": ids["rivals"], "amount": 1}, 403)  # a member can't take
+    mike_headers = login(client, "Mike")
+    paid = send(mike_headers, f"{url}/spend", {**mike, "to_team_id": ids["rivals"], "amount": 50})
+    assert paid["gold"] == 150
+    send(mike_headers, f"{url}/spend", {**mike, "to_team_id": ids["scouts"], "amount": 1}, 404)  # not a member
+    send(mike_headers, f"{url}/spend", {**mike, "to_team_id": ids["rivals"], "amount": 151}, 409)
