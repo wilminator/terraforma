@@ -129,6 +129,7 @@ def test_the_model_follows_a_rounds_events_to_the_numbers_the_server_stores(page
     ]
     assert out["said"][2][1] == {"name": "Slime", "amount": 6}, "the values the words are made from"
     assert out["marks"][2] == [{"key": "1.0.0", "kind": "damage", "amount": 6}]
+    assert out["marks"][1] == [{"key": "0.0.0", "kind": "act", "cue": "attack_close"}], "an attack names the animation its fighter plays"
     assert out["reload"] == [False] * len(events) and out["over"] is False
 
 
@@ -349,3 +350,39 @@ def test_the_viewers_side_is_drawn_from_behind_and_the_other_from_the_front(page
     views = page.evaluate("() => [...document.querySelectorAll('.fighter')].map((card) => [card.dataset.side, card.dataset.view])")
     assert views and all(view == ("up" if side == "left" else "down") for side, view in views)
     assert {side for side, _ in views} == {"left", "right"}
+
+
+def watch_cues(page):
+    """Records every animation a card names in data-cue (the cards say what their picture plays) and how many damage numbers floated."""
+    page.evaluate(
+        """() => { window.__cues = []; window.__damage = 0;
+          new MutationObserver((list) => { for (const each of list) {
+            if (each.type === 'attributes' && each.target.dataset.cue) window.__cues.push([each.target.dataset.fighter, each.target.dataset.cue]);
+            for (const node of each.addedNodes) if (node.classList?.contains('damage')) window.__damage += 1;
+          } }).observe(document.body, { attributes: true, attributeFilter: ['data-cue'], childList: true, subtree: true }); }"""
+    )
+
+
+def test_fighters_play_the_animation_for_what_happens_to_them_and_go_back_to_base(page, live_server):
+    """The example's sheets all have attack_close and hit: an attacker plays its attack, a fighter who is struck plays hit, and when the
+    animations end the cards say nothing (the pictures play "base" again)."""
+    fight = into_the_marsh(page, live_server)
+    stage = page.locator("#stage")
+    expect(stage).to_have_attribute("data-animated", str(page.locator(".fighter").count()), timeout=SLOW)
+    faster(page)
+    watch_cues(page)
+    play_round(page, fight)
+    cues = page.evaluate("window.__cues")
+    assert ["0.0.0", "attack_close"] in cues, "the hero attacked and played its attack"
+    struck = page.evaluate("window.__damage") > 0
+    assert (any(name == "hit" for _, name in cues)) == struck, "a fighter who is struck plays hit, and none does if every blow missed"
+    expect(page.locator(".fighter[data-cue]:not([data-cue='die'])")).to_have_count(0)  # (only a fighter who died stays in its animation)
+
+
+def test_a_player_who_asks_for_less_motion_sees_no_action_animations(page, live_server):
+    page.emulate_media(reduced_motion="reduce")
+    fight = into_the_marsh(page, live_server)
+    faster(page)
+    watch_cues(page)
+    play_round(page, fight)
+    assert page.evaluate("window.__cues") == []

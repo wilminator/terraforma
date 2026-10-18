@@ -83,11 +83,11 @@ export class FightModel {
         return done(["fight.turn", { name: name(this.actor) }], [{ key: this.actor, kind: "turn" }]);
       }
       case "Attack":
-        return done(["fight.attack", { name: name(this.actor) }], [{ key: this.actor, kind: "act" }]);
+        return done(["fight.attack", { name: name(this.actor) }], [{ key: this.actor, kind: "act", cue: "attack_close" }]);
       case "Skill":
       case "Spell":
       case "Item":
-        return done([`fight.${type.toLowerCase()}`, { name: name(this.actor), what: this.#called(type, data[0]) }], [{ key: this.actor, kind: "act" }]);
+        return done([`fight.${type.toLowerCase()}`, { name: name(this.actor), what: this.#called(type, data[0]) }], [{ key: this.actor, kind: "act", cue: type.toLowerCase() }]);
       case "Defend": {
         // (told at the start of the round, for the fighter whose address it carries: a defender takes no turn)
         const who = data.length >= 3 ? keyOf(data) : this.actor;

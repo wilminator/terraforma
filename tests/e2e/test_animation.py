@@ -111,6 +111,18 @@ def test_a_looping_animation_goes_round_and_a_one_shot_holds_its_last_frame(page
     assert [each[2] for each in got] == [False, False, False, True, True, True, True, True, True]
 
 
+def test_a_looping_animation_asked_to_play_once_stops_on_its_last_frame(page):
+    got = run(
+        page,
+        """const set = A.parseAnimations({ animations: { walk: { frames: [0, 1, 2], ms: 100 } } }, 3, clock);
+        const once = set.play("walk", { once: true });
+        const seen = [];
+        for (const at of [0, 150, 299, 300, 900]) { time = at; seen.push([once.frameAt().frame, once.done]); }
+        return seen;""",
+    )
+    assert got == [[0, False], [1, False], [2, False], [2, True], [2, True]]
+
+
 def test_one_shot_and_random_players_count_from_when_they_started_and_shared_ones_all_agree(page):
     got = run(
         page,

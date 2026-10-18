@@ -134,10 +134,13 @@ export class AnimationSet {
     return candidates(name, direction).find((each) => this.has(each)) ?? null;
   }
 
-  /** A Player of the animation for $name (and optional $direction), or null. $clock replaces the shared clock (for tests). */
-  play(name, { direction = null, clock = this.#clock } = {}) {
+  /** A Player of the animation for $name (and optional $direction), or null. $clock replaces the shared clock (for tests). $once plays it
+   * through one time and holds its last frame, whatever the file says about looping (a hit, a death). */
+  play(name, { direction = null, clock = this.#clock, once = false } = {}) {
     const found = this.find(name, direction);
-    return found === null ? null : new Player(this.clip(found), clock, found);
+    if (found === null) return null;
+    const clip = this.clip(found);
+    return new Player(once && clip.loop ? { ...clip, loop: false } : clip, clock, found);
   }
 }
 
