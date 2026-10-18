@@ -6,6 +6,8 @@ and leave the rolling back to the caller's transaction. What a role may do is th
 """
 
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
@@ -17,9 +19,10 @@ from ..models import Account
 from ..profiles.models import AllianceProfile
 from ..relations import service as relations
 from ..relations.hooks import Ref
+from .. import wallclock
 from . import roles
-from .hooks import ACTIONS, OTHER, SUBCOMMANDER, Alliances
-from .models import NAME_MAX, ROLE_MAX, Alliance, AllianceInvite, AllianceMember, AllianceRole, Ballot, BallotVote, BallotVoter
+from .hooks import ACTIONS, GOVERNED, MEMBERS_VOTE, OTHER, SUBCOMMANDER, Alliances
+from .models import NAME_MAX, ROLE_MAX, Alliance, AllianceInvite, AllianceMember, AllianceRole, AllianceRule, Ballot, BallotVote, BallotVoter
 
 
 class AllianceError(ValueError):
@@ -32,6 +35,41 @@ class NotFound(AllianceError):
 
 class Forbidden(AllianceError):
     """The team's role in the alliance, or the game's rules, do not let it."""
+
+
+class NeedsVote(AllianceError):
+    """The alliance's rules ask for a vote before this is done: the caller puts it to a ballot (``ballots.perform``)."""
+
+    def __init__(self, percent: int):
+        super().__init__(f"that needs a vote: {percent}% of the active teams")
+        self.percent = percent
+
+
+#: True while a passed ballot's action runs: the vote is what the rules asked for.
+_approved: ContextVar[bool] = ContextVar("alliance_action_approved", default=False)
+
+
+@contextmanager
+def approved():
+    token = _approved.set(True)
+    try:
+        yield
+    finally:
+        _approved.reset(token)
+
+
+def builtin_percent(hooks: Alliances, action: str) -> int | None:
+    """The vote an action always needs, whatever the rules: the members' own actions (``hooks.MEMBERS_VOTE``)."""
+    if action == "remove_commander":
+        return 100
+    return hooks.subcommander_percent if action in MEMBERS_VOTE else None
+
+
+async def rule_percent(session: AsyncSession, alliance_id: int, action: str, role: str) -> int | None:
+    """The percent the alliance asks for when a team in ``role`` does ``action``: the rule for the role, else the rule for any role, else none."""
+    rows = (await session.execute(select(AllianceRule.role, AllianceRule.percent).where(AllianceRule.alliance_id == alliance_id, AllianceRule.action == action, AllianceRule.role.in_([role, ""])))).all()
+    found = dict(rows)
+    return found.get(role, found.get(""))
 
 
 def name_key(name: str) -> str:
@@ -91,6 +129,14 @@ async def _acting(session, hooks: Alliances, alliance: Alliance, actor_team_id: 
             raise NotFound("that team is not in the alliance")
     if not await hooks.allowed(session, alliance, actor, action, target, role):
         raise Forbidden("your role can't do that")
+    if not _approved.get():
+        if target is not None and action in ("remove", "revoke", "appoint") and target.protected_until and target.protected_until > wallclock.timestamp():
+            raise Forbidden("the members voted that team in as a subcommander: only a vote of the members takes the role away for now")
+        needed = builtin_percent(hooks, action)
+        if needed is None and action in GOVERNED:
+            needed = await rule_percent(session, alliance.id, action, actor.role)
+        if needed is not None:
+            raise NeedsVote(needed)
     return actor, target
 
 
@@ -182,6 +228,7 @@ async def _delete_alliance(session: AsyncSession, alliance: Alliance) -> None:
     await session.execute(delete(AllianceMember).where(AllianceMember.alliance_id == alliance.id))
     await session.execute(delete(AllianceInvite).where(AllianceInvite.alliance_id == alliance.id))
     await session.execute(delete(AllianceRole).where(AllianceRole.alliance_id == alliance.id))
+    await session.execute(delete(AllianceRule).where(AllianceRule.alliance_id == alliance.id))
     await session.execute(delete(AllianceProfile).where(AllianceProfile.alliance_id == alliance.id))
     await session.execute(delete(AllianceTop).where(AllianceTop.alliance_id == alliance.id))
     await session.execute(delete(AllianceKept).where(AllianceKept.alliance_id == alliance.id))
@@ -221,7 +268,7 @@ async def appoint(session: AsyncSession, hooks: Alliances, alliance: Alliance, a
     if role not in await role_names(session, hooks, alliance):
         raise NotFound("the alliance has no such role")
     _, target = await _acting(session, hooks, alliance, actor_team_id, "appoint", target_team_id, role)
-    target.role = role
+    target.role, target.protected_until = role, None
     await session.flush()
     return target
 
@@ -231,7 +278,7 @@ async def revoke(session: AsyncSession, hooks: Alliances, alliance: Alliance, ac
     _, target = await _acting(session, hooks, alliance, actor_team_id, "revoke", target_team_id)
     if target.role == hooks.default_role:
         raise AllianceError("that team holds no role to take away")
-    target.role = hooks.default_role
+    target.role, target.protected_until = hooks.default_role, None
     await session.flush()
     return target
 
@@ -313,6 +360,87 @@ async def remove_team(session: AsyncSession, hooks: Alliances, team_id: int) -> 
     await session.flush()
 
 
+# --- voting requirements and the members' own actions ---------------------------------------------------------------------------
+
+async def rules(session: AsyncSession, alliance: Alliance) -> list[dict]:
+    rows = (await session.scalars(select(AllianceRule).where(AllianceRule.alliance_id == alliance.id).order_by(AllianceRule.id))).all()
+    return [{"action": row.action, "role": row.role, "percent": row.percent} for row in rows]
+
+
+async def set_rule(session: AsyncSession, hooks: Alliances, alliance: Alliance, actor_team_id: int, action: str, role: str, percent: int | None) -> list[dict]:
+    """Asks for a vote of ``percent`` of the active teams when a team in ``role`` (empty: any role) does ``action``, or
+    drops the requirement (``percent`` None). Changing voting rules is an action like any other: it needs a vote when a
+    rule says so."""
+    await _acting(session, hooks, alliance, actor_team_id, "set_rules")
+    if action not in GOVERNED:
+        raise AllianceError("there's no vote to ask for on that")
+    if role and role not in await role_names(session, hooks, alliance):
+        raise NotFound("the alliance has no such role")
+    if percent is not None and not 1 <= percent <= 100:
+        raise AllianceError("a vote needs 1 to 100 percent")
+    where = (AllianceRule.alliance_id == alliance.id, AllianceRule.action == action, AllianceRule.role == role)
+    if percent is None:
+        await session.execute(delete(AllianceRule).where(*where))
+    else:
+        row = await session.scalar(select(AllianceRule).where(*where))
+        if row is None:
+            session.add(AllianceRule(alliance_id=alliance.id, action=action, role=role, percent=percent))
+        else:
+            row.percent = percent
+    await session.flush()
+    return await rules(session, alliance)
+
+
+async def elect_subcommander(session: AsyncSession, hooks: Alliances, alliance: Alliance, actor_team_id: int, target_team_id: int) -> AllianceMember:
+    """Runs when the members have voted a team in: a subcommander the commander cannot remove for ``subcommander_protection``."""
+    _, target = await _acting(session, hooks, alliance, actor_team_id, "elect_subcommander", target_team_id)
+    target.role, target.protected_until = hooks.subcommander_role, wallclock.timestamp() + hooks.subcommander_protection
+    await session.flush()
+    return target
+
+
+async def dismiss_subcommander(session: AsyncSession, hooks: Alliances, alliance: Alliance, actor_team_id: int, target_team_id: int) -> AllianceMember:
+    _, target = await _acting(session, hooks, alliance, actor_team_id, "dismiss_subcommander", target_team_id)
+    target.role, target.protected_until = hooks.default_role, None
+    await session.flush()
+    return target
+
+
+async def remove_commander(session: AsyncSession, hooks: Alliances, alliance: Alliance, actor_team_id: int) -> AllianceMember:
+    """Runs when the subcommanders have voted unanimously: the commander is a plain member and the seat is empty."""
+    commander = await session.scalar(select(AllianceMember).where(AllianceMember.alliance_id == alliance.id, AllianceMember.role == hooks.commander_role))
+    if commander is None:
+        raise NotFound("there is no commander")
+    await _acting(session, hooks, alliance, actor_team_id, "remove_commander", commander.team_id)
+    commander.role = hooks.default_role
+    await session.flush()
+    return commander
+
+
+#: What a ballot can carry: the name it is called by, the action it is (what the roles and rules know it as) and what runs.
+RUNS = {
+    "invite": ("invite", invite),
+    "withdraw": ("withdraw", withdraw),
+    "remove": ("remove", remove),
+    "appoint": ("appoint", appoint),
+    "revoke": ("revoke", revoke),
+    "hand_over": ("hand_over", hand_over),
+    "disband": ("disband", disband),
+    "define_role": ("edit_roles", define_role),
+    "delete_role": ("edit_roles", delete_role),
+    "set_rule": ("set_rules", set_rule),
+    "elect_subcommander": ("elect_subcommander", elect_subcommander),
+    "dismiss_subcommander": ("dismiss_subcommander", dismiss_subcommander),
+    "remove_commander": ("remove_commander", remove_commander),
+}
+
+
+async def run_approved(session: AsyncSession, hooks: Alliances, alliance: Alliance, actor_team_id: int, run: str, args: dict) -> None:
+    """Does what a passed ballot carries, as the team that put it, whose role must still allow it."""
+    with approved():
+        await RUNS[run][1](session, hooks, alliance, actor_team_id, **args)
+
+
 # --- what the player sees --------------------------------------------------------------------------------------------------------------
 
 async def view(session: AsyncSession, hooks: Alliances, alliance: Alliance, viewer_team_id: int) -> dict:
@@ -323,7 +451,7 @@ async def view(session: AsyncSession, hooks: Alliances, alliance: Alliance, view
     every = await role_names(session, hooks, alliance)
     can = [action for action in ACTIONS if await hooks.allowed(session, alliance, me, action)]
     shown = {
-        "id": alliance.id, "name": alliance.name, "roles": every, "role_actions": await role_actions(session, alliance), "you": {"team_id": me.team_id, "role": me.role},
+        "id": alliance.id, "name": alliance.name, "roles": every, "role_actions": await role_actions(session, alliance), "rules": await rules(session, alliance), "you": {"team_id": me.team_id, "role": me.role},
         "can": can, "appointable": [role for role in every if await hooks.allowed(session, alliance, me, "appoint", role=role)],
         "members": [
             {"team_id": row.team_id, "team": names.get(row.team_id), "role": row.role, "appoint": await hooks.allowed(session, alliance, me, "appoint", row)}
