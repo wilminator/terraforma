@@ -164,6 +164,8 @@ export class FightModel {
         return done(["fight.gold", { amount: data[2] }]);
       case "Drop":
         return done(["fight.drop", { name: name(keyOf(data)), item: data[3], quantity: data[4] }]);
+      case "DropHeld":
+        return done(["fight.drop_held", { item: data[1], quantity: data[2] }]);
       case "PartyLost":
         return done(["fight.party_lost", { party: data[0] }]);
       case "PartyJoined":
