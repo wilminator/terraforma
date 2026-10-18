@@ -16,6 +16,7 @@ import { nearbyPanel } from "./nearby.js";
 import { packPanel } from "./pack.js";
 import { partyPanel } from "./party.js";
 import { questsPanel } from "./quests.js";
+import { ratingsPanel } from "./ratings.js";
 import { teamsPanel } from "./teams.js";
 
 export class Panels {
@@ -39,6 +40,7 @@ export class Panels {
     this.add("chat", chatPanel);
     this.add("drops", dropsPanel);
     this.add("quests", questsPanel);
+    this.add("ratings", ratingsPanel);
   }
 
   /** Opens the panel (leaving it open if it already is): the nearby list opens the talk panel when a conversation starts. */
