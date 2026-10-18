@@ -5,7 +5,8 @@
 //
 // The motion uses the Web Animations API and waits for each animation to finish before the next event, so the pace is the pacing
 // of the events and nothing is timed against the clock. A player who asks the system for less motion sees the same text and gauges, and
-// no movement.
+// no movement. A fighter whose sheet has the animation also plays it once for what happens (it attacks, is hit, dies, flees) and goes
+// back to its "base"; a sheet without that name just keeps its "base", and a dead fighter holds the last frame of its "die".
 
 import { drawFrame, frameRect } from "./art.js";
 import { h, replace } from "./dom.js";
@@ -17,6 +18,8 @@ const SPEEDS = [1, 2, 4];
 const READ_MS = 650; // how long an event stays before the next at normal speed
 const MOVE_MS = 260; // how long one movement takes at normal speed
 const SPRITE = 48; // the size of a fighter's picture on the card (the sprite sheet's frame is scaled to it)
+// The animation a fighter plays for what happens to it (an acting fighter's own is named by the model: attack_close, skill, spell, item).
+const CUES = { damage: "hit", died: "die", fled: "flee" };
 
 const reducedMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
 
@@ -41,7 +44,7 @@ export class FightScene {
     this.shown = 0; // how many events have been played since the scene opened
     this.run = 0; // changes when the scene closes, so a playback in progress stops
     this.moving = new Set(); // the animations in flight
-    this.sprites = new Map(); // fighter key -> { canvas, loaded, frame, player } for each fighter whose personality has fight art
+    this.sprites = new Map(); // fighter key -> { canvas, loaded, frame, player, cue, hold } for each fighter whose personality has fight art
     this.stopSprites = () => {};
     this.linkState = "closed";
     this.opened = 0;
@@ -176,6 +179,7 @@ export class FightScene {
   async #play(run, marks) {
     if (this.skipping) return;
     const motion = !reducedMotion();
+    if (motion && !this.skipping) for (const mark of marks) this.#mark(mark);
     await Promise.all(marks.map((mark) => (motion ? this.#move(mark) : null)));
     if (run === this.run && !this.skipping) await this.#wait(READ_MS / this.speed);
   }
@@ -185,6 +189,19 @@ export class FightScene {
       this.waiting = done;
       setTimeout(done, ms);
     });
+  }
+
+  /** The animation of the fighter's picture that goes with a mark (the card's own movement is #move). */
+  #mark(mark) {
+    const sprite = this.sprites.get(mark.key);
+    if (!sprite?.player) return;
+    if (mark.kind === "revived") {
+      this.#endCue(mark.key, sprite);
+      this.#drawSprite(sprite);
+      return;
+    }
+    const name = mark.cue ?? CUES[mark.kind];
+    if (name) this.#cue(mark.key, name);
   }
 
   async #move(mark) {
@@ -313,7 +330,7 @@ export class FightScene {
   /** The place on a card where a fighter's picture goes once it has loaded (a fighter whose picture fails to load stays a plain card). */
   #spot(key) {
     const canvas = h("canvas", { class: "fighter-sprite", width: SPRITE, height: SPRITE, "aria-hidden": "true", hidden: true });
-    this.sprites.set(key, { canvas, loaded: null, frame: 0, player: null });
+    this.sprites.set(key, { canvas, loaded: null, frame: 0, player: null, cue: null, hold: false });
     return canvas;
   }
 
@@ -337,6 +354,7 @@ export class FightScene {
         sprite.frame = typeof art === "object" ? (art.frame ?? 0) : 0;
         sprite.player = loaded.animations && art.animations && !reducedMotion() ? loaded.animations.play("base", { direction: this.#view(fighter) }) : null;
         sprite.canvas.hidden = false;
+        if (sprite.player && !fighter.alive && !fighter.fled) this.#cue(key, "die"); // (a fight that opens with a fighter down shows it down)
         this.#drawSprite(sprite);
       }),
     );
@@ -344,8 +362,11 @@ export class FightScene {
     const playing = [...this.sprites.values()].filter((each) => each.player);
     this.stopSprites = playing.length
       ? this.shell.art.clock.subscribe(() => {
-          for (const each of playing) {
-            const at = each.player.frameAt().index;
+          for (const [key, each] of this.sprites) {
+            if (!each.player) continue;
+            if (each.cue && !each.hold && each.cue.done) this.#endCue(key, each);
+            const player = each.cue ?? each.player;
+            const at = `${player.name}:${(each.hold ? player.frameAt(Infinity) : player.frameAt()).index}`;
             if (at !== each.shown) this.#drawSprite(each);
           }
         })
@@ -358,8 +379,9 @@ export class FightScene {
     const context = canvas.getContext("2d");
     context.clearRect(0, 0, canvas.width, canvas.height);
     if (sprite.player) {
-      const shows = sprite.player.frameAt();
-      sprite.shown = shows.index;
+      const player = sprite.cue ?? sprite.player;
+      const shows = sprite.hold ? player.frameAt(Infinity) : player.frameAt(); // (a held death shows its last frame)
+      sprite.shown = `${player.name}:${shows.index}`;
       drawFrame(context, loaded, shows.frame, 0, 0, SPRITE, SPRITE, shows.ops);
     } else if (loaded.frame) {
       const rect = frameRect(loaded, sprite.frame);
@@ -367,6 +389,30 @@ export class FightScene {
     } else {
       context.drawImage(loaded.source, 0, 0, SPRITE, SPRITE);
     }
+  }
+
+  /** Plays $name once on a fighter's picture, if its sheet has that animation for the view (a sheet without it keeps its "base"). "die" is
+   * held. The card says what it plays in data-cue, which goes when the animation ends. */
+  #cue(key, name) {
+    const sprite = this.sprites.get(key);
+    const fighter = this.model?.fighter(key);
+    if (!sprite?.player || !fighter) return;
+    const direction = this.#view(fighter);
+    const animations = sprite.loaded.animations;
+    if (!animations.find(name, direction)?.startsWith(name)) return;
+    sprite.cue = animations.play(name, { direction, once: true });
+    sprite.hold = name === "die";
+    sprite.shown = null;
+    const card = this.cards.get(key);
+    if (card) card.dataset.cue = name;
+    this.#drawSprite(sprite);
+  }
+
+  #endCue(key, sprite) {
+    sprite.cue = null;
+    sprite.hold = false;
+    sprite.shown = null;
+    delete this.cards.get(key)?.dataset.cue;
   }
 
   #say(key, values) {
