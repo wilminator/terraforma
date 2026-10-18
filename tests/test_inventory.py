@@ -192,7 +192,7 @@ def test_something_in_the_way_is_named_not_moved(mike):
     give(client, hero_id, "sword", 2)
     equip(client, headers, hero_id, 0)
     answer = equip(client, headers, hero_id, 1, side=0)
-    assert answer.status_code == 409 and answer.json() == {"outcome": "needs_unequipping", "occupying_position": 0}
+    assert answer.status_code == 409 and answer.json() == {"outcome": "needs_unequipping", "occupying_position": 0, "detail": "something is already in the way: take it off first"}
     again = equip(client, headers, hero_id, 0, side=1)
     assert again.status_code == 409 and again.json()["occupying_position"] == 0, "already worn: take it off first"
 
@@ -214,7 +214,7 @@ def test_ammunition_needs_a_weapon_that_takes_it(mike):
         give(client, hero_id, key, 5)
     where = positions(client, hero_id)
     answer = equip(client, headers, hero_id, where["arrow"])
-    assert answer.status_code == 409 and answer.json() == {"outcome": "incompatible_ammo"}, "no weapon yet"
+    assert answer.status_code == 409 and answer.json() == {"outcome": "incompatible_ammo", "detail": "nothing worn takes that ammunition"}, "no weapon yet"
     equip(client, headers, hero_id, where["sword"])
     assert equip(client, headers, hero_id, where["arrow"]).status_code == 409, "a sword takes none"
     expect(client.post(f"/api/heroes/{hero_id}/unequip", json={"position": where["sword"]}, headers=headers), 200)
@@ -239,7 +239,7 @@ def test_other_things_cannot_be_worn_or_found(mike):
     client, headers, hero_id = mike
     give(client, hero_id, "potion")
     answer = equip(client, headers, hero_id, 0)
-    assert answer.status_code == 422 and answer.json() == {"outcome": "not_equipable"}
+    assert answer.status_code == 422 and answer.json() == {"outcome": "not_equipable", "detail": "that can't be worn or wielded"}
     assert equip(client, headers, hero_id, 7).status_code == 404
     assert client.post(f"/api/heroes/{hero_id}/unequip", json={"position": 7}, headers=headers).status_code == 404
 
@@ -299,7 +299,7 @@ def test_gear_for_another_job_is_refused_with_the_reason_and_nothing_moves(mike)
     client, headers, hero_id = mike
     give(client, hero_id, "runeblade")
     answer = equip(client, headers, hero_id, 0)
-    assert answer.status_code == 422 and answer.json() == {"outcome": "not_allowed", "reason": "Runeblade is only for mage"}
+    assert answer.status_code == 422 and answer.json() == {"outcome": "not_allowed", "reason": "Runeblade is only for mage", "detail": "Runeblade is only for mage"}
     assert look(client, hero_id)["equipment"] == {}
 
 
@@ -316,6 +316,7 @@ def test_the_inventory_view_says_which_gear_the_hero_may_not_wear(mike):
     give(client, hero_id, "plate")
     items = {entry["item"]: entry for entry in look(client, hero_id)["items"]}
     assert "refused" not in items["sword"]
+    assert (items["sword"]["wearable"], items["sword"]["sided"], items["sword"]["usable"]) == (True, True, False)
     assert items["plate"]["refused"] == "Plate needs Strength 999"
 
 
