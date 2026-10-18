@@ -472,6 +472,31 @@ class RealmSeed(Strict):
     strength: int = Field(default=0, ge=-1_000_000, le=1_000_000)
 
 
+class MaterialSeed(Strict):
+    """A raw material (``materials.json``): iron, leather, a rare ore. Settlements keep a supply of it (``supplies`` in settlements.json)."""
+
+    key: Key
+    name: str = Field(min_length=1, max_length=64)
+
+
+class SupplySeed(Strict):
+    """What a settlement keeps of one material: it holds at most ``capacity``; every tick of the world clock its own sources add ``rate`` and its
+    use takes away ``drain``. It starts at ``level`` (left out: full). Events cut the sources later; a load of the seed leaves the level and
+    the cut alone."""
+
+    material: Key
+    capacity: int = Field(default=100, ge=1, le=1_000_000)
+    rate: int = Field(default=0, ge=0, le=1_000_000)
+    drain: int = Field(default=0, ge=0, le=1_000_000)
+    level: int | None = Field(default=None, ge=0, le=1_000_000)
+
+    @model_validator(mode="after")
+    def _level_fits(self):
+        if self.level is not None and self.level > self.capacity:
+            raise ValueError("level is above capacity")
+        return self
+
+
 class SettlementSeed(Strict):
     """A town, city or village of a realm (``settlements.json``), on one of the game's maps (``map``: a key in ``maps.json``, or the default
     ``hub``). ``state`` is how it starts: ``live``, or ``dormant`` (authored, not yet founded). After that the world moves it between live,
@@ -484,6 +509,7 @@ class SettlementSeed(Strict):
     map: Key
     tier: int = Field(default=0, ge=0, le=100)
     state: Literal["live", "dormant"] = "live"
+    supplies: list[SupplySeed] = Field(default=[], max_length=64)
 
 
 class MapSeed(Strict):
@@ -703,6 +729,7 @@ KINDS: dict[str, type[Strict]] = {
     "maps": MapSeed,
     "dialogs": DialogSeed,
     "npcs": NpcSeed,
+    "materials": MaterialSeed,
     "realms": RealmSeed,
     "settlements": SettlementSeed,
     "quest_templates": QuestTemplateSeed,
@@ -844,6 +871,13 @@ def check_seed(seed: dict[str, list[dict]], stats: tuple[str, ...] = STATS, reso
     for town in checked["settlements"]:
         if town.realm not in keys["realms"]:
             problems.append(f"settlements.json {town.key}: belongs to {town.realm!r}, which realms.json doesn't have")
+        seen: set[str] = set()
+        for supply in town.supplies:
+            if supply.material not in keys["materials"]:
+                problems.append(f"settlements.json {town.key}: keeps {supply.material!r}, which materials.json doesn't have")
+            if supply.material in seen:
+                problems.append(f"settlements.json {town.key}: keeps {supply.material!r} twice")
+            seen.add(supply.material)
         if town.map not in drawn and town.map != "hub":
             problems.append(f"settlements.json {town.key}: stands on {town.map!r}, which maps.json doesn't have")
     for tree in checked["dialogs"]:
