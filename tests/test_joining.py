@@ -231,6 +231,23 @@ async def test_the_joiner_acts_from_the_next_round_and_the_round_starts_with_its
     assert await store.verify(db, host, rules, deep=True) == 1, "the chain holds and the round plays out the same again"
 
 
+async def test_a_replay_picks_up_from_the_fight_just_after_a_party_joined(db):
+    """The page that plays a fight back starts from its first state and, at a round that opens with a joining, from the fight with the party in it."""
+    from terraforma.fightpages import service as pages
+
+    mike, zed, host, vanguard, _party, rules = await offered(db)
+    await towns_service.accept_join(db, TOWNS, rules, Relations(), mike.id, vanguard.id)
+    cleo, aria, slime = (0, 0, 0), (2, 0, 0), (1, 0, 0)
+    await live.submit_command(db, host, zed.id, cleo, Command.ATTACK_RIGHT, 0, slime, rules)
+    await live.submit_command(db, host, mike.id, aria, Command.ATTACK_RIGHT, 0, slime, rules)
+    await live.resolve_round(db, host, rules)
+    replay = await pages.viewable_replay(db, rules, zed.id, host.id)
+    names = lambda view: [each["name"] for each in view["fighters"]]  # noqa: E731
+    assert names(replay["start"]) == ["Cleo", "Slime"] and names(replay["fight"]) == ["Cleo", "Slime", "Aria"]
+    assert list(replay["joins"]) == ["1"] and names(replay["joins"]["1"]) == ["Cleo", "Slime", "Aria"]
+    assert replay["joins"]["1"]["deadline"] is None and replay["joins"]["1"]["round"] == 1 and replay["joins"]["1"]["fighters"][1]["resources"] == replay["start"]["fighters"][1]["resources"]  # (nothing hit yet)
+
+
 async def test_the_joiner_earns_only_for_what_it_does_after_joining(db):
     mike, _zed, host, vanguard, _party, rules = await offered(db)
     await towns_service.accept_join(db, TOWNS, rules, Relations(), mike.id, vanguard.id)

@@ -3,7 +3,7 @@
 import json
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from terraforma.accounts import ratelimit
 from terraforma.accounts.service import create_account
@@ -13,6 +13,8 @@ from terraforma.alliances.models import Alliance, AllianceInvite, AllianceMember
 from terraforma.content.loader import load_content
 from terraforma.content.models import Job
 from terraforma.game import Game
+from terraforma.heroes.models import Team
+from terraforma import wallclock
 from terraforma.heroes import service as heroes
 from terraforma.relations import service as relating
 from terraforma.relations.hooks import Change, Ref, Relations
@@ -470,7 +472,7 @@ def test_an_alliance_is_founded_joined_and_run_over_the_calls(world):
     waiting = expect(client.get(f"/api/teams/{ids['rivals']}/invitations"), 200).json()
     assert [row["alliance"] for row in waiting] == ["Iron Pact"]
     joined = post(client, "Zed", f"/api/teams/{ids['rivals']}/invitations/accept", {"alliance_id": alliance})
-    assert [(row["team"], row["role"]) for row in joined["members"]] == [("Vanguard", "commander"), ("Rivals", "member")] and joined["can"] == ["vote"]
+    assert [(row["team"], row["role"]) for row in joined["members"]] == [("Vanguard", "commander"), ("Rivals", "member")] and joined["can"] == ["vote", "elect_subcommander", "dismiss_subcommander"]
     assert joined["appointable"] == [] and [row["appoint"] for row in joined["members"]] == [False, False]
     post(client, "Zed", f"/api/alliances/{alliance}/invite", {"team_id": ids["rivals"], "target_team_id": ids["scouts"]}, 403)  # a member
     post(client, "Mike", f"/api/alliances/{alliance}/appoint", {"team_id": ids["vanguard"], "target_team_id": ids["rivals"], "role": "recruiter"})
@@ -503,7 +505,7 @@ def test_an_alliance_is_read_as_the_member_team_asked_for(world):
     login(client, "Mike")
     assert expect(client.get(f"/api/alliances/{alliance}"), 200).json()["you"]["team_id"] == ids["vanguard"]  # the first, as before
     scouts = expect(client.get(f"/api/alliances/{alliance}?team_id={ids['scouts']}"), 200).json()
-    assert scouts["you"] == {"team_id": ids["scouts"], "role": "member"} and scouts["can"] == ["vote"]
+    assert scouts["you"] == {"team_id": ids["scouts"], "role": "member"} and scouts["can"] == ["vote", "elect_subcommander", "dismiss_subcommander"]
     expect(client.get(f"/api/alliances/{alliance}?team_id={ids['rivals']}"), 404)  # not Mike's team
     login(client, "Zed")
     expect(client.get(f"/api/alliances/{alliance}?team_id={ids['rivals']}"), 404)  # Zed's team, but not in it
@@ -559,7 +561,7 @@ def test_the_games_roles_are_what_the_calls_use(world):
     assert found["roles"] == ["master", "warden", "knight"] and found["you"]["role"] == "master"
     post(client, "Mike", f"/api/alliances/{found['id']}/invite", {"team_id": ids["vanguard"], "target_team_id": ids["rivals"]})
     joined = post(client, "Zed", f"/api/teams/{ids['rivals']}/invitations/accept", {"alliance_id": found["id"]})
-    assert joined["you"]["role"] == "knight" and joined["can"] == ["speak"]
+    assert joined["you"]["role"] == "knight" and joined["can"] == ["speak", "elect_subcommander", "dismiss_subcommander"]
 
 
 def test_roles_are_defined_appointed_revoked_and_removed_over_the_calls(world):
@@ -595,3 +597,38 @@ def test_roles_are_defined_appointed_revoked_and_removed_over_the_calls(world):
     assert "Scribe" not in removed["roles"] and removed["members"][1]["role"] == "member"
     send(mike_headers, f"{url}/roles/delete", {**mike, "name": "member"}, 409)
     send(mike_headers, f"{url}/roles/delete", {**mike, "name": "Scribe"}, 404)
+
+
+def test_a_rule_turns_an_action_into_a_ballot_the_members_settle_over_the_calls(world):
+    client, ids = world
+    mike_headers = login(client, "Mike")
+
+    def send(headers, url, body, status=200):
+        return expect(client.post(url, json=body, headers=headers), status).json()
+
+    alliance = send(mike_headers, "/api/alliances", {"team_id": ids["vanguard"], "name": "Iron Pact"}, 201)["id"]
+    url = f"/api/alliances/{alliance}"
+    mike = {"team_id": ids["vanguard"]}
+    send(mike_headers, f"{url}/invite", {**mike, "target_team_id": ids["rivals"]})
+    zed_headers = login(client, "Zed")
+    send(zed_headers, f"/api/teams/{ids['rivals']}/invitations/accept", {"alliance_id": alliance})
+    in_app_db(client, lambda db: db.execute(update(Team).values(last_played_at=wallclock.timestamp())))
+
+    send(zed_headers, f"{url}/rules", {"team_id": ids["rivals"], "action": "invite", "percent": 100}, 403)  # a member
+    mike_headers = login(client, "Mike")
+    send(mike_headers, f"{url}/rules", {**mike, "action": "fly", "percent": 100}, 409)
+    send(mike_headers, f"{url}/rules", {**mike, "action": "invite"}, 422)  # `percent` must be given, null to drop
+    ruled = send(mike_headers, f"{url}/rules", {**mike, "action": "invite", "percent": 100})
+    assert ruled["rules"] == [{"action": "invite", "role": "", "percent": 100}]
+
+    asked = send(mike_headers, f"{url}/invite", {**mike, "target_team_id": ids["scouts"]})["ballot"]
+    assert (asked["kind"], asked["threshold"], asked["title"], asked["you_voted"], asked["closed"]) == ("action", 100, "Invite Scouts", True, False)
+    assert expect(client.get(f"/api/teams/{ids['scouts']}/invitations"), 200).json() == [], "nothing is done until the vote passes"
+    zed_headers = login(client, "Zed")
+    settled = send(zed_headers, f"{url}/ballots/{asked['id']}/vote", {"team_id": ids["rivals"], "option": 0})
+    assert settled["closed"] and settled["result"]["passed"] and settled["result"]["executed"]
+
+    mike_headers = login(client, "Mike")
+    assert [row["alliance"] for row in expect(client.get(f"/api/teams/{ids['scouts']}/invitations"), 200).json()] == ["Iron Pact"]
+    voluntary = send(mike_headers, f"{url}/remove", {**mike, "target_team_id": ids["rivals"], "vote": True, "closes_in_hours": 2})["ballot"]
+    assert voluntary["threshold"] == 50 and voluntary["closes_at"] - voluntary["opened_at"] == 2 * 3600

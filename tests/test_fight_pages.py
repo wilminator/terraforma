@@ -304,8 +304,26 @@ async def test_a_replay_has_every_round_played_with_its_events(db):
     replay = await service.viewable_replay(db, RULES, mike.id, record.id)
     assert [each["round"] for each in replay["rounds"]] == [1] and replay["rounds"][0]["events"]
     assert replay["fight"]["round"] == 2
+    assert replay["joins"] == {}
     with pytest.raises(service.NotFound):
         await service.viewable_replay(db, RULES, mike.id + 1000, record.id)
+
+
+@pytest.mark.anyio
+async def test_a_replay_starts_from_the_fight_as_it_began(db):
+    """Playing the rounds back needs the state before round 1, not the one the fight ended in (and no deadline: nothing waits)."""
+    from terraforma.fights.combatant import Command
+    from .test_live_fights import FOE, HERO
+
+    hero, mike, team = await a_team(db)
+    record = await live.start_team_fight(db, team, ["rat"], RULES)
+    began = await live.view(db, record, RULES)
+    await live.submit_command(db, record, mike.id, HERO, Command.ATTACK_RIGHT, 0, FOE, RULES)
+    await live.resolve_round(db, record, RULES)
+    replay = await service.viewable_replay(db, RULES, mike.id, record.id)
+    assert replay["start"]["deadline"] is None and replay["start"] == {**began, "deadline": None} and replay["start"]["round"] == 1 and not replay["start"]["over"]
+    assert replay["start"]["fighters"] != replay["fight"]["fighters"]  # (the blow landed: somebody's gauge fell)
+    assert all(not each["yours"] and "menu" not in each for each in replay["start"]["fighters"])  # (a replay commands nobody)
 
 
 # --- the calls ----------------------------------------------------------------------------------------------------------------

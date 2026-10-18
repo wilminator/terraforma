@@ -38,11 +38,21 @@ class Unequip(Strict):
     position: int = Field(ge=0, le=inventory.MAX_ITEMS)
 
 
+REFUSALS = {
+    inventory.EquipOutcome.NOT_FOUND: "there's nothing in that position",
+    inventory.EquipOutcome.NOT_EQUIPABLE: "that can't be worn or wielded",
+    inventory.EquipOutcome.NEEDS_UNEQUIPPING: "something is already in the way: take it off first",
+    inventory.EquipOutcome.INCOMPATIBLE_AMMO: "nothing worn takes that ammunition",
+    inventory.EquipOutcome.NOT_ALLOWED: "the hero can't wear that",
+}
+
+
 def outcome(result: inventory.EquipResult):
     """Success is 200 with the slots; anything else says what was in the way (404, 409 or 422)."""
     body = {"outcome": result.outcome.value}
     if result.outcome is inventory.EquipOutcome.SUCCESS:
         return {**body, "slots": list(result.slots)}
+    body["detail"] = result.reason or REFUSALS[result.outcome]  # (the words a page shows)
     code = {
         inventory.EquipOutcome.NOT_FOUND: status.HTTP_404_NOT_FOUND,
         inventory.EquipOutcome.NOT_EQUIPABLE: status.HTTP_422_UNPROCESSABLE_CONTENT,

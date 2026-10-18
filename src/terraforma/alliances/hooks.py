@@ -28,10 +28,21 @@ from . import roles
 #: vote and close it early), ``vote`` in ballots, and ``edit_roles`` (define, change and remove roles of tier 3). The
 #: last six belong to what comes next and nothing uses them yet: ``deposit`` and ``spend`` the alliance's gold,
 #: ``set_fight_tax`` and ``set_sales_tax``, handling its ``inventory``, and signing a ``contract`` for it.
+#:
+#: ``set_rules`` sets which actions need a vote. Three more are the members' own, each always by a vote: a team of tier 3
+#: may put it to the members to make a team a subcommander (``elect_subcommander``) or take that away
+#: (``dismiss_subcommander``), and a subcommander may put it to the subcommanders to remove the commander (``remove_commander``).
 ACTIONS = (
     "invite", "withdraw", "remove", "appoint", "revoke", "hand_over", "disband", "speak", "open_ballot", "close_ballot", "vote", "edit_roles",
     "deposit", "spend", "set_fight_tax", "set_sales_tax", "inventory", "contract",
+    "set_rules", "elect_subcommander", "dismiss_subcommander", "remove_commander",
 )
+#: What the alliance can set a voting requirement on: the actions that change the alliance, not voting itself.
+GOVERNED = (
+    "invite", "withdraw", "remove", "appoint", "revoke", "hand_over", "disband", "edit_roles", "set_rules",
+    "deposit", "spend", "set_fight_tax", "set_sales_tax", "inventory", "contract",
+)
+MEMBERS_VOTE = ("elect_subcommander", "dismiss_subcommander", "remove_commander")
 
 COMMANDER, SUBCOMMANDER, OTHER = 1, 2, 3  # the tiers
 
@@ -54,6 +65,15 @@ class Alliances:
     max_per_team: int = 3
     #: How many roles of tier 3 an alliance may define.
     max_roles: int = 20
+    #: Voting on actions (wall clock, seconds): a team is *active* if it was selected to play within ``active_within``; a ballot
+    #: that carries an action stays open ``action_ballot_seconds`` unless it passes first; an action put to a vote with no rule
+    #: of the alliance's own needs ``voluntary_percent`` of the active teams (at least that many, here and everywhere); the members' vote for or against a subcommander
+    #: needs ``subcommander_percent``, and a subcommander so elected is safe from the commander for ``subcommander_protection``.
+    active_within: int = 7 * 24 * 3600
+    action_ballot_seconds: int = 72 * 3600
+    voluntary_percent: int = 50
+    subcommander_percent: int = 60
+    subcommander_protection: int = 7 * 24 * 3600
     #: Ballots (``alliances.ballots``): how many may be open at once, how many options one has, and whether a ballot
     #: closes as soon as everyone who may vote has.
     max_open_ballots: int = 5
@@ -80,6 +100,11 @@ class Alliances:
         if action not in ACTIONS or target is not None and target.id == actor.id:
             return False
         tier = self.tier(actor.role)
+        if action in MEMBERS_VOTE:
+            if action == "remove_commander":
+                return tier == SUBCOMMANDER and (target is None or self.tier(target.role) == COMMANDER)
+            wanted = OTHER if action == "elect_subcommander" else SUBCOMMANDER
+            return tier == OTHER and (target is None or self.tier(target.role) == wanted)
         if tier == OTHER:
             if action not in await roles.actions(session, alliance.id, actor.role):
                 return False

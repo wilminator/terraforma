@@ -463,6 +463,29 @@ class NpcSeed(Strict):
         return self
 
 
+class RealmSeed(Strict):
+    """A realm (a kingdom) of the game's world (``realms.json``). ``strength`` is where it starts: after that the world moves it, and a
+    later load of the seed leaves it alone."""
+
+    key: Key
+    name: str = Field(min_length=1, max_length=64)
+    strength: int = Field(default=0, ge=-1_000_000, le=1_000_000)
+
+
+class SettlementSeed(Strict):
+    """A town, city or village of a realm (``settlements.json``), on one of the game's maps (``map``: a key in ``maps.json``, or the default
+    ``hub``). ``state`` is how it starts: ``live``, or ``dormant`` (authored, not yet founded). After that the world moves it between live,
+    ruins and dormant, and a later load of the seed leaves its state alone. ``tier`` is how big it is (0 is a hamlet; the game says what
+    the rest mean)."""
+
+    key: Key
+    name: str = Field(min_length=1, max_length=64)
+    realm: Key
+    map: Key
+    tier: int = Field(default=0, ge=0, le=100)
+    state: Literal["live", "dormant"] = "live"
+
+
 class MapSeed(Strict):
     """A map: ``tiles`` is its grid (rows, top to bottom) of places in ``tileset``; ``zone_tiles`` is a second grid of
     places in ``zones`` (left out: the whole map is the first zone). ``wrap_x`` and ``wrap_y`` make walking off the
@@ -680,6 +703,8 @@ KINDS: dict[str, type[Strict]] = {
     "maps": MapSeed,
     "dialogs": DialogSeed,
     "npcs": NpcSeed,
+    "realms": RealmSeed,
+    "settlements": SettlementSeed,
     "quest_templates": QuestTemplateSeed,
     "quest_slots": QuestSlotSeed,
 }
@@ -816,6 +841,11 @@ def check_seed(seed: dict[str, list[dict]], stats: tuple[str, ...] = STATS, reso
         for parts in tags(npc.dialog):
             if parts[0] in ("warp", "warp_visited") and parts[1] not in drawn and parts[1] != "hub":
                 problems.append(f"npcs.json {npc.key}: the dialog warps to {parts[1]!r}, which maps.json doesn't have")
+    for town in checked["settlements"]:
+        if town.realm not in keys["realms"]:
+            problems.append(f"settlements.json {town.key}: belongs to {town.realm!r}, which realms.json doesn't have")
+        if town.map not in drawn and town.map != "hub":
+            problems.append(f"settlements.json {town.key}: stands on {town.map!r}, which maps.json doesn't have")
     for tree in checked["dialogs"]:
         for parts in tags(tree.text):
             if parts[0] in ("warp", "warp_visited") and parts[1] not in drawn and parts[1] != "hub":
