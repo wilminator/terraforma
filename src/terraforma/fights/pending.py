@@ -14,6 +14,7 @@ as the caller's transaction rolls back (the calls' session does).
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..content.models import Item
 from ..heroes import inventory
 from ..heroes.models import Hero
 from ..models import Map, World
@@ -166,12 +167,27 @@ async def assign(session: AsyncSession, rules: Rules, hero: Hero, pending_id: in
 
 
 async def view(session: AsyncSession, pending: PendingDrop, hero: Hero) -> dict:
-    """What a hero of the party sees of a pending drop: what it is, how it is settled, their own answer, and (once it is
-    settled) who won. The others' answers stay hidden until then, so nobody is swayed by them."""
+    """What a hero of the party sees of a pending drop: what it is (``item`` its key, ``name`` as the game calls it), how it is
+    settled, their own answer, and (once it is settled) who won. The others' answers stay hidden until then, so nobody is swayed
+    by them. A drop that is handed out says which ``heroes`` of the party it can go to."""
     answers = list((await session.scalars(select(PendingDropChoice).where(PendingDropChoice.pending_id == pending.id))).all())
     mine = next((each for each in answers if each.hero_id == hero.id), None)
-    shown = {"id": pending.id, "fight_id": pending.fight_id, "item": pending.item_key, "qty": pending.qty, "mode": pending.mode,
-             "status": pending.status, "your_choice": mine.choice if mine else None, "winner_id": pending.winner_id, "lost": pending.lost}
+    name = await session.scalar(select(Item.name).where(Item.key == pending.item_key))
+    shown = {"id": pending.id, "fight_id": pending.fight_id, "item": pending.item_key, "name": name or pending.item_key, "qty": pending.qty,
+             "mode": pending.mode, "status": pending.status, "your_choice": mine.choice if mine else None, "winner_id": pending.winner_id,
+             "lost": pending.lost}
+    if pending.status == OPEN and pending.mode == ASSIGN:
+        shown["heroes"] = await _named(session, await heroes_of(session, pending))
     if pending.status != OPEN:
-        shown["rolls"] = [{"hero_id": each.hero_id, "choice": each.choice, "roll": each.roll} for each in sorted(answers, key=lambda each: each.hero_id)]
+        names = {each["id"]: each["name"] for each in await _named(session, ({each.hero_id for each in answers} | {pending.winner_id}) - {None})}
+        shown["winner"] = names.get(pending.winner_id)
+        shown["rolls"] = [{"hero_id": each.hero_id, "hero": names.get(each.hero_id), "choice": each.choice, "roll": each.roll}
+                          for each in sorted(answers, key=lambda each: each.hero_id)]
     return shown
+
+
+async def _named(session: AsyncSession, hero_ids) -> list[dict]:
+    """``{"id", "name"}`` of each hero, by id."""
+    ids = sorted(hero_ids)
+    rows = (await session.execute(select(Hero.id, Hero.name).where(Hero.id.in_(ids)).order_by(Hero.id))).all() if ids else []
+    return [{"id": row.id, "name": row.name} for row in rows]
