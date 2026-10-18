@@ -32,7 +32,7 @@ export function dialogPanel(shell, roster) {
     if (!build) {
       return [h("p", { class: "muted" }, t("dialog.no_screen", { command: prompt.command })), h("button", { type: "button", id: "dialog-next", onclick: () => attempt(shell, problem, () => convo.next()) }, t("dialog.next"))];
     }
-    return [build({ shell, roster, heroId: convo.heroId, prompt, finish: () => convo.next(), problem })];
+    return [build({ shell, roster, heroId: convo.heroId, prompt, finish: () => convo.next(), proceed: (frame) => convo.take(frame), problem })];
   }
 
   function draw() {
