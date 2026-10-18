@@ -4,6 +4,7 @@ is what happens to the records when it does."""
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..db.dialect import upsert
 from ..models import Map
 from ..towns.models import VisitedTown
 from .models import DORMANT, LIVE, RUINS, Realm, Settlement
@@ -75,3 +76,40 @@ async def settlements(session: AsyncSession, realm: Realm, state: str | None = N
     if state is not None:
         query = query.where(Settlement.state == state)
     return list((await session.scalars(query)).all())
+
+
+async def apply_realms(session: AsyncSession, world_id: int, realms: list, towns: list) -> int:
+    """Makes the world's realms and settlements match the seed rows ($realms: ``RealmSeed``, $towns: ``SettlementSeed``): new ones are added,
+    known ones (by key) get their names, realm, map and tier rewritten. What the world has moved since stays: a realm's strength and a
+    settlement's state are only the seed's when the row is new. A row the seed no longer lists is left alone. Returns how many rows."""
+    for row in realms:
+        await upsert(session, Realm.__table__, {"world_id": world_id, "key": row.key, "name": row.name, "strength": row.strength}, ["world_id", "key"], insert_only=["strength"])
+    await session.flush()
+    realm_ids = {each.key: each.id for each in (await session.scalars(select(Realm).where(Realm.world_id == world_id))).all()}
+    map_ids = {each.name: each.id for each in (await session.scalars(select(Map).where(Map.world_id == world_id))).all()}
+    for row in towns:
+        values = {"world_id": world_id, "key": row.key, "name": row.name, "realm_id": realm_ids[row.realm], "map_id": map_ids[row.map], "tier": row.tier, "state": row.state}
+        await upsert(session, Settlement.__table__, values, ["world_id", "key"], insert_only=["state"])
+    return len(realms) + len(towns)
+
+
+async def realm(session: AsyncSession, realm_id: int) -> Realm:
+    found = await session.get(Realm, realm_id)
+    if found is None:
+        raise RealmError("There is no such realm.")
+    return found
+
+
+async def settlement(session: AsyncSession, settlement_id: int) -> Settlement:
+    found = await session.get(Settlement, settlement_id)
+    if found is None:
+        raise RealmError("There is no such settlement.")
+    return found
+
+
+def realm_view(row: Realm) -> dict:
+    return {"id": row.id, "key": row.key, "name": row.name, "strength": row.strength}
+
+
+def settlement_view(row: Settlement) -> dict:
+    return {"id": row.id, "key": row.key, "name": row.name, "realm_id": row.realm_id, "map_id": row.map_id, "state": row.state, "tier": row.tier}
