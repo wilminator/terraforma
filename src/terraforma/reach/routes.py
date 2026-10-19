@@ -3,16 +3,16 @@ must be the caller's."""
 
 from typing import Annotated
 
-from fastapi import APIRouter, Path, Request
+from fastapi import APIRouter, HTTPException, Path, Request, status
 from pydantic import Field
 
 from ..accounts import ratelimit
 from ..accounts.routes import Strict, limited
-from ..api.deps import ActingAccount, CurrentAccount, Db, GameReach, GameRelations, GameRules
+from ..api.deps import ActingAccount, CurrentAccount, Db, GamePvp, GameReach, GameRelations, GameRules
 from ..heroes import inventory, service as heroes
 from ..heroes.routes import Id
 from ..heroes.routes import refuse as refuse_hero
-from . import helping, service
+from . import helping, service, talking
 
 router = APIRouter(prefix="/api/heroes/{hero_id}")
 
@@ -52,4 +52,22 @@ async def help_with_item(
         hero = await heroes.own_hero(db, account, hero_id)
         return await helping.help_with_item(db, reach, rules, relations, hero, body.position, body.party_id, body.member)
     except (heroes.HeroError, inventory.InventoryError) as error:
+        raise refuse_hero(error) from error
+
+
+@router.get("/talk/party/{party_id}")
+async def talk_to_party(
+    hero_id: Id, party_id: Id, account: CurrentAccount, db: Db, reach: GameReach, zones: GamePvp, rules: GameRules, relations: GameRelations
+) -> dict:
+    """What the hero's side could do with another party it can talk to from here (a read; nothing starts): its visible teams, the stance of the hero's
+    team toward it, and whether a fight or help is on offer, each with the reason when not. Refused (409) when the party is out of reach
+    for a talk, 404 when there is no such party."""
+    try:
+        hero = await heroes.own_hero(db, account, hero_id)
+        return await talking.talk_to_party(db, reach, zones, rules, relations, hero, party_id)
+    except talking.NoSuchParty as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+    except talking.TalkError as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
+    except heroes.HeroError as error:
         raise refuse_hero(error) from error

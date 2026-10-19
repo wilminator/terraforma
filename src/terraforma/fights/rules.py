@@ -403,6 +403,13 @@ class Rules:
         default anyone but an enemy is helped, so strangers (who count as enemies) are not until they are friends."""
         return "You can't help an enemy." if stance == "enemy" else None
 
+    def may_challenge(self, stance: str) -> str | None:
+        """Whether talking to a party offers a fight, given the stance ("ally", "enemy" or "neutral", from ``party_stance``) the hero's team holds
+        toward it: None if so, otherwise why not. By default everyone but an ally is offered one, so a friendly party offers help and an
+        enemy a fight, and a mixed one both. It only shapes what talking offers; ``POST /api/pvp/fights`` does not ask it, so a game that
+        has allies fight on purpose (a contract for fair PvP) still can."""
+        return "They are your allies." if stance == "ally" else None
+
     # --- monster-party play ---------------------------------------------------------------------------------------
     #: How long a volunteer for the monsters' side may go without checking in (``monsterplay.service.check_in``) before the queue
     #: stops counting them as waiting.
