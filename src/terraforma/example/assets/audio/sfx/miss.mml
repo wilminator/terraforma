@@ -1,0 +1,13 @@
+// Miss: a thin pulse falling away with a short metallic tick.
+// Composed in MML for the TerraForma example game; rendered with chipsynth (python -m chipsynth sfx).
+title Miss
+author Claude, at Michael Allen Wilmes's request
+tempo 240
+once
+
+[instr]
+whiff wave=pulse pw=12 a=0 d=6 s=4 r=3 vol=11
+tick  wave=noise nmode=short a=0 d=2 s=0 r=1 vol=9
+
+V1: @whiff o5 g32 slide 16 4e16
+V2: @tick o6 c32 r16

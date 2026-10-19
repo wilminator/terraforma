@@ -1,0 +1,51 @@
+// The overworld: a walking tune in G major. Sixteen bars, loops from the top.
+// Composed in MML for the TerraForma example game; rendered with chipsynth (python -m chipsynth export-song).
+title Long Road
+author Claude, at Michael Allen Wilmes's request
+comment Overworld map: a walking tune in G major, 16 bars, loops
+tempo 112
+time 4/4
+echo 260ms,30,22
+
+[instr]
+lead  wave=pulse pw=25 a=0 d=8 s=10 r=4 vol=13 vib=4,2
+chord wave=pulse pw=12 a=0 d=6 s=7 r=3 vol=8
+bass  wave=tri a=0 d=7 s=13 r=3 vol=15
+kick  wave=noise a=0 d=3 s=0 r=2 vol=14 send=0
+snare wave=noise a=0 d=5 s=0 r=3 vol=12 send=0
+hat   wave=noise nmode=short a=0 d=1 s=0 r=1 vol=8 send=0
+
+[pat]
+// the bass walks root, fifth, octave, fifth (eighth notes), one bar each
+bG  = 2g 3d g d 2g 3d g d
+bEm = 2e b 3e 2b e b 3e 2b
+bC  = 2c g 3c 2g c g 3c 2g
+bD  = 2d a 3d 2a d a 3d 2a
+// drums
+beat = @kick 2c @hat 7c @snare 5g @hat 7c @kick 2c @hat 7c @snare 5g @hat 7c
+walk = @kick 2c @hat 7c @snare 5g @hat 7c @kick 2c c @snare 5g @hat 7c
+
+// the tune (V1), arpeggiated chords (V2: one note a bar, the chip arpeggio spells the chord), bass (V3), drums (V4)
+V1: l8 v13 pan 0 @lead
+V1: 5d4 g4 a b4 a | g4. e d2 | e4 g4 a4 b4 | 6c4 5b a g2 |
+V1: 5d4 g4 a b4 6d | c4. 5a b2 | 6d4 5b4 a4 g4 | a2. r4 |
+V1: 5b4 6d4 e d4 5b | 6c2 5a2 | b4 6d4 5b4 g4 | a4 f# e d2 |
+V1: 5e4 g4 b4 6d4 | c4. 5b a4 f#4 | g4 a4 b4 6d4 | g2. r4 |
+
+V2: l1 v8 pan -3 @chord arprate 12
+V2: arp 0,4,7 4g | arp 0,3,7 4e | arp 0,4,7 4c | 4g |
+V2: 4g | 4d | 4g | 4d |
+V2: 4g | 4c2 d2 | 4g | 4d |
+V2: arp 0,3,7 4e | arp 0,4,7 4d | 4c | 4g |
+
+V3: l8 v13 pan 2 @bass
+V3: !bG | !bEm | !bC | !bG |
+V3: !bG | !bD | !bG | !bD |
+V3: !bG | 2c g 3c 2g d a 3d 2a | !bG | !bD |
+V3: !bEm | !bD | !bC | !bG |
+
+V4: l8 v11 pan -2
+V4: !beat | !beat | !beat | !walk |
+V4: !beat | !beat | !beat | !walk |
+V4: !beat | !beat | !beat | !walk |
+V4: !beat | !beat | !beat | !walk |

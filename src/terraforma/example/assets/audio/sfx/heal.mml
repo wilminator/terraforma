@@ -1,0 +1,14 @@
+// Heal: a rising sine chime with echo over a soft held note.
+// Composed in MML for the TerraForma example game; rendered with chipsynth (python -m chipsynth sfx).
+title Heal
+author Claude, at Michael Allen Wilmes's request
+tempo 240
+once
+echo 120ms,40,30
+
+[instr]
+chime wave=sine a=0 d=9 s=0 r=8 vol=12
+glow  wave=pulse pw=50 a=2 d=8 s=4 r=6 vol=7
+
+V1: @chime l32 o5 c e g 6c e g 7c r
+V2: @glow o5 c4

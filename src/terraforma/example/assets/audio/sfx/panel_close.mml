@@ -1,0 +1,11 @@
+// Panel close: the open sound run backwards, zipping down two octaves.
+// Composed in MML for the TerraForma example game; rendered with chipsynth (python -m chipsynth sfx).
+title Panel close
+author Claude, at Michael Allen Wilmes's request
+tempo 240
+once
+
+[instr]
+zip wave=pulse pw=25 a=0 d=6 s=8 r=4 vol=12 pws=60,20,8
+
+V1: @zip o6 c32 slide 24 4c8

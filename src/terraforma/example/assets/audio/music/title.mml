@@ -1,0 +1,58 @@
+// The example game's title screen: a stately march in D major. Sixteen bars, loops from the top.
+// Composed in MML for the TerraForma example game; rendered with chipsynth (python -m chipsynth export-song).
+title Banner over the Hills
+author Claude, at Michael Allen Wilmes's request
+comment Title screen: a march in D major, 16 bars, loops
+tempo 108
+time 4/4
+echo 300ms,35,25
+
+[instr]
+lead  wave=pulse pw=50 a=0 d=9 s=11 r=5 vol=13 vib=5,2
+horn  wave=pulse pw=25 a=1 d=7 s=8 r=4 vol=10
+bass  wave=tri a=0 d=7 s=13 r=3 vol=15
+kick  wave=noise a=0 d=3 s=0 r=2 vol=14 send=0
+snare wave=noise a=0 d=5 s=0 r=3 vol=12 send=0
+hat   wave=noise nmode=short a=0 d=1 s=0 r=1 vol=8 send=0
+
+[pat]
+// the horn's broken chords, one bar each (eighth notes)
+hD  = 4d f# a 5d 4a f# a f#
+hG  = 4g b 5d g d 4b 5d 4b
+hA  = 4a 5c# e a e c# e 4c#
+hBm = 4b 5d f# b f# d f# d
+hEm = 4e g b 5e 4b g b g
+// the bass, root and octave with the fifth on the third beat
+bD  = 2d4 3d4 2a4 3d4
+bG  = 2g4 3g4 2d4 3g4
+bA  = 2a4 3a4 2e4 3a4
+bBm = 2b4 3b4 2f#4 3b4
+bEm = 2e4 3e4 2b4 3e4
+// drums: a plain beat and a bar with a snare roll
+beat = @kick 2c @hat 7c @snare 5g @hat 7c @kick 2c @hat 7c @snare 5g @hat 7c
+fill = @kick 2c @hat 7c @snare 5g @hat 7c @kick 2c c @snare 5g16 g16 g16 g16
+
+// the tune (V1), broken chords (V2), bass (V3), drums (V4)
+V1: l8 v13 pan 0 @lead
+V1: 5d4 f#4 a4 6d4 | c#4. 5b8 a4 g4 | a2 e4 f#4 | d2. r4 |
+V1: 5d4 e4 f#4 a4 | b4. a8 f#4 d4 | g4 b4 6d4 5b4 | a2. r4 |
+V1: 6d4 e4 f#4 d4 | e4. d8 5b4 a4 | 6c#4 5a4 b4 6c#4 | d2 5a4 f#4 |
+V1: 5g4 a4 b4 6d4 | c#4. 5b8 a4 f#4 | e4 g4 f#4 e4 | d2. r4 |
+
+V2: l8 v9 pan -3 @horn
+V2: !hD | !hA | 4g b 5d 4b a 5c# e c# | !hD |
+V2: !hD | !hBm | !hG | !hA |
+V2: !hD | !hG | !hA | !hD |
+V2: !hG | !hA | !hEm | !hD |
+
+V3: l8 v13 pan 0 @bass
+V3: !bD | !bA | 2g4 3g4 2a4 3a4 | !bD |
+V3: !bD | !bBm | !bG | !bA |
+V3: !bD | !bG | !bA | !bD |
+V3: !bG | !bA | !bEm | !bD |
+
+V4: l8 v12 pan 2
+V4: !beat | !beat | !beat | !fill |
+V4: !beat | !beat | !beat | !fill |
+V4: !beat | !beat | !beat | !fill |
+V4: !beat | !beat | !beat | !fill |

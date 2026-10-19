@@ -1,0 +1,17 @@
+// Fight start: three hat ticks, then a saw and bass stab rising a semitone under a crash.
+// Composed in MML for the TerraForma example game; rendered with chipsynth (python -m chipsynth sfx).
+title Fight start
+author Claude, at Michael Allen Wilmes's request
+tempo 180
+once
+echo 150ms,30,25
+
+[instr]
+stab  wave=saw a=0 d=8 s=8 r=5 vol=13 vib=7,3
+low   wave=tri a=0 d=8 s=10 r=5 vol=15
+hat   wave=noise nmode=short a=0 d=1 s=0 r=1 vol=9 send=0
+crash wave=noise a=0 d=9 s=0 r=8 vol=12 send=0
+
+V1: @stab o4 e16 e16 f16 f#8.
+V2: @low o2 e16 e16 f16 f#8.
+V3: @hat o7 c16 c16 c16 @crash o5 g8.

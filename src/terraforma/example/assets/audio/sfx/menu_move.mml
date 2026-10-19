@@ -1,0 +1,11 @@
+// Menu cursor step: one short blip.
+// Composed in MML for the TerraForma example game; rendered with chipsynth (python -m chipsynth sfx).
+title Menu move
+author Claude, at Michael Allen Wilmes's request
+tempo 240
+once
+
+[instr]
+blip wave=pulse pw=25 a=0 d=3 s=0 r=2 vol=12
+
+V1: @blip l16 o6 e

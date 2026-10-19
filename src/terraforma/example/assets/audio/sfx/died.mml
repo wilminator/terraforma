@@ -1,0 +1,14 @@
+// Died: a saw falling three octaves with vibrato and echo over a low rumble.
+// Composed in MML for the TerraForma example game; rendered with chipsynth (python -m chipsynth sfx).
+title Died
+author Claude, at Michael Allen Wilmes's request
+tempo 120
+once
+echo 200ms,45,35
+
+[instr]
+fall   wave=saw a=0 d=10 s=8 r=8 vol=13 vib=6,4
+rumble wave=noise nmode=long a=2 d=10 s=0 r=8 vol=11 send=0
+
+V1: @fall o5 e8 slide 48 2e2
+V2: @rumble r8 o3 c2

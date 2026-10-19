@@ -1,0 +1,11 @@
+// Menu cancel: two falling notes, duller than the confirm.
+// Composed in MML for the TerraForma example game; rendered with chipsynth (python -m chipsynth sfx).
+title Menu cancel
+author Claude, at Michael Allen Wilmes's request
+tempo 240
+once
+
+[instr]
+dull wave=pulse pw=50 a=0 d=4 s=0 r=3 vol=11
+
+V1: @dull l16 o4 a f

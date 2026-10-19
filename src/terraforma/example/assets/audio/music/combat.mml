@@ -1,0 +1,50 @@
+// A fight: a driving riff in E minor with a saw bass. Sixteen bars, loops from the top.
+// Composed in MML for the TerraForma example game; rendered with chipsynth (python -m chipsynth export-song).
+title Steel and Teeth
+author Claude, at Michael Allen Wilmes's request
+comment Combat: a driving riff in E minor, 16 bars, loops
+tempo 160
+time 4/4
+echo 180ms,30,18
+
+[instr]
+lead  wave=pulse pw=25 a=0 d=7 s=9 r=3 vol=13
+low   wave=pulse pw=12 a=0 d=6 s=8 r=3 vol=9
+bass  wave=saw a=0 d=6 s=9 r=3 vol=13
+kick  wave=noise a=0 d=3 s=0 r=2 vol=15 send=0
+snare wave=noise a=0 d=5 s=0 r=3 vol=13 send=0
+hat   wave=noise nmode=short a=0 d=1 s=0 r=1 vol=8 send=0
+
+[pat]
+// the bass pumps the root in eighth notes with an octave jump
+bE = 2e e 3e 2e e e 3e 2e
+bC = 2c c 3c 2c c c 3c 2c
+bG = 2g g 3g 2g g g 3g 2g
+// drums: sixteenth hats, and a bar with a snare roll
+beat = @kick 2c @hat 7c16 c16 @snare 5g @hat 7c16 c16 @kick 2c @hat 7c16 c16 @snare 5g @hat 7c16 c16
+fill = @kick 2c @hat 7c @snare 5g @hat 7c @kick 2c c @snare 5g16 g16 g16 g16
+
+// the riff (V1), its octave double and held notes (V2), bass (V3), drums (V4)
+V1: l8 v13 pan 0 @lead
+V1: 5e e r e g e r d | e e r e f e d 4b | 5e e r e g a b a | g4 f# e d4 4b4 |
+V1: 5e e r e g e r d | e e r e f e d 4b | 5e e r e g a b a | g a b4 6c4 5b4 |
+V1: 6e4 d c 5b4 a4 | g4 a b 6c4 5b4 | 6e4 d c 5b4 6c4 | d2 5b4 g4 |
+V1: 5e e r e g e r d | e e r e f e d 4b | 5e e r e g a b 6c | d4 5b a f#4 d4 |
+
+V2: l8 v9 pan -3 @low
+V2: 4e e r e g e r d | e e r e f e d 3b | 4e e r e g a b a | g4 f# e d4 3b4 |
+V2: 4e e r e g e r d | e e r e f e d 3b | 4e e r e g a b a | g a b4 5c4 4b4 |
+V2: 4e2 e2 | d2 d2 | e2 g2 | g2 d2 |
+V2: 4e e r e g e r d | e e r e f e d 3b | 4e e r e g a b 5c | d4 4b a f#4 d4 |
+
+V3: l8 v13 pan 0 @bass
+V3: !bE | !bE | !bE | 2g g 3g 2g b b 3b 2b |
+V3: !bE | !bE | !bE | 2c c 3c 2c d d 3d 2d |
+V3: !bC | !bG | !bC | 2g g 3g 2g d d 3d 2d |
+V3: !bE | !bE | !bE | 2d d 3d 2d b b 3b 2b |
+
+V4: l8 v12 pan 2
+V4: !beat | !beat | !beat | !fill |
+V4: !beat | !beat | !beat | !fill |
+V4: !beat | !beat | !beat | !fill |
+V4: !beat | !beat | !beat | !fill |

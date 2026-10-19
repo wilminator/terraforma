@@ -1,0 +1,18 @@
+// Victory sting: a short fanfare in C major with a crash.
+// Composed in MML for the TerraForma example game; rendered with chipsynth (python -m chipsynth sfx).
+title Victory
+author Claude, at Michael Allen Wilmes's request
+tempo 160
+once
+echo 200ms,30,22
+
+[instr]
+fan   wave=pulse pw=50 a=0 d=8 s=10 r=5 vol=13 vib=5,2
+harm  wave=pulse pw=25 a=0 d=8 s=8 r=4 vol=9
+bass  wave=tri a=0 d=7 s=12 r=4 vol=14
+crash wave=noise a=0 d=9 s=0 r=8 vol=11 send=0
+
+V1: @fan l16 o5 c c c c8 r16 e8 g8 6c4
+V2: @harm l16 o4 e e e e8 r16 g8 5c8 e4
+V3: @bass l8 o2 c r c r 3c r 2g
+V4: @crash l8 r r r r o5 c r r

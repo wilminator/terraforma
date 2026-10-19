@@ -225,7 +225,7 @@ def test_every_asset_file_is_recorded_with_its_source_and_a_license_the_agpl_acc
     record = (ASSETS / "ASSETS.md").read_text()
     rows = [line.split("|")[1:-1] for line in record.splitlines() if line.startswith("|") and not line.startswith("|---") and "File" not in line]
     named = {name for files, _, _ in rows for name in (part.strip(" `") for part in files.split(",")) if name}
-    on_disk = {path.name for path in ASSETS.iterdir() if path.name != "ASSETS.md"}
+    on_disk = {path.relative_to(ASSETS).as_posix() for path in ASSETS.rglob("*") if path.is_file() and path.name != "ASSETS.md"}
     assert on_disk <= named, f"not in ASSETS.md: {sorted(on_disk - named)}"
     assert named <= on_disk, f"ASSETS.md lists files that are not there: {sorted(named - on_disk)}"
     for files, source, license_ in rows:

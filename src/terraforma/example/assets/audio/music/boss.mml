@@ -1,0 +1,53 @@
+// A boss fight: a heavy C minor ostinato under a saw lead, with chord stabs. Sixteen bars, loops from the top.
+// Composed in MML for the TerraForma example game; rendered with chipsynth (python -m chipsynth export-song).
+title The Hollow Crown
+author Claude, at Michael Allen Wilmes's request
+comment Boss fight: a heavy ostinato in C minor, 16 bars, loops
+tempo 136
+time 4/4
+echo 220ms,30,20
+reverb 3
+
+[instr]
+lead  wave=saw a=0 d=8 s=10 r=5 vol=12 vib=6,3
+stab  wave=pulse pw=50 a=0 d=5 s=3 r=3 vol=9 pws=30,70,5
+bass  wave=saw a=0 d=5 s=10 r=2 vol=14 filter=lp,9,5 fsweep=5,12,2
+kick  wave=noise a=0 d=4 s=0 r=2 vol=15 send=0
+snare wave=noise a=0 d=6 s=0 r=4 vol=13 send=0
+hat   wave=noise nmode=short a=0 d=1 s=0 r=1 vol=7 send=0
+tom   wave=noise a=0 d=5 s=0 r=3 vol=12 send=0
+
+[pat]
+// the bass riffs (eighth notes): r1 ends on the tritone, r2 on the flat sixth, r3 falls, r4 climbs back to C
+r1 = 2c c c d# c c c f#
+r2 = 2c c c d# g# g# g g
+r3 = 2g# g# g# g f f f d#
+r4 = 2d d d# d# g g b b
+// drums: a half-time beat (snare on three) and a bar with toms
+beat = @kick 2c @hat 7c @kick 2c @hat 7c @snare 5g @hat 7c @kick 2c @hat 7c
+fill = @kick 2c @hat 7c @kick 2c @hat 7c @snare 5g g @tom 4g 3g
+
+// the lead (V1), off-beat chord stabs (V2: the chip arpeggio spells each chord), bass (V3), drums (V4)
+V1: l8 v12 pan 0 @lead
+V1: 4g2 g#4 g4 | f#2 g2 | g4 g#4 5c4 4b4 | 5c1 |
+V1: 5c4 4g# g f4 d#4 | d4 d#4 f4 f#4 | g#4 g4 f4 d#4 | d2 b2 |
+V1: 5c c r 4b 5c r 4g g# | g4 f#4 g2 | 5c c r 4b 5c r d# d | 5c4 4g#4 g4 f#4 |
+V1: 4g#2 g2 | f2 d4 b4 | 5c4 4g4 g#4 f#4 | g2. r4 |
+
+V2: l8 v9 pan -4 @stab arprate 12
+V2: arp 0,3,7 r 4c r c r c r c | r 4c r c r c r c | arp 0,4,7 r 4g# r g# r g r g | arp 0,3,7 r 4c r c r c r c |
+V2: r 4c r c r c r c | r 4c r c r c r c | arp 0,4,7 r 4g# r g arp 0,3,7 r f arp 0,4,7 r d# | arp 0,3,6 r 4d r d# arp 0,4,7 r g arp 0,3,6 r b |
+V2: arp 0,3,7 r 4c r c r c r c | arp 0,4,7 r 4g# r g# r g r g | arp 0,3,7 r 4c r c r c r c | arp 0,4,7 r 4g# r g# r g r g |
+V2: arp 0,4,7 r 4g# r g arp 0,3,7 r f arp 0,4,7 r d# | arp 0,3,6 r 4d r d# arp 0,4,7 r g arp 0,3,6 r b | arp 0,3,7 r 4c r c r c r c | r 4c r c r2 |
+
+V3: l8 v13 pan 0 @bass
+V3: !r1 | !r1 | !r2 | !r1 |
+V3: !r1 | !r1 | !r3 | !r4 |
+V3: !r1 | !r2 | !r1 | !r2 |
+V3: !r3 | !r4 | !r1 | 2c4 r c r c r4 |
+
+V4: l8 v13 pan 2
+V4: !beat | !beat | !beat | !fill |
+V4: !beat | !beat | !beat | !fill |
+V4: !beat | !beat | !beat | !fill |
+V4: !beat | !beat | !beat | !fill |
