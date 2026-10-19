@@ -51,6 +51,36 @@ export function emailCard(shell, status) {
   return card.form;
 }
 
+/** How long a round waits: the game's longer-round options and what each costs, and how long the player has played. */
+export async function roundTimeCard(shell) {
+  const t = (key, values) => shell.text.get(key, values);
+  const [setting, played] = await Promise.all([get("/api/settings/round-time"), get("/api/play-time")]);
+  const percent = (bonus) => Math.round(bonus * 100);
+  const label = (option) => t(option.monster_hp_bonus > 0 ? "round_time.option_cost" : "round_time.option", { times: option.multiplier, percent: percent(option.monster_hp_bonus) });
+  const current = h("p", { id: "round-time-current" });
+  const show = (answer) => {
+    current.textContent = t("round_time.current", { seconds: answer.round_seconds });
+  };
+  show(setting);
+  const pick = h(
+    "select",
+    { id: "round-time-pick", "aria-label": t("round_time.label") },
+    setting.options.map((option) => h("option", { value: String(option.multiplier), selected: option.multiplier === setting.multiplier }, label(option))),
+  );
+  const card = formCard(shell, {
+    id: "round-time-form",
+    title: "round_time.title",
+    submit: "round_time.submit",
+    rows: [h("p", { class: "hint" }, t("round_time.hint")), current, h("div", { class: "field" }, h("label", { for: "round-time-pick" }, t("round_time.label")), pick), h("p", { class: "muted small", id: "play-time" }, t("round_time.played", { hours: (played.seconds / 3600).toFixed(1) }))],
+    run: async ({ note }) => {
+      const answer = await post("/api/settings/round-time", { multiplier: Number(pick.value) });
+      show(answer);
+      note.textContent = t("round_time.saved");
+    },
+  });
+  return card.form;
+}
+
 /** Groups a secret in fours so it can be typed from the screen. */
 const spaced = (secret) => secret.match(/.{1,4}/g).join(" ");
 
@@ -167,7 +197,7 @@ export async function accountView(shell, onLogout, redraw) {
     { class: "stack" },
     h("p", { id: "who" }, t("account.signed_in", { username: shell.account.username })),
     h("p", { class: "inline" }, h("a", { href: "/profile/", id: "to-profile" }, t("account.profile")), " ", h("a", { href: "/alliances/", id: "to-alliances" }, t("account.alliances")), " ", h("a", { href: "/fights/", id: "to-fights" }, t("account.fights"))),
-    h("div", { class: "cards" }, handleCard(shell), emailCard(shell, status), await signInMethodsCard(shell, status, redraw), await twoFactorCard(shell, status, redraw)),
+    h("div", { class: "cards" }, handleCard(shell), emailCard(shell, status), await roundTimeCard(shell), await signInMethodsCard(shell, status, redraw), await twoFactorCard(shell, status, redraw)),
     h("p", {}, h("button", { type: "button", id: "logout", onclick: onLogout }, t("account.logout"))),
   );
 }
