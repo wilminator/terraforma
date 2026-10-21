@@ -1,0 +1,13 @@
+// Hit: a noise burst over a triangle thud that drops in pitch.
+// Composed in MML for the TerraForma example game; rendered with chipsynth (python -m chipsynth sfx).
+title Hit
+author Claude, at Michael Allen Wilmes's request
+tempo 240
+once
+
+[instr]
+burst wave=noise nmode=long a=0 d=6 s=0 r=3 vol=15
+thud  wave=tri a=0 d=5 s=0 r=3 vol=15
+
+V1: @burst o4 g16 r32
+V2: @thud o3 g32 slide 8 2c16

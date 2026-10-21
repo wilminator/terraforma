@@ -1,0 +1,11 @@
+// Menu confirm: a quick rising arpeggio.
+// Composed in MML for the TerraForma example game; rendered with chipsynth (python -m chipsynth sfx).
+title Menu confirm
+author Claude, at Michael Allen Wilmes's request
+tempo 240
+once
+
+[instr]
+blip wave=pulse pw=25 a=0 d=4 s=0 r=3 vol=12
+
+V1: @blip l32 o5 c e g 6c

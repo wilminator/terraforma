@@ -1,0 +1,28 @@
+// Game over: a slow fall in A minor. Eight bars, plays once and rings out.
+// Composed in MML for the TerraForma example game; rendered with chipsynth (python -m chipsynth export-song).
+title Ashes
+author Claude, at Michael Allen Wilmes's request
+comment Game over: a slow fall in A minor, 8 bars, plays once
+tempo 96
+time 4/4
+once
+echo 400ms,30,25
+reverb 6
+
+[instr]
+voice wave=sine a=2 d=9 s=10 r=8 vol=13 vib=4,3
+pad   wave=tri a=8 d=10 s=12 r=10 vol=11
+low   wave=tri a=1 d=8 s=13 r=8 vol=14
+
+// the melody (V1) over a held chord tone (V2) and the bass (V3)
+V1: l4 v13 pan 0 @voice
+V1: 5e d c 4b | 5c2 4a2 | g# a b 5c | 4b2. r4 |
+V1: 5e d c 4b | 5c 4b a g | f2 e2 | a1 |
+
+V2: l1 v10 pan -4 @pad
+V2: 4c | 4c | 4g# | 4g# |
+V2: 4c | 4c | 4a2 g#2 | 4e |
+
+V3: l1 v13 pan 3 @low
+V3: 2a | 2f | 2e | 2e |
+V3: 2a | 2f | 2d2 e2 | 2a |

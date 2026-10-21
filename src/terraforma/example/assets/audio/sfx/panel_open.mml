@@ -1,0 +1,11 @@
+// Panel open: a pulse zipping up two octaves (the slide glides into the high note).
+// Composed in MML for the TerraForma example game; rendered with chipsynth (python -m chipsynth sfx).
+title Panel open
+author Claude, at Michael Allen Wilmes's request
+tempo 240
+once
+
+[instr]
+zip wave=pulse pw=25 a=0 d=6 s=8 r=4 vol=12 pws=20,60,8
+
+V1: @zip o4 c32 slide 24 6c8

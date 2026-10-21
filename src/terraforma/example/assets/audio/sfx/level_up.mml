@@ -1,0 +1,14 @@
+// Level up: a pulse climbing two octaves to a high sine ring.
+// Composed in MML for the TerraForma example game; rendered with chipsynth (python -m chipsynth sfx).
+title Level up
+author Claude, at Michael Allen Wilmes's request
+tempo 240
+once
+echo 150ms,35,25
+
+[instr]
+rise  wave=pulse pw=25 a=0 d=7 s=8 r=5 vol=12
+shine wave=sine a=0 d=9 s=0 r=8 vol=10
+
+V1: @rise l16 o4 c e g 5c e g 6c e g4
+V2: @shine l16 r r r r r r r r o7 c4

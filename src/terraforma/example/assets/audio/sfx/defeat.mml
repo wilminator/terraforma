@@ -1,0 +1,14 @@
+// Defeat sting: four falling notes in E minor over a low bass.
+// Composed in MML for the TerraForma example game; rendered with chipsynth (python -m chipsynth sfx).
+title Defeat
+author Claude, at Michael Allen Wilmes's request
+tempo 140
+once
+echo 250ms,35,25
+
+[instr]
+sad wave=pulse pw=50 a=0 d=9 s=9 r=6 vol=12 vib=5,3
+low wave=tri a=1 d=8 s=12 r=6 vol=14
+
+V1: @sad l8 o5 e d# d 4b4.
+V2: @low l8 o3 e r 2b r e4

@@ -1,0 +1,11 @@
+// Attack (melee swing): a noise whoosh sweeping from high to low.
+// Composed in MML for the TerraForma example game; rendered with chipsynth (python -m chipsynth sfx).
+title Attack
+author Claude, at Michael Allen Wilmes's request
+tempo 240
+once
+
+[instr]
+whoosh wave=noise nmode=long a=4 d=7 s=0 r=4 vol=13
+
+V1: @whoosh o7 c32 slide 12 4c16
