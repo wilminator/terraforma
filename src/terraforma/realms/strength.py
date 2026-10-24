@@ -66,7 +66,7 @@ async def _found_one(session: AsyncSession, hooks: Realms, realm: Realm, state: 
         try:
             async with session.begin_nested():
                 await service.found(session, town)
-        except service.RealmError:  # (it can't be founded, for example its map has no room)
+        except service.RealmError:  # (the world refuses it: it is skipped and the next one is tried)
             log.info("realm strength: %s can't be founded now", town.name)
             continue
         return True

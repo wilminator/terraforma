@@ -114,7 +114,7 @@ async def test_only_one_settlement_is_founded_a_pass_and_one_that_cannot_be_is_s
 
     async def refuse_hamlet(session, settlement):
         if settlement.key == "hamlet":
-            raise strength.service.RealmError("no room")
+            raise strength.service.RealmError("refused")
         return await original(session, settlement)
 
     monkeypatch.setattr(strength.service, "found", refuse_hamlet)
