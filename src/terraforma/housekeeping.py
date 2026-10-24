@@ -31,6 +31,7 @@ from .marketplace.hooks import Marketplace
 from .models import RateLimitHit, RememberedBrowser, WebauthnKey
 from .oidc import service as oidc
 from .quests import needs
+from .realms import strength
 from .relations.models import ANSWERED, DISMISSED, RatingPrompt
 from .settings import Settings
 from .storage.hooks import NoStorage
@@ -174,6 +175,14 @@ async def quest_needs(session: AsyncSession, now: int, settings: Settings, rules
     ``Needs`` is in ``session.info["needs"]``). Unlike the other jobs it adds rows: it returns how many proposals it made."""
     hooks = session.info.get("needs")
     return len(await needs.run(session, hooks, rules or Rules())) if hooks is not None else 0
+
+
+@job
+async def realm_strength(session: AsyncSession, now: int, settings: Settings, rules: Rules | None = None) -> int:
+    """Brings every realm's strength up to the world clock and lets settlements fall or be founded as the game's ``Realms`` says
+    (``realms.strength.judge``). Unlike the other jobs it changes the world: it returns how many settlements fell or were founded."""
+    game = session.info.get("game")
+    return await strength.judge(session, game.realms) if game is not None else 0
 
 
 def _trade(session: AsyncSession):
