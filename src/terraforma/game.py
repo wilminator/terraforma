@@ -26,6 +26,7 @@ from .contracts.terms import StandardTerms
 from .contracts.hooks import Contracts
 from .guild.fees import Fees
 from .marketplace.hooks import Marketplace
+from .realms.hooks import Realms
 from .guild.hooks import Guild
 from .quests.hooks import ManualQuests, Needs, RotatingQuests, WeeklyQuests
 from .heroes.hooks import Roster, Start
@@ -95,6 +96,8 @@ class Game:
     storage: Storage = field(default_factory=NoStorage)
     # What a guild charges a team for its services: the base price to everyone, by default (``guild.fees``).
     fees: Fees = field(default_factory=Fees)
+    # How a realm's strength moves with the world clock, and when a settlement falls or is founded (``realms.hooks``): never, by default.
+    realms: Realms = field(default_factory=Realms)
     # How long a marketplace listing lasts, what posting one costs and what getting a purchase to the buyer's guild costs (``marketplace.hooks``).
     marketplace: Marketplace = field(default_factory=Marketplace)
     # Two things about logging in: how long a browser that proved a second factor may skip it, and the note a player with a single

@@ -17,7 +17,7 @@ class RealmError(Exception):
 async def create_realm(session: AsyncSession, world_id: int, key: str, name: str, strength: int = 0) -> Realm:
     if await session.scalar(select(Realm.id).where(Realm.world_id == world_id, Realm.key == key)) is not None:
         raise RealmError(f"There is already a realm {key!r}.")
-    realm = Realm(world_id=world_id, key=key, name=name, strength=strength)
+    realm = Realm(world_id=world_id, key=key, name=name, strength=strength, as_of_tick=(await session.get(World, world_id)).tick)
     session.add(realm)
     await session.flush()
     return realm
@@ -89,7 +89,7 @@ async def apply_realms(session: AsyncSession, world_id: int, realms: list, towns
     material_ids = {each.key: each.id for each in (await session.scalars(select(Material))).all()}
     now = (await session.get(World, world_id)).tick
     for row in realms:
-        await upsert(session, Realm.__table__, {"world_id": world_id, "key": row.key, "name": row.name, "strength": row.strength}, ["world_id", "key"], insert_only=["strength"])
+        await upsert(session, Realm.__table__, {"world_id": world_id, "key": row.key, "name": row.name, "strength": row.strength, "as_of_tick": now}, ["world_id", "key"], insert_only=["strength", "as_of_tick"])
     await session.flush()
     realm_ids = {each.key: each.id for each in (await session.scalars(select(Realm).where(Realm.world_id == world_id))).all()}
     map_ids = {each.name: each.id for each in (await session.scalars(select(Map).where(Map.world_id == world_id))).all()}

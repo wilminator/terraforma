@@ -16,7 +16,7 @@ STATES = (LIVE, RUINS, DORMANT)
 
 class Realm(Timestamps, Base):
     """A realm (a kingdom or country) of a world. ``strength`` is a whole number the rules move (play, time, an admin's nudge);
-    the engine only keeps it. ``key`` is the game's own name for the realm, stable across releases."""
+    the game's ``Realms`` hook moves it over time. ``key`` is the game's own name for the realm, stable across releases."""
 
     __tablename__ = "realms"
     __table_args__ = (UniqueConstraint("world_id", "key"),)
@@ -26,6 +26,8 @@ class Realm(Timestamps, Base):
     key: Mapped[str] = mapped_column(String(64))
     name: Mapped[str] = mapped_column(String(64))
     strength: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    #: The world-clock tick the strength was last brought up to (see ``realms.strength``).
+    as_of_tick: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
 
 
 class Settlement(Timestamps, Base):
