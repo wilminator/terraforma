@@ -19,6 +19,7 @@ from typing import Annotated, Literal
 from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, ValidationError, ValidationInfo, model_validator
 
 from ..npcs.script import MAX_TEXT, ScriptError, parse, tags
+from ..realms.models import MAX_LIVE_PER_MAP
 
 STATS = ("HP", "MP", "Speed", "Accuracy", "Strength", "Dodge", "Block", "Power", "Resistance", "Focus")
 #: The stats that are pools (``Rules.resource_names``): effects that push a stat's current value skip them.
@@ -868,6 +869,13 @@ def check_seed(seed: dict[str, list[dict]], stats: tuple[str, ...] = STATS, reso
         for parts in tags(npc.dialog):
             if parts[0] in ("warp", "warp_visited") and parts[1] not in drawn and parts[1] != "hub":
                 problems.append(f"npcs.json {npc.key}: the dialog warps to {parts[1]!r}, which maps.json doesn't have")
+    live_on_map: dict[str, list[str]] = {}
+    for town in checked["settlements"]:
+        if town.state == "live":
+            live_on_map.setdefault(town.map, []).append(town.key)
+    for map_key, towns in live_on_map.items():
+        if len(towns) > MAX_LIVE_PER_MAP:
+            problems.append(f"settlements.json: {', '.join(towns)} all start live on {map_key!r}, which holds at most {MAX_LIVE_PER_MAP} live settlements")
     for town in checked["settlements"]:
         if town.realm not in keys["realms"]:
             problems.append(f"settlements.json {town.key}: belongs to {town.realm!r}, which realms.json doesn't have")

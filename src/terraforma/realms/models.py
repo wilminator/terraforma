@@ -12,6 +12,8 @@ RUINS = "ruins"
 #: A settlement authored in advance and not yet founded: it wakes when its realm grows (or an admin says so).
 DORMANT = "dormant"
 STATES = (LIVE, RUINS, DORMANT)
+#: The most live settlements that may share one map (Mike, 2026-10-18): a map two towns stand on is as crowded as the world keeps it.
+MAX_LIVE_PER_MAP = 2
 
 
 class Realm(Timestamps, Base):

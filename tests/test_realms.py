@@ -157,10 +157,43 @@ async def test_the_seed_makes_realms_and_settlements_and_a_later_load_leaves_wha
     ({"settlements": [{"key": "a", "name": "A", "realm": "ardent", "map": "meadow", "state": "ruins"}]}, "state"),
     ({"settlements": [{"key": "a", "name": "A", "realm": "ardent", "map": "meadow", "tier": -1}]}, "tier"),
     ({"settlements": [{"key": "a", "name": "A", "realm": "ardent", "map": "meadow"}] * 2}, "used twice"),
+    ({"settlements": [{"key": key, "name": key, "realm": "ardent", "map": "meadow"} for key in "abc"]}, "holds at most 2 live"),
 ])
 def test_a_bad_realm_or_settlement_is_refused_naming_the_problem(changes, message):
     with pytest.raises(ContentError, match=message):
         check_seed(seed(**changes))
+
+
+def test_a_seed_may_hold_a_third_town_on_a_map_when_it_starts_dormant():
+    towns = [{"key": key, "name": key, "realm": "ardent", "map": "meadow", **({"state": "dormant"} if key == "c" else {})} for key in "abc"]
+    check_seed(seed(settlements=towns))
+
+
+async def test_no_more_than_two_settlements_are_live_on_one_map(db):
+    world_id, (north, south) = await world_with_maps(db, "north", "south")
+    realm = await service.create_realm(db, world_id, "ardent", "Ardent")
+    await service.add_settlement(db, realm, north.id, "one", "One")
+    await service.add_settlement(db, realm, north.id, "two", "Two")
+    with pytest.raises(service.RealmError, match="already has 2 live"):
+        await service.add_settlement(db, realm, north.id, "three", "Three")
+    assert await db.scalar(select(func.count()).select_from(Settlement)) == 2, "nothing was made"
+    await service.add_settlement(db, realm, south.id, "other", "Other")  # another map has its own room
+    await service.add_settlement(db, realm, north.id, "three", "Three", state=DORMANT)  # dormant ones do not count
+
+
+async def test_founding_needs_room_and_a_fall_makes_it(db):
+    world_id, (north,) = await world_with_maps(db, "north")
+    realm = await service.create_realm(db, world_id, "ardent", "Ardent")
+    one = await service.add_settlement(db, realm, north.id, "one", "One")
+    await service.add_settlement(db, realm, north.id, "two", "Two")
+    dormant = await service.add_settlement(db, realm, north.id, "three", "Three", state=DORMANT)
+    with pytest.raises(service.RealmError, match="can't go live"):
+        await service.found(db, dormant)
+    assert dormant.state == DORMANT
+    await service.fall(db, one)
+    assert (await service.found(db, dormant)).state == LIVE
+    with pytest.raises(service.RealmError, match="can't go live"):
+        await service.found(db, one)  # the ruins can be founded again only when there is room
 
 
 # --- the admin's calls ------------------------------------------------------------------------------------------------

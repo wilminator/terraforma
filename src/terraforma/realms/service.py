@@ -1,13 +1,13 @@
 """Founding settlements, letting them fall and founding them again. The rules for *when* are the world's (later slices); this
 is what happens to the records when it does."""
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.dialect import upsert
 from ..models import Map, World
 from ..towns.models import VisitedTown
-from .models import DORMANT, LIVE, RUINS, Material, Realm, Settlement, SettlementSupply
+from .models import DORMANT, LIVE, MAX_LIVE_PER_MAP, RUINS, Material, Realm, Settlement, SettlementSupply
 
 
 class RealmError(Exception):
@@ -33,6 +33,8 @@ async def add_settlement(session: AsyncSession, realm: Realm, map_id: int, key: 
         raise RealmError("That map does not exist.")
     if await session.scalar(select(Settlement.id).where(Settlement.world_id == realm.world_id, Settlement.key == key)) is not None:
         raise RealmError(f"There is already a settlement {key!r}.")
+    if state == LIVE:
+        await check_room(session, map_id, name)
     settlement = Settlement(world_id=realm.world_id, realm_id=realm.id, map_id=map_id, key=key, name=name, state=state, tier=tier)
     session.add(settlement)
     await session.flush()
@@ -43,6 +45,7 @@ async def found(session: AsyncSession, settlement: Settlement) -> Settlement:
     """A dormant settlement is founded, or one in ruins is founded again: it is live."""
     if settlement.state == LIVE:
         raise RealmError(f"{settlement.name} is already live.")
+    await check_room(session, settlement.map_id, settlement.name)
     settlement.state = LIVE
     await session.flush()
     return settlement
@@ -58,6 +61,14 @@ async def fall(session: AsyncSession, settlement: Settlement) -> Settlement:
     if not await live_on(session, settlement.map_id):
         await session.execute(delete(VisitedTown).where(VisitedTown.map_id == settlement.map_id))
     return settlement
+
+
+async def check_room(session: AsyncSession, map_id: int, name: str) -> None:
+    """Refuses a settlement going live on a map that already has ``MAX_LIVE_PER_MAP`` live ones. (A fall frees a place; dormant settlements and
+    ruins do not count.)"""
+    live = await session.scalar(select(func.count()).select_from(Settlement).where(Settlement.map_id == map_id, Settlement.state == LIVE))
+    if live >= MAX_LIVE_PER_MAP:
+        raise RealmError(f"{name} can't go live: its map already has {MAX_LIVE_PER_MAP} live settlements.")
 
 
 async def live_on(session: AsyncSession, map_id: int) -> bool:
