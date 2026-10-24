@@ -259,6 +259,12 @@ class Rules:
             return dict(vitals)  # a use that does nothing: the caller refuses it
         return None
 
+    def revive_fallen(self, rng: random.Random, effect: EffectSpec, maximum: int) -> int:
+        """Life a revive gives a fallen fighter whose most life is $maximum; 0 means it did not take (a `NoEffect` event). The
+        default is DragonStar's: always the full life, whatever the effect's `base` and `added`, and no roll is drawn. A game
+        overrides this for a revive that sometimes fails or gives back a part (a 33% chance at half life)."""
+        return maximum
+
     def revive_chance(self, rng: random.Random, effect: EffectSpec) -> bool:
         """Whether a revive on someone still alive takes: $base is the chance out of 100."""
         return rng.randint(1, 100) < effect.base

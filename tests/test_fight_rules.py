@@ -409,6 +409,33 @@ def test_reviving_a_fallen_friend_brings_them_back_at_full_life():
     assert fallen.current["HP"] == 30 and ("Revived", 0, 0, 1) in listing(events)
 
 
+def revive_with(rules, rolls, base=33, added=50):
+    revive = spell(EffectSpec(specs.REVIVE, 0, base=base, added=added), cost=0)
+    caster, fallen, foe = fighter("caster"), fighter("fallen", HP=30), fighter("foe")
+    fallen.current["HP"] = 0
+    fight = build_fight({0: {0: [caster, fallen]}, 1: {0: [foe]}})
+    caster.abilities, caster.command, caster.using, caster.target = [revive], Command.SPELL, 0, (0, 0, 1)
+    foe.command = Command.DEFEND
+    return fallen, listing(do_combat(fight, rules, Scripted(*rolls)))
+
+
+class ChanceAndPercent(Rules):
+    """A game's revive on the fallen: `base` is the chance out of 100 and `added` the percentage of life given back."""
+
+    def revive_fallen(self, rng, effect, maximum):
+        return round(maximum * effect.added / 100) if rng.randint(1, 100) <= effect.base else 0
+
+
+def test_a_games_revive_can_give_back_part_of_the_life_of_a_fallen_friend():
+    fallen, events = revive_with(ChanceAndPercent(), [100, 100, 10])
+    assert fallen.current["HP"] == 15 and ("Revived", 0, 0, 1) in events
+
+
+def test_a_games_revive_that_fails_leaves_the_friend_down_and_says_nothing_happened():
+    fallen, events = revive_with(ChanceAndPercent(), [100, 100, 90])
+    assert fallen.current["HP"] == 0 and ("Revived", 0, 0, 1) not in events and ("NoEffect", 0, 0, 1) in events
+
+
 def test_an_item_is_used_up_when_it_is_one_use_and_kept_when_it_is_not():
     potion = ItemSpec("potion", "Potion", one_use=True, use_effect=EffectSpec(specs.HEAL, 0, base=10))
     tonic = ItemSpec("tonic", "Tonic", one_use=False, use_effect=EffectSpec(specs.HEAL, 0, base=10))

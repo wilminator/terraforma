@@ -382,7 +382,11 @@ def do_effect(fight, rules, rng, effect, actor, target, target_address, impact, 
     elif effect.effect == specs.REVIVE:
         maximum = target.get_base(rules, vital)
         if target.get_current(rules, vital) == 0:
-            restore_vital(fight, rules, actor, target, target_address, maximum, log)
+            amount = rules.revive_fallen(rng, effect, maximum)
+            if amount > 0:
+                restore_vital(fight, rules, actor, target, target_address, amount, log)
+            else:
+                log.add(EventType.NO_EFFECT, *target_address)
         elif rules.revive_chance(rng, effect):
             restore_vital(fight, rules, actor, target, target_address, rules.revive_amount(maximum, effect), log)
     elif effect.effect == specs.RESTORE_MP:
