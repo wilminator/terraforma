@@ -33,5 +33,5 @@ class Realms:
 
     def founds(self, realm: Realm, settlement: Settlement) -> bool:
         """Whether a dormant settlement of the realm is founded, or one in ruins is founded again, now. Never, by default. At most one
-        settlement per realm is founded in a pass, dormant ones before ruins, and one that can't be founded (for example, its map has no room) is skipped."""
+        settlement per realm is founded in a pass, dormant ones before ruins, and one the world refuses to found is skipped."""
         return False
