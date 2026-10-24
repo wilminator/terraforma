@@ -4,6 +4,7 @@
 import * as api from "./api.js";
 import { eventsSection } from "./admin-events.js";
 import { monstersSection } from "./admin-monsters.js";
+import { proposalsSection } from "./admin-proposals.js";
 import { slotsSection } from "./admin-slots.js";
 import { stateSection } from "./admin-state.js";
 import { h, replace } from "./dom.js";
@@ -38,7 +39,7 @@ if (!(await shell.restore())) {
 } else {
   try {
     await api.get("/api/admin/monsters?limit=1"); // (any admin read will do: it answers 403 to everyone else)
-    await show({ events: eventsSection(shell), monsters: monstersSection(shell), slots: slotsSection(shell), state: stateSection(shell) });
+    await show({ events: eventsSection(shell), monsters: monstersSection(shell), slots: slotsSection(shell), proposals: proposalsSection(shell), state: stateSection(shell) });
   } catch (error) {
     if (!(error instanceof api.ApiError)) throw error;
     replace(main, h("div", { class: "stack" }, h("h1", {}, t("admin.title")), h("p", { class: error.status === 403 ? "muted" : "problem", role: "alert", id: "admin-refused" }, error.status === 403 ? t("admin.not_admin") : error.message)));
