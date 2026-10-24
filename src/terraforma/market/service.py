@@ -18,7 +18,9 @@ from ..economy import Economy
 from ..fights.rules import Rules
 from ..heroes import inventory
 from ..heroes.models import Hero, TeamMember
+from ..models import Map
 from ..npcs.state import DialogState
+from ..realms import supply
 from .hooks import Market
 
 MAX_QTY = inventory.MAX_ITEM_QTY
@@ -59,7 +61,19 @@ async def terms(session: AsyncSession, market: Market, rules: Rules, hero: Hero,
         shop = parts[0]
         level = max(0, int(await market.level(session, rules, shop, hero, await shoppers(session, hero))))
         stock = await market.stock(session, shop, level)
-        return Terms([(item, market.price(shop, item)) for item in stock], lambda item: market.sell_price(shop, item), level)
+        world_id = (await session.get(Map, hero.map_id)).world_id
+        wares = []
+        for item in stock:
+            price = market.price(shop, item)
+            tied = await market.supplied(session, shop, item)
+            if tied is not None:  # an item tied to a supply: dearer as it runs low, gone when it runs out
+                fullness = await supply.fullness(session, world_id, tied.settlement, tied.material)
+                percent = market.price_percent(shop, item, 0 if fullness is None else fullness)
+                if percent is None:
+                    continue
+                price = max(1, (price * percent + 50) // 100)
+            wares.append((item, price))
+        return Terms(wares, lambda item: market.sell_price(shop, item), level)
     if command == "vend":
         pairs = list(zip(parts[0:len(parts) - len(parts) % 2:2], map(int, parts[1:len(parts) - len(parts) % 2:2])))
         found = await _items(session, [key for key, _price in pairs])

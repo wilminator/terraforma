@@ -84,5 +84,21 @@ async def add(session: AsyncSession, settlement: Settlement, material_key: str, 
     return added
 
 
+async def fullness(session: AsyncSession, world_id: int, settlement_key: str, material_key: str) -> int | None:
+    """How full the settlement with key $settlement_key of the world keeps $material_key, in whole percent of its capacity (0 to 100), or
+    None when there is no such settlement or supply. A supply with no capacity counts as empty."""
+    town = await session.scalar(select(Settlement).where(Settlement.world_id == world_id, Settlement.key == settlement_key))
+    if town is None:
+        return None
+    row = await session.scalar(
+        select(SettlementSupply).join(Material, Material.id == SettlementSupply.material_id)
+        .where(SettlementSupply.settlement_id == town.id, Material.key == material_key)
+    )
+    if row is None:
+        return None
+    row = await settle(session, town, row)
+    return row.level * 100 // row.capacity if row.capacity > 0 else 0
+
+
 def view(material: Material, row: SettlementSupply) -> dict:
     return {"material": material.key, "name": material.name, "level": row.level, "capacity": row.capacity, "rate": row.rate, "drain": row.drain, "cut": row.cut}
