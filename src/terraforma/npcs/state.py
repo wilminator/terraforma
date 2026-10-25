@@ -28,6 +28,7 @@ from ..quests import bossfight, manual, rotation
 from ..quests.manual_models import PUBLISHED, ManualQuest
 from ..quests.hooks import ManualQuests, RotatingQuests, WeeklyQuests
 from ..quests.weekly_models import OFFERED, QuestTemplate
+from ..realms import supply
 from ..standing import service as standing
 from ..towns import service as towns
 from .script import ScriptError
@@ -427,6 +428,35 @@ class DialogState:
             await standing.place(self.session, target, target_id, status, int(seconds) or None, lock == "locked")
         except standing.StandingError as error:
             raise ScriptError(str(error)) from error
+        return ""
+
+    # --- A settlement's supply of a material ------------------------------------------------------------------------------
+
+    async def _supply(self, command: str, settlement: str, material: str):
+        """The settlement of the hero's world and its supply of the material (brought up to the world clock). A dialog that names one that the
+        world does not have is the game's mistake, and says so."""
+        found = await supply.find(self.session, (await self.session.get(Map, self.hero.map_id)).world_id, settlement, material)
+        if found is None:
+            raise ScriptError(f"{command}: there is no supply of {material!r} at {settlement!r}")
+        town, row = found
+        return town, await supply.settle(self.session, town, row)
+
+    async def supply_level(self, settlement: str, material: str, op: str, percent: str, label: str) -> str:
+        """The label unless how full the supply is (whole percent of its capacity) compares true with $percent."""
+        _town, row = await self._supply("supply_level", settlement, material)
+        return "" if quests.compare(op, supply.percent_full(row), int(percent)) else label
+
+    async def supply_add(self, settlement: str, material: str, amount: str, label: str) -> str:
+        """A delivery: brings up to $amount in, as much as fits under the capacity. The label if none fits. It takes nothing from the hero."""
+        town, _row = await self._supply("supply_add", settlement, material)
+        return "" if await supply.add(self.session, town, material, int(amount)) > 0 else label
+
+    async def supply_take(self, settlement: str, material: str, amount: str, label: str) -> str:
+        """A crafter uses $amount up: all or nothing. The label, with nothing taken, if the supply holds less."""
+        town, row = await self._supply("supply_take", settlement, material)
+        if row.level < int(amount):
+            return label
+        await supply.take(self.session, town, material, int(amount))
         return ""
 
     # --- Challenge Tokens and gold -------------------------------------------------------------------------------------

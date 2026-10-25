@@ -48,6 +48,12 @@ its command, followed by comma separated parameters. Text outside tags is shown.
     manual_quest,event,enter|finish_win|finish_lose,label  the talking hero's team's entry in an admin's event (``quests.manual``, an event's key):
                          enter it while it is open (the label if it is not open, is full or the game refuses the team), or finish the entry
                          as won or lost (the label if the team has no entry running in time)
+    supply_level,settlement,material,op,percent,label  jump to the label unless how full the settlement keeps the material (whole percent of its
+                         capacity, ``realms.supply``) compares true with percent (0 to 100): a quest board offers a fetch quest only while a supply is low
+    supply_add,settlement,material,amount,label  a delivery: brings up to amount of the material into the settlement's supply (what fits under its capacity);
+                         the label if none fits. It takes nothing from the hero (take the goods first with remove_item)
+    supply_take,settlement,material,amount,label  a crafter at work: uses amount of the material up, all or nothing; the label (and nothing taken) if the
+                         settlement keeps less
     heal, recharge, select_team         the game's actions
     add_status,target,status,seconds,locked|removable,label   puts a standing status on the hero, team or party for the seconds (0: until removed); the label if it cannot
     has_status,target,status,has|lacks,label   the label unless the target has (or lacks) the status
@@ -98,7 +104,7 @@ from dataclasses import dataclass
 SCOPES = ("any", "lead", "each")
 OPS = ("eq", "ne", "lt", "le", "gt", "ge")
 #: The tags that read or change the game's state, which the engine itself runs (through ``advance``'s $state).
-STATE_TAGS = ("set_job", "lost", "have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker", "add_guild_points", "set_guild_rank", "guild_points", "guild_rank", "guild_rank_any", "party_gate", "open_party", "add_status", "has_status", "have_tokens", "spend_tokens", "add_tokens", "add_gold", "warp", "warp_visited", "enter_instance", "complete_instance", "leave_instance", "instance_won", "weekly_quest", "slot_quest", "slot_template", "slot_boss", "manual_quest")
+STATE_TAGS = ("set_job", "lost", "have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker", "add_guild_points", "set_guild_rank", "guild_points", "guild_rank", "guild_rank_any", "party_gate", "open_party", "add_status", "has_status", "have_tokens", "spend_tokens", "add_tokens", "add_gold", "warp", "warp_visited", "enter_instance", "complete_instance", "leave_instance", "instance_won", "weekly_quest", "slot_quest", "slot_template", "slot_boss", "manual_quest", "supply_level", "supply_add", "supply_take")
 MAX_TEXT = 20000
 #: How many guilds one ``guild_rank_any`` may list.
 MAX_GUILD_CHOICES = 8
@@ -225,6 +231,21 @@ def check_tag(parts: list[str]) -> list[str]:
         if _whole(command, args[0], "the amount") < 1:
             raise ScriptError(f"{command} tag: the amount is at least 1")
         return [args[1]]
+    elif command == "supply_level":
+        count(5)
+        _name(command, args[0], "a settlement key")
+        _name(command, args[1], "a material key")
+        _one_of(command, args[2], OPS, "the comparison")
+        if _whole(command, args[3], "the percent") > 100:
+            raise ScriptError(f"{command} tag: the percent is at most 100")
+        return [args[4]]
+    elif command in ("supply_add", "supply_take"):
+        count(4)
+        _name(command, args[0], "a settlement key")
+        _name(command, args[1], "a material key")
+        if _whole(command, args[2], "the amount") < 1:
+            raise ScriptError(f"{command} tag: the amount is at least 1")
+        return [args[3]]
     elif command in ("warp", "warp_visited"):
         count(4)
         _name(command, args[0], "a map key")
