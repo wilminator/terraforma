@@ -7,6 +7,8 @@ from ..db.base import Base, Timestamps
 
 #: Why a quest was made: no quest of the band's slot fits the band, or none of the band's teams completed a quest for the stall time.
 NO_FIT, STALLED = "no_fit", "stalled"
+#: A live settlement's supply of a material fell below the game's floor (``Needs.supply_floor``).
+SUPPLY = "supply"
 #: Where a proposal stands: waiting for an admin, live (a template of the band's slot), turned down, or retired (taken out of the slot).
 PROPOSED, LIVE, REJECTED, RETIRED = "proposed", "live", "rejected", "retired"
 

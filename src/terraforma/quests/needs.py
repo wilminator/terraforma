@@ -19,12 +19,15 @@ from ..fights.rules import Rules
 from ..guild.ranks import party_pxp
 from ..heroes.models import Team, TeamMember
 from ..models import World
+from ..realms import supply
+from ..realms.models import LIVE as TOWN_LIVE
+from ..realms.models import Material, Settlement, SettlementSupply
 from ..world.rng import WorldRng
 from ..world.start import ensure_start
 from . import bosses, service
 from .hooks import Band, Needs
 from .models import QuestRecord
-from .needs_models import LIVE, NO_FIT, PROPOSED, REJECTED, RETIRED, STALLED, QuestProposal
+from .needs_models import LIVE, NO_FIT, PROPOSED, REJECTED, RETIRED, STALLED, SUPPLY, QuestProposal
 from .weekly import check_name, check_spec
 from .weekly_models import NEEDS, QuestTemplate
 
@@ -77,12 +80,12 @@ async def stalled(session: AsyncSession, band: Band, team_ids: list[int], now: i
 async def run(session: AsyncSession, hooks: Needs, rules: Rules) -> list[QuestProposal]:
     """Looks at every band the game lists and makes a quest for each that has a gap and no open proposal. Returns the proposals made."""
     bands = hooks.bands()
+    world = await session.get(World, (await ensure_start(session)).world_id)
+    made = await supply_gaps(session, hooks, world)
     if not bands:
-        return []
+        return made
     now = wallclock.timestamp()
     strengths = await team_strengths(session, rules)
-    world = await session.get(World, (await ensure_start(session)).world_id)
-    made = []
     for band in bands:
         if await session.scalar(select(QuestProposal.id).where(QuestProposal.band == band.key, QuestProposal.open == 1)) is not None:
             continue
@@ -123,6 +126,66 @@ async def run(session: AsyncSession, hooks: Needs, rules: Rules) -> list[QuestPr
             await approve(session, proposal.id)
         made.append(proposal)
     return made
+
+
+def _percent(level: int, capacity: int) -> int:
+    return level * 100 // capacity if capacity > 0 else 0
+
+
+async def supply_gaps(session: AsyncSession, hooks: Needs, world: World) -> list[QuestProposal]:
+    """The supply half of a run. A live settlement whose supply of a material is below the game's floor (``Needs.supply_floor``) and has a slot
+    to go in (``Needs.supply_slot``) gets a quest to bring more, one open proposal at a time for each settlement and material. An open supply
+    proposal whose gap has closed (the supply recovered, or the settlement fell) is taken back: rejected while it waits, retired when live.
+    The levels are read at the world clock without being changed. Returns the proposals made."""
+    open_ones = {each.band: each for each in (await session.scalars(
+        select(QuestProposal).where(QuestProposal.reason == SUPPLY, QuestProposal.open == 1))).all()}
+    rows = (await session.execute(
+        select(Settlement, Material, SettlementSupply).join(SettlementSupply, SettlementSupply.settlement_id == Settlement.id)
+        .join(Material, Material.id == SettlementSupply.material_id)
+        .where(Settlement.world_id == world.id, Settlement.state == TOWN_LIVE).order_by(Settlement.id, Material.id))).all()
+    made, short = [], set()
+    for settlement, material, row in rows:
+        floor, key = hooks.supply_floor(settlement, material), f"supply-{settlement.id}-{material.id}"
+        level = supply.level_at(row, world.tick)
+        if not floor or _percent(level, row.capacity) >= floor:
+            continue
+        short.add(key)
+        slot = hooks.supply_slot(settlement, material)
+        if key in open_ones or not slot:
+            continue
+        serial = await session.scalar(select(func.count()).select_from(QuestProposal).where(QuestProposal.band == key))
+        rng = WorldRng(world.seed).stream("needs", key, serial)
+        amount = hooks.supply_amount(settlement, material, level, row.capacity)
+        spec = {"supply": {"settlement": settlement.key, "material": material.key, "amount": amount}, "band": key, "reason": SUPPLY}
+        proposal = QuestProposal(band=key, slot=slot, pxp_min=0, pxp_max=0, reason=SUPPLY, name=check_name(hooks.supply_name(rng, settlement, material)),
+                                 spec=check_spec(spec))
+        try:
+            async with session.begin_nested():
+                session.add(proposal)
+                await session.flush()
+        except IntegrityError:  # (another server made one just now)
+            continue
+        if not hooks.needs_approval(Band(key, slot, 0, 0)):
+            await approve(session, proposal.id)
+        made.append(proposal)
+    for key, proposal in open_ones.items():
+        if key not in short:
+            await (retire if proposal.status == LIVE else reject)(session, proposal.id, hooks)
+    return made
+
+
+async def deliver(session: AsyncSession, spec: dict, amount: int | None = None) -> int:
+    """Brings a supply quest's goods in: adds $amount (what the quest asked, if left out) of its material to its settlement, and returns how
+    much fitted under the capacity. $spec is the quest's (``spec["supply"]``); a game's dialog or reward step calls this when the players finish
+    the quest. A settlement that is no longer live takes nothing."""
+    goal = spec.get("supply") if isinstance(spec, dict) else None
+    if not isinstance(goal, dict):
+        raise NeedsError("that quest brings nothing to a settlement")
+    world_id = (await ensure_start(session)).world_id
+    town = await session.scalar(select(Settlement).where(Settlement.world_id == world_id, Settlement.key == goal["settlement"]))
+    if town is None or town.state != TOWN_LIVE:
+        return 0
+    return await supply.add(session, town, goal["material"], goal["amount"] if amount is None else amount)
 
 
 async def get(session: AsyncSession, proposal_id: int) -> QuestProposal:
