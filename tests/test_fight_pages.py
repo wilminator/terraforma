@@ -315,12 +315,19 @@ async def test_a_replay_starts_from_the_fight_as_it_began(db):
     from terraforma.fights.combatant import Command
     from .test_live_fights import FOE, HERO
 
+    class Landing(Rules):
+        """Every attack lands: a world's seed is random per test, so with real dice the one blow could miss and leave the fighters as they were."""
+
+        def hit_chance(self, accuracy, dodge):
+            return 100.0
+
+    rules = Landing()
     hero, mike, team = await a_team(db)
-    record = await live.start_team_fight(db, team, ["rat"], RULES)
-    began = await live.view(db, record, RULES)
-    await live.submit_command(db, record, mike.id, HERO, Command.ATTACK_RIGHT, 0, FOE, RULES)
-    await live.resolve_round(db, record, RULES)
-    replay = await service.viewable_replay(db, RULES, mike.id, record.id)
+    record = await live.start_team_fight(db, team, ["rat"], rules)
+    began = await live.view(db, record, rules)
+    await live.submit_command(db, record, mike.id, HERO, Command.ATTACK_RIGHT, 0, FOE, rules)
+    await live.resolve_round(db, record, rules)
+    replay = await service.viewable_replay(db, rules, mike.id, record.id)
     assert replay["start"]["deadline"] is None and replay["start"] == {**began, "deadline": None} and replay["start"]["round"] == 1 and not replay["start"]["over"]
     assert replay["start"]["fighters"] != replay["fight"]["fighters"]  # (the blow landed: somebody's gauge fell)
     assert all(not each["yours"] and "menu" not in each for each in replay["start"]["fighters"])  # (a replay commands nobody)
