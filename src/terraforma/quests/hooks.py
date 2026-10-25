@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..heroes.models import Hero, TeamMember
+from ..realms.models import Material, Settlement
 
 
 @dataclass(frozen=True)
@@ -159,6 +160,24 @@ class Needs:
         the proposal, so a dungeon made here is undone with it; $rng is the same stream the bosses were drawn from, so a replayed world builds
         the same one. A mistake raised here skips this band for the run (the others go on) and is logged."""
         return None
+
+    def supply_floor(self, settlement: Settlement, material: Material) -> int:
+        """How full (whole percent of capacity, 0 to 100) a live settlement's supply of $material may fall before the world needs a quest to
+        restore it. 0, the default, never asks: a game turns supply quests on by naming a floor (for the materials it cares about)."""
+        return 0
+
+    def supply_slot(self, settlement: Settlement, material: Material) -> str:
+        """The rotating slot (``quest_slots.json``) a supply quest for $settlement and $material is offered in. Empty, the default, makes no
+        quest, so a game that sets a floor must also say where the quest goes."""
+        return ""
+
+    def supply_amount(self, settlement: Settlement, material: Material, level: int, capacity: int) -> int:
+        """How much the quest asks the players to bring: by default what it takes to fill the supply to half its capacity (at least 1)."""
+        return max(1, capacity // 2 - level)
+
+    def supply_name(self, rng: Random, settlement: Settlement, material: Material) -> str:
+        """The supply quest's name (up to 64 characters)."""
+        return f"Supply {settlement.name}: {material.name}"[:64]
 
     async def dungeon_gone(self, session: AsyncSession, proposal_id: int, dungeon: dict) -> None:
         """The quest holding $dungeon (as ``dungeon`` returned it) was rejected or retired, so the game may take the place down. Teams that took
