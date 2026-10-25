@@ -84,9 +84,9 @@ async def add(session: AsyncSession, settlement: Settlement, material_key: str, 
     return added
 
 
-async def fullness(session: AsyncSession, world_id: int, settlement_key: str, material_key: str) -> int | None:
-    """How full the settlement with key $settlement_key of the world keeps $material_key, in whole percent of its capacity (0 to 100), or
-    None when there is no such settlement or supply. A supply with no capacity counts as empty."""
+async def find(session: AsyncSession, world_id: int, settlement_key: str, material_key: str) -> tuple[Settlement, SettlementSupply] | None:
+    """The settlement with key $settlement_key of the world and its supply of $material_key (not brought up to date), or None when there is
+    no such settlement or supply."""
     town = await session.scalar(select(Settlement).where(Settlement.world_id == world_id, Settlement.key == settlement_key))
     if town is None:
         return None
@@ -94,10 +94,22 @@ async def fullness(session: AsyncSession, world_id: int, settlement_key: str, ma
         select(SettlementSupply).join(Material, Material.id == SettlementSupply.material_id)
         .where(SettlementSupply.settlement_id == town.id, Material.key == material_key)
     )
-    if row is None:
-        return None
-    row = await settle(session, town, row)
+    return None if row is None else (town, row)
+
+
+def percent_full(row: SettlementSupply) -> int:
+    """How full the supply is, in whole percent of its capacity (a supply with no capacity counts as empty)."""
     return row.level * 100 // row.capacity if row.capacity > 0 else 0
+
+
+async def fullness(session: AsyncSession, world_id: int, settlement_key: str, material_key: str) -> int | None:
+    """How full the settlement with key $settlement_key of the world keeps $material_key, in whole percent of its capacity (0 to 100), or
+    None when there is no such settlement or supply."""
+    found = await find(session, world_id, settlement_key, material_key)
+    if found is None:
+        return None
+    town, row = found
+    return percent_full(await settle(session, town, row))
 
 
 def view(material: Material, row: SettlementSupply) -> dict:
