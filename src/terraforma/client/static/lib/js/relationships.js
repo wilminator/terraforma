@@ -1,5 +1,6 @@
-// How the alliance sees other teams and alliances: a score on the game's scale (named by its bands) and a private note. Members
-// read them; a role that may speak for the alliance sets and forgets them.
+// How an alliance, or a team, sees other teams and alliances: a score on the game's scale (named by its bands) and a private note. An
+// alliance's members read them and a role that may speak for the alliance sets and forgets them; a team's owner does all of it for the team
+// (ctx.team is true, and ctx.id is the team's).
 
 import * as api from "./api.js";
 import { h, replace } from "./dom.js";
@@ -7,7 +8,9 @@ import { attempt, field, formCard } from "./forms.js";
 
 export async function relationsCard(shell, ctx) {
   const t = (key, values) => shell.text.get(key, values);
-  const base = `/api/alliances/${ctx.id}/relationships`;
+  const base = ctx.team ? `/api/teams/${ctx.id}/relationships` : `/api/alliances/${ctx.id}/relationships`;
+  const own = ctx.team ? "relations.team_" : "relations.";
+  const mayEdit = ctx.team || ctx.can.has("speak");
   const box = h("section", { class: "card", id: "relationships" });
   const problem = h("p", { class: "problem", role: "alert" });
   let rows = [];
@@ -22,7 +25,7 @@ export async function relationsCard(shell, ctx) {
     { class: "row", "data-relationship": each.name },
     h("div", { class: "row-main" }, h("strong", {}, each.name), " ", h("span", { class: "muted small" }, `${t("relations." + each.kind)} · ${t("relations.band", { band: each.band, score: each.score })}`)),
     each.note ? h("p", {}, each.note) : null,
-    ctx.can.has("speak")
+    mayEdit
       ? h("div", { class: "row-actions" }, h("button", { type: "button", "aria-label": t("relations.forget_label", { name: each.name }), onclick: () => attempt(shell, problem, async () => {
         await api.post(`${base}/forget`, { kind: each.kind, id: each.id });
         await reload();
@@ -52,11 +55,11 @@ export async function relationsCard(shell, ctx) {
   function draw() {
     replace(
       box,
-      h("h2", {}, t("relations.title")),
-      h("p", { class: "hint" }, t("relations.hint")),
-      rows.length ? h("ul", { class: "rows", "aria-label": t("relations.title") }, rows.map(row)) : h("p", { class: "muted" }, t("relations.none")),
+      h("h2", {}, t(`${own}title`)),
+      h("p", { class: "hint" }, t(`${own}hint`)),
+      rows.length ? h("ul", { class: "rows", "aria-label": t(`${own}title`) }, rows.map(row)) : h("p", { class: "muted" }, t(`${own}none`)),
       problem,
-      ctx.can.has("speak") ? setForm() : null,
+      mayEdit ? setForm() : null,
     );
   }
 

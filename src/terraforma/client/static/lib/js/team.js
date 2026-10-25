@@ -3,6 +3,7 @@
 
 import { h, replace } from "./dom.js";
 import { problemText } from "./forms.js";
+import { relationsCard } from "./relationships.js";
 import { Roster } from "./roster.js";
 import { Shell } from "./shell.js";
 import { teamEditor } from "./team-editor.js";
@@ -22,7 +23,7 @@ if (!(await shell.restore())) {
     await roster.load();
     const team = roster.team(id);
     document.title = `${team?.name ?? t("team.missing_title")} · ${shell.game.game ?? "TerraForma"}`;
-    if (team) replace(main, back, teamEditor(shell, roster, id, () => location.assign("/play/")));
+    if (team) replace(main, back, teamEditor(shell, roster, id, () => location.assign("/play/")), await relationsCard(shell, { id, team: true }));
     else replace(main, h("h1", {}, t("team.missing_title")), h("p", { role: "alert" }, t("team.missing")), back);
   } catch (error) {
     replace(main, h("p", { class: "problem", role: "alert" }, problemText(shell, error)), back);
