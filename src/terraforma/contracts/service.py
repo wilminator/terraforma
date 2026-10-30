@@ -111,6 +111,8 @@ async def offer(
     if not (0 <= my_escrow <= MAX_AMOUNT and 0 <= their_escrow <= MAX_AMOUNT and 0 <= payment_gold <= MAX_AMOUNT):
         raise ContractError("escrow and payment are zero or more gold")
     worth = {"a": _check_terms(contracts, "a", my_terms), "b": _check_terms(contracts, "b", their_terms)}
+    if (why := await contracts.check_offer(session, a_team, to_team_id, my_terms, their_terms)) is not None:
+        raise ContractError(why)
     put = {"a": my_escrow, "b": their_escrow}
     for side, other in (("a", "b"), ("b", "a")):
         least = minimum_escrow(contracts, guild, worth[other], put[other])
