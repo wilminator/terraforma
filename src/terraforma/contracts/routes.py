@@ -87,6 +87,16 @@ async def accept_contract(
         raise refuse(error) from error
 
 
+@router.post("/contracts/{contract_id}/enter-instance")
+async def enter_contract_instance(hero_id: Id, contract_id: Id, request: Request, account: ActingAccount, db: Db) -> dict:
+    await limited(request, ratelimit.CONTRACT_BY_ACCOUNT, str(account.id))
+    try:
+        hero = await service.own_hero(db, account, hero_id)
+        return await _view(db, await contracts_service.enter_instance(db, hero, contract_id))
+    except (service.HeroError, contracts_service.ContractError) as error:
+        raise refuse(error) from error
+
+
 @router.post("/contracts/{contract_id}/decline")
 async def decline_contract(
     hero_id: Id, contract_id: Id, request: Request, account: ActingAccount, db: Db, economy: GameEconomy, storage: GameStorage,

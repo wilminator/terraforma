@@ -125,3 +125,11 @@ def test_an_offer_can_carry_a_payment_that_both_sides_see(two_teams):
     assert made["payment"] == 50
     assert expect(client.get(f"/api/heroes/{aria}/contracts/{made['id']}"), 200).json()["payment"] == 50
     expect(offer(client, mike(), aria, z_team, payment=-1), 422)
+
+
+def test_entering_an_instance_is_refused_for_a_contract_that_hires_no_one_to_enter(two_teams):
+    client, mike, aria, _a_team, zed, zara, z_team = two_teams
+    made = expect(offer(client, mike(), aria, z_team), 200).json()
+    expect(client.post(f"/api/heroes/{zara}/contracts/{made['id']}/accept", headers=zed()), 200)
+    assert "no instance" in expect(client.post(f"/api/heroes/{zara}/contracts/{made['id']}/enter-instance", headers=zed()), 409).json()["detail"]
+    expect(client.post(f"/api/heroes/{zara}/contracts/99999/enter-instance", headers=zed()), 404)

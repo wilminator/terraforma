@@ -117,6 +117,30 @@ async def enter(
     return instance
 
 
+async def admit(session: AsyncSession, party_id: int, instance_id: int) -> QuestInstance:
+    """The party is let into one particular instance, whoever is in it and however full it is or late (an invitation: a contract that
+    hires a party to do a deed inside another party's run of a quest). It appears where the instance's first party stands. Refused
+    while the party is in a town, a fight, or an instance already, and for an instance that is gone or won."""
+    instance = await session.get(QuestInstance, instance_id)
+    if instance is None:
+        raise InstanceError("that instance is gone")
+    if instance.status == WON:
+        raise InstanceError("this quest was already completed here")
+    party = await parties.get_party(session, party_id)
+    if await instance_of(session, party.id) is not None:
+        raise InstanceError("that party is already in an instance")
+    if await towns.visit_of_party(session, party.id) is not None:
+        raise InstanceError("a party in a town can't go on a quest")
+    if await travel.in_fight(session, party):
+        raise InstanceError("a party in a fight can't go on a quest")
+    host = await parties.get_party(session, (await party_ids(session, instance.id))[0])
+    game_map = await session.get(Map, instance.map_id)
+    session.add(InstanceParty(instance_id=instance.id, party_id=party.id, from_map_id=party.map_id, from_x=party.x, from_y=party.y))
+    await session.flush()
+    await travel.relocate(session, party, game_map, host.x, host.y)
+    return instance
+
+
 async def _drop_if_empty(session: AsyncSession, instance_id: int) -> None:
     if not await session.scalar(select(func.count()).select_from(InstanceParty).where(InstanceParty.instance_id == instance_id)):
         await session.execute(delete(QuestInstance).where(QuestInstance.id == instance_id))
