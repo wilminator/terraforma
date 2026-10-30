@@ -34,6 +34,12 @@ class UseItem(Strict):
     target_hero_id: int | None = Field(default=None, ge=1)
 
 
+class UseAbility(Strict):
+    ability: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")
+    # Who it is cast on: one of the caller's own heroes (the caster, when left out).
+    target_hero_id: int | None = Field(default=None, ge=1)
+
+
 class Unequip(Strict):
     position: int = Field(ge=0, le=inventory.MAX_ITEMS)
 
@@ -121,5 +127,16 @@ async def use_item(hero_id: Id, body: UseItem, account: ActingAccount, db: Db, r
         hero = await service.own_hero(db, account, hero_id)
         target = hero if body.target_hero_id is None else await service.own_hero(db, account, body.target_hero_id)
         return await field.use_item(db, hero, body.position, target, rules)
+    except (service.HeroError, inventory.InventoryError) as error:
+        raise refuse(error) from error
+
+
+@router.post("/use-ability")
+async def use_ability(hero_id: Id, body: UseAbility, account: ActingAccount, db: Db, rules: GameRules) -> dict:
+    """Casts an ability the hero knows on the hero or another of the caller's (healing, mana, a revive), outside a fight; the cost comes out of the caster."""
+    try:
+        hero = await service.own_hero(db, account, hero_id)
+        target = hero if body.target_hero_id is None else await service.own_hero(db, account, body.target_hero_id)
+        return await field.use_ability(db, hero, body.ability, target, rules)
     except (service.HeroError, inventory.InventoryError) as error:
         raise refuse(error) from error
