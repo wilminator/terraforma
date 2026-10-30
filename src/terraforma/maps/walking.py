@@ -227,6 +227,9 @@ async def step(
 
     party.x, party.y = x, y
     await move_heroes(session, party)
+    from ..contracts import escort  # (here, since contracts reads the maps)
+
+    await escort.note(session, party)
     party.steps += 1
     party.walked += 1
     at = route["at"] + 1

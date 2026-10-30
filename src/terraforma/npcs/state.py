@@ -338,6 +338,10 @@ class DialogState:
         if spot != (int(x), int(y)) or not target.tile(*spot)["passable"]:
             raise ScriptError(f"{tag} tag: ({x}, {y}) on {map_key} can't be stood on")
         acting = await self.party()
+        from ..contracts import escort  # (here, since contracts reads the maps)
+
+        if acting is not None and not visited and await escort.restricted(self.session, acting.team_ids):
+            visited = True  # a party on an escort contract warps only where every team in it has been
         if visited and (acting is None or not await towns.has_visited(self.session, acting.team_ids, target.id)):
             return label
         if acting is None:  # a hero on no team goes alone
