@@ -179,6 +179,13 @@ class Needs:
         """The supply quest's name (up to 64 characters)."""
         return f"Supply {settlement.name}: {material.name}"[:64]
 
+    def supply_reward(self, rng: Random, settlement: Settlement, material: Material, amount: int) -> dict:
+        """What the players are given for bringing the goods of a supply quest: a JSON object of the game's own (an item the town's crafter makes
+        from the material, gold, guild points), kept in the quest's ``spec["reward"]`` for the game's dialog to read and hand out when the quest
+        is finished. $rng is the stream the quest is drawn from, so a replayed world picks the same one. Nothing, the default: the engine only
+        carries it, so a rare material's craftable item is the game's to name. Must be small (the spec is checked)."""
+        return {}
+
     async def dungeon_gone(self, session: AsyncSession, proposal_id: int, dungeon: dict) -> None:
         """The quest holding $dungeon (as ``dungeon`` returned it) was rejected or retired, so the game may take the place down. Teams that took
         the quest keep it, so a game that removes a map should wait until they are done. Does nothing by default."""
