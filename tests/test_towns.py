@@ -508,4 +508,4 @@ def test_a_team_reads_its_own_visited_towns_and_nobody_elses(app_client):
     expect(app_client.get(f"/api/teams/{team}/town/visited"), 404)  # Zed's login, but not his team
     app_client.post("/api/login", json={"username": "Mike", "password": PASSWORD})
     listed = expect(app_client.get(f"/api/teams/{team}/town/visited"), 200).json()["towns"]
-    assert len(listed) == 1 and set(listed[0]) == {"map_id", "map", "x", "y"}
+    assert len(listed) == 1 and set(listed[0]) == {"map_id", "map", "town", "x", "y"}

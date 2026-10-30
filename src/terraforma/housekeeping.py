@@ -31,6 +31,7 @@ from .marketplace.hooks import Marketplace
 from .models import RateLimitHit, RememberedBrowser, WebauthnKey
 from .oidc import service as oidc
 from .quests import needs
+from .coliseum import service as coliseum
 from .realms import strength
 from .relations.models import ANSWERED, DISMISSED, RatingPrompt
 from .settings import Settings
@@ -167,6 +168,12 @@ async def old_unkept_fights(session: AsyncSession, now: int, settings: Settings,
     """Finished fights that ended more than ``Rules.fight_keep_days`` days ago and that no team or alliance holds (a tag, a top list or a
     slot), with their rounds and what belongs to them (0 days: kept for good)."""
     return await fighttags.sweep(session, rules or Rules(), now)
+
+
+@job
+async def coliseum_offers(session: AsyncSession, now: int, settings: Settings, rules: Rules | None = None) -> int:
+    """Coliseum challenges nobody answered in time (``Rules.coliseum_offer_seconds``) are closed."""
+    return await coliseum.expire(session)
 
 
 @job
