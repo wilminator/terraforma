@@ -464,12 +464,13 @@ class NpcSeed(Strict):
 
 
 class RealmSeed(Strict):
-    """A realm (a kingdom) of the game's world (``realms.json``). ``strength`` is where it starts: after that the world moves it, and a
+    """A realm of the game's world (``realms.json``): a ``kingdom`` (the default) or a ``minor`` power that holds settlements under no kingdom. ``strength`` is where it starts: after that the world moves it, and a
     later load of the seed leaves it alone."""
 
     key: Key
     name: str = Field(min_length=1, max_length=64)
     strength: int = Field(default=0, ge=-1_000_000, le=1_000_000)
+    kind: Literal["kingdom", "minor"] = "kingdom"
 
 
 class MaterialSeed(Strict):
@@ -850,6 +851,8 @@ def check_seed(seed: dict[str, list[dict]], stats: tuple[str, ...] = STATS, reso
     def supply_problems(where: str, parts: list[str]) -> list[str]:
         """What is wrong with a dialog's supply tag (``supply_level``, ``supply_add``, ``supply_take``: settlement and material first): a settlement or
         a supply the seed does not have."""
+        if parts[0] in ("realm_strength", "realm_nudge"):
+            return [] if parts[1] in keys["realms"] else [f"{where} names the realm {parts[1]!r}, which realms.json doesn't have"]
         if parts[0] not in ("supply_level", "supply_add", "supply_take"):
             return []
         if parts[1] not in supplied:

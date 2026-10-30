@@ -7,17 +7,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..db.dialect import upsert
 from ..models import Map, World
 from ..towns.models import VisitedTown
-from .models import DORMANT, LIVE, RUINS, Material, Realm, Settlement, SettlementSupply
+from .models import DORMANT, KINDS, KINGDOM, LIVE, RUINS, Material, Realm, Settlement, SettlementSupply
 
 
 class RealmError(Exception):
     """Something the caller can fix: the message says what."""
 
 
-async def create_realm(session: AsyncSession, world_id: int, key: str, name: str, strength: int = 0) -> Realm:
+async def create_realm(session: AsyncSession, world_id: int, key: str, name: str, strength: int = 0, kind: str = KINGDOM) -> Realm:
+    if kind not in KINDS:
+        raise RealmError("A realm is a kingdom or a minor power.")
     if await session.scalar(select(Realm.id).where(Realm.world_id == world_id, Realm.key == key)) is not None:
         raise RealmError(f"There is already a realm {key!r}.")
-    realm = Realm(world_id=world_id, key=key, name=name, strength=strength, as_of_tick=(await session.get(World, world_id)).tick)
+    realm = Realm(world_id=world_id, key=key, name=name, strength=strength, kind=kind, as_of_tick=(await session.get(World, world_id)).tick)
     session.add(realm)
     await session.flush()
     return realm
@@ -71,6 +73,22 @@ async def set_strength(session: AsyncSession, realm: Realm, strength: int) -> Re
     return realm
 
 
+#: The furthest from zero a realm's strength goes (the admin call takes the same range).
+STRENGTH_LIMIT = 1_000_000
+
+
+async def nudge_strength(session: AsyncSession, realm: Realm, delta: int) -> Realm:
+    """Moves a realm's strength by $delta (a quest outcome), never past ``STRENGTH_LIMIT`` either way. The strength is not brought up to the
+    world clock first (that needs the game's ``Realms`` hook): the nudge is added to what is stored and the drift carries on from there."""
+    realm.strength = max(-STRENGTH_LIMIT, min(STRENGTH_LIMIT, realm.strength + delta))
+    await session.flush()
+    return realm
+
+
+async def realm_by_key(session: AsyncSession, world_id: int, key: str) -> Realm | None:
+    return await session.scalar(select(Realm).where(Realm.world_id == world_id, Realm.key == key))
+
+
 async def settlements(session: AsyncSession, realm: Realm, state: str | None = None) -> list[Settlement]:
     query = select(Settlement).where(Settlement.realm_id == realm.id).order_by(Settlement.key)
     if state is not None:
@@ -89,7 +107,7 @@ async def apply_realms(session: AsyncSession, world_id: int, realms: list, towns
     material_ids = {each.key: each.id for each in (await session.scalars(select(Material))).all()}
     now = (await session.get(World, world_id)).tick
     for row in realms:
-        await upsert(session, Realm.__table__, {"world_id": world_id, "key": row.key, "name": row.name, "strength": row.strength, "as_of_tick": now}, ["world_id", "key"], insert_only=["strength", "as_of_tick"])
+        await upsert(session, Realm.__table__, {"world_id": world_id, "key": row.key, "name": row.name, "strength": row.strength, "kind": row.kind, "as_of_tick": now}, ["world_id", "key"], insert_only=["strength", "as_of_tick"])
     await session.flush()
     realm_ids = {each.key: each.id for each in (await session.scalars(select(Realm).where(Realm.world_id == world_id))).all()}
     map_ids = {each.name: each.id for each in (await session.scalars(select(Map).where(Map.world_id == world_id))).all()}
@@ -121,7 +139,7 @@ async def settlement(session: AsyncSession, settlement_id: int) -> Settlement:
 
 
 def realm_view(row: Realm) -> dict:
-    return {"id": row.id, "key": row.key, "name": row.name, "strength": row.strength}
+    return {"id": row.id, "key": row.key, "name": row.name, "kind": row.kind, "strength": row.strength}
 
 
 def settlement_view(row: Settlement) -> dict:
