@@ -509,8 +509,17 @@ class SettlementSeed(Strict):
     realm: Key
     map: Key
     tier: int = Field(default=0, ge=0, le=100)
+    #: Its entrance tile on the map (both, or neither): many settlements may share a map such as the overworld, told apart by where they are.
+    x: int | None = Field(default=None, ge=0)
+    y: int | None = Field(default=None, ge=0)
     state: Literal["live", "dormant"] = "live"
     supplies: list[SupplySeed] = Field(default=[], max_length=64)
+
+    @model_validator(mode="after")
+    def _a_place_is_both_coordinates(self):
+        if (self.x is None) != (self.y is None):
+            raise ValueError("a settlement's place needs both x and y, or neither")
+        return self
 
 
 class MapSeed(Strict):
@@ -884,7 +893,15 @@ def check_seed(seed: dict[str, list[dict]], stats: tuple[str, ...] = STATS, reso
             problems.extend(supply_problems(f"npcs.json {npc.key}: the dialog", parts))
             if parts[0] in ("warp", "warp_visited") and parts[1] not in drawn and parts[1] != "hub":
                 problems.append(f"npcs.json {npc.key}: the dialog warps to {parts[1]!r}, which maps.json doesn't have")
+    placed: dict[tuple, str] = {}
     for town in checked["settlements"]:
+        if town.x is not None:
+            spot = (town.map, town.x, town.y)
+            if spot in placed:
+                problems.append(f"settlements.json {town.key}: stands where {placed[spot]} does, ({town.x}, {town.y}) on {town.map!r}")
+            placed.setdefault(spot, town.key)
+            if town.map in drawn and not (town.x < drawn[town.map].width and town.y < drawn[town.map].height):
+                problems.append(f"settlements.json {town.key}: stands at ({town.x}, {town.y}), which is off {town.map!r}")
         if town.realm not in keys["realms"]:
             problems.append(f"settlements.json {town.key}: belongs to {town.realm!r}, which realms.json doesn't have")
         seen: set[str] = set()

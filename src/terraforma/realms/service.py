@@ -25,17 +25,19 @@ async def create_realm(session: AsyncSession, world_id: int, key: str, name: str
     return realm
 
 
-async def add_settlement(session: AsyncSession, realm: Realm, map_id: int, key: str, name: str, state: str = LIVE, tier: int = 0) -> Settlement:
+async def add_settlement(session: AsyncSession, realm: Realm, map_id: int, key: str, name: str, state: str = LIVE, tier: int = 0, x: int | None = None, y: int | None = None) -> Settlement:
     """A settlement of the realm on the map: live now, or dormant until it is founded."""
     if state not in (LIVE, DORMANT):
         raise RealmError("A settlement starts live or dormant.")
     if tier < 0:
         raise RealmError("A settlement's tier is not negative.")
+    if (x is None) != (y is None) or (x is not None and (x < 0 or y < 0)):
+        raise RealmError("A settlement's place is both x and y, neither negative, or neither.")
     if await session.get(Map, map_id) is None:
         raise RealmError("That map does not exist.")
     if await session.scalar(select(Settlement.id).where(Settlement.world_id == realm.world_id, Settlement.key == key)) is not None:
         raise RealmError(f"There is already a settlement {key!r}.")
-    settlement = Settlement(world_id=realm.world_id, realm_id=realm.id, map_id=map_id, key=key, name=name, state=state, tier=tier)
+    settlement = Settlement(world_id=realm.world_id, realm_id=realm.id, map_id=map_id, key=key, name=name, state=state, tier=tier, x=x, y=y)
     session.add(settlement)
     await session.flush()
     return settlement
@@ -51,13 +53,14 @@ async def found(session: AsyncSession, settlement: Settlement) -> Settlement:
 
 
 async def fall(session: AsyncSession, settlement: Settlement) -> Settlement:
-    """A live settlement falls: it is kept as ruins and leaves the visited list of every team (unless another live settlement stands on
-    its map, which keeps the map a town). Teams that go there again once it is founded again add it as new."""
+    """A live settlement falls: it is kept as ruins and leaves the visited list of every team (the entry that names it; and, when no other
+    live settlement stands on its map, every entry of the map, as a map with one unnamed town has only that). Teams that go there again once it is founded again add it as new."""
     if settlement.state != LIVE:
         raise RealmError(f"{settlement.name} is not live.")
     settlement.state = RUINS
     await session.flush()
-    if not await live_on(session, settlement.map_id):
+    await session.execute(delete(VisitedTown).where(VisitedTown.map_id == settlement.map_id, VisitedTown.town == settlement.key))
+    if not await live_on(session, settlement.map_id):  # (a map with no town left forgets the towns no settlement names too)
         await session.execute(delete(VisitedTown).where(VisitedTown.map_id == settlement.map_id))
     return settlement
 
@@ -96,7 +99,7 @@ async def apply_realms(session: AsyncSession, world_id: int, realms: list, towns
     realm_ids = {each.key: each.id for each in (await session.scalars(select(Realm).where(Realm.world_id == world_id))).all()}
     map_ids = {each.name: each.id for each in (await session.scalars(select(Map).where(Map.world_id == world_id))).all()}
     for row in towns:
-        values = {"world_id": world_id, "key": row.key, "name": row.name, "realm_id": realm_ids[row.realm], "map_id": map_ids[row.map], "tier": row.tier, "state": row.state}
+        values = {"world_id": world_id, "key": row.key, "name": row.name, "realm_id": realm_ids[row.realm], "map_id": map_ids[row.map], "tier": row.tier, "x": row.x, "y": row.y, "state": row.state}
         await upsert(session, Settlement.__table__, values, ["world_id", "key"], insert_only=["state"])
     await session.flush()
     for row in towns:
@@ -127,4 +130,4 @@ def realm_view(row: Realm) -> dict:
 
 
 def settlement_view(row: Settlement) -> dict:
-    return {"id": row.id, "key": row.key, "name": row.name, "realm_id": row.realm_id, "map_id": row.map_id, "state": row.state, "tier": row.tier}
+    return {"id": row.id, "key": row.key, "name": row.name, "realm_id": row.realm_id, "map_id": row.map_id, "state": row.state, "tier": row.tier, "x": row.x, "y": row.y}
