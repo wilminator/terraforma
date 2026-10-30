@@ -7,17 +7,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..db.dialect import upsert
 from ..models import Map, World
 from ..towns.models import VisitedTown
-from .models import DORMANT, LIVE, RUINS, Material, Realm, Settlement, SettlementSupply
+from .models import DORMANT, KINDS, KINGDOM, LIVE, RUINS, Material, Realm, Settlement, SettlementSupply
 
 
 class RealmError(Exception):
     """Something the caller can fix: the message says what."""
 
 
-async def create_realm(session: AsyncSession, world_id: int, key: str, name: str, strength: int = 0) -> Realm:
+async def create_realm(session: AsyncSession, world_id: int, key: str, name: str, strength: int = 0, kind: str = KINGDOM) -> Realm:
+    if kind not in KINDS:
+        raise RealmError("A realm is a kingdom or a minor power.")
     if await session.scalar(select(Realm.id).where(Realm.world_id == world_id, Realm.key == key)) is not None:
         raise RealmError(f"There is already a realm {key!r}.")
-    realm = Realm(world_id=world_id, key=key, name=name, strength=strength, as_of_tick=(await session.get(World, world_id)).tick)
+    realm = Realm(world_id=world_id, key=key, name=name, strength=strength, kind=kind, as_of_tick=(await session.get(World, world_id)).tick)
     session.add(realm)
     await session.flush()
     return realm
@@ -105,7 +107,7 @@ async def apply_realms(session: AsyncSession, world_id: int, realms: list, towns
     material_ids = {each.key: each.id for each in (await session.scalars(select(Material))).all()}
     now = (await session.get(World, world_id)).tick
     for row in realms:
-        await upsert(session, Realm.__table__, {"world_id": world_id, "key": row.key, "name": row.name, "strength": row.strength, "as_of_tick": now}, ["world_id", "key"], insert_only=["strength", "as_of_tick"])
+        await upsert(session, Realm.__table__, {"world_id": world_id, "key": row.key, "name": row.name, "strength": row.strength, "kind": row.kind, "as_of_tick": now}, ["world_id", "key"], insert_only=["strength", "as_of_tick"])
     await session.flush()
     realm_ids = {each.key: each.id for each in (await session.scalars(select(Realm).where(Realm.world_id == world_id))).all()}
     map_ids = {each.name: each.id for each in (await session.scalars(select(Map).where(Map.world_id == world_id))).all()}
@@ -137,7 +139,7 @@ async def settlement(session: AsyncSession, settlement_id: int) -> Settlement:
 
 
 def realm_view(row: Realm) -> dict:
-    return {"id": row.id, "key": row.key, "name": row.name, "strength": row.strength}
+    return {"id": row.id, "key": row.key, "name": row.name, "kind": row.kind, "strength": row.strength}
 
 
 def settlement_view(row: Settlement) -> dict:

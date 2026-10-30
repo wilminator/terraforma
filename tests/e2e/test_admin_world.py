@@ -21,6 +21,8 @@ def make_world(live_server):
         await db.flush()
         realm = await service.create_realm(db, hub.world_id, "ardent", "Ardent", strength=10)
         town = await service.add_settlement(db, realm, game_map.id, "capital", "Ardent City", tier=2)
+        minor = await service.create_realm(db, hub.world_id, "free-towns", "Free Towns", strength=3, kind="minor")
+        await service.add_settlement(db, minor, game_map.id, "port", "Free Port")
         iron = Material(key="iron", name="Iron")
         db.add(iron)
         await db.flush()
@@ -80,3 +82,12 @@ def test_the_sources_of_a_supply_are_cut_and_put_back(page, live_server):
     page.get_by_label("Cut of Iron in Ardent City", exact=True).fill("0")
     page.get_by_role("button", name="Set the cut of Iron in Ardent City").click()
     expect(supply).to_contain_text("cut 0%")
+
+
+def test_a_minor_power_is_told_from_a_kingdom(page, live_server):
+    make_world(live_server)
+    admin_page(page, live_server)
+    open_section(page)
+    expect(page.locator("[data-realm='ardent']")).to_contain_text("Kingdom")
+    expect(page.locator("[data-realm='free-towns']")).to_contain_text("Minor power")
+    expect(page.locator("[data-settlement='port']")).to_contain_text("Free Towns, tier 0")

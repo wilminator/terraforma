@@ -196,3 +196,26 @@ def test_an_admin_reads_the_realms_moves_a_strength_and_lets_a_town_fall_and_ris
     expect(app_client.post("/api/admin/realms/999/strength", json={"strength": 1}, headers=root), 404)
     for bad in ({}, {"strength": "a lot"}, {"strength": 2_000_000}, {"strength": 1, "surprise": 1}):
         expect(app_client.post(f"/api/admin/realms/{realm_id}/strength", json=bad, headers=root), 422)
+
+
+async def test_a_minor_power_is_a_realm_that_holds_settlements_under_no_kingdom(db):
+    data = seed()
+    data["realms"].append({"key": "free", "name": "Free Towns", "strength": 2, "kind": "minor"})
+    data["settlements"].append({"key": "port", "name": "Free Port", "realm": "free", "map": "meadow"})
+    await load_content(db, data)
+    kinds = {each.key: each.kind for each in (await db.scalars(select(Realm))).all()}
+    assert kinds == {"ardent": "kingdom", "free": "minor"}, "a kingdom unless the seed says minor"
+    port = await db.scalar(select(Settlement).where(Settlement.key == "port"))
+    assert (await service.fall(db, port)).state == RUINS, "it falls and is founded like any other"
+    assert (await service.found(db, port)).state == LIVE
+    assert service.realm_view(await db.scalar(select(Realm).where(Realm.key == "free")))["kind"] == "minor"
+
+
+async def test_a_realm_is_a_kingdom_or_a_minor_power_and_nothing_else(db):
+    data = seed()
+    data["realms"][0]["kind"] = "empire"
+    with pytest.raises(ContentError):
+        check_seed(data)
+    world_id, _ = await world_with_maps(db, "north")
+    with pytest.raises(service.RealmError):
+        await service.create_realm(db, world_id, "odd", "Odd", kind="empire")
