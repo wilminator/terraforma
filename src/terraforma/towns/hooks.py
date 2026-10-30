@@ -21,6 +21,7 @@ from ..fights.rules import Rules
 from ..heroes.models import TeamMember
 from ..models import Map
 from ..parties.models import Party
+from ..realms.models import Settlement
 from ..world.rng import WorldRng
 from ..world.start import HUB_NAME
 
@@ -31,6 +32,14 @@ class Towns:
         for its teams to be ready (the Leave Town button) before it goes on."""
         game_map = await session.get(Map, map_id)
         return game_map is not None and game_map.name == HUB_NAME
+
+    async def town_key(self, session: AsyncSession, map_id: int, x: int, y: int) -> str:
+        """Which town a party that comes in at this place is in, by a name of up to 64 characters, so that a map holding several towns (the
+        overworld) remembers each one a team has been to. By default it is the key of the settlement (``terraforma.realms``) placed on
+        exactly this tile, and "" when there is none, which makes the map one town as before. A game whose towns cover many tiles overrides
+        this to return the same key for each of them (the settlement's key keeps its visited-list entry leaving when the settlement falls)."""
+        found = await session.scalar(select(Settlement.key).where(Settlement.map_id == map_id, Settlement.x == x, Settlement.y == y).limit(1))
+        return found or ""
 
     async def groups(self, session: AsyncSession, party_id: int, team_ids: list[int]) -> list[list[int]]:
         """How a suspended party's teams are grouped, in the order of $team_ids (the party's formation): a list of groups,

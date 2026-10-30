@@ -14,7 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..challenge import service as tokens
 from ..content.models import Item
 from ..fights.rules import Rules
+from ..heroes.field import in_running_fight
+from ..heroes.models import Hero
 from ..models import Account
+from ..storage import service as storage_service
+from ..storage.hooks import Storage
 from .models import Parcel, StoreGrant
 
 REASON = "store"
@@ -113,6 +117,25 @@ async def parcel(session: AsyncSession, account_id: int) -> dict[str, int]:
         select(Item.key, Parcel.qty).join(Item, Item.id == Parcel.item_id).where(Parcel.account_id == account_id, Parcel.qty > 0)
     )
     return {key: qty for key, qty in found.all()}
+
+
+async def collect(session: AsyncSession, storage: Storage, account_id: int, hero: Hero, item_key: str, qty: int) -> dict:
+    """Takes up to $qty of an item from the account's parcel to $hero (the game's storage first, then the packs it shares with:
+    ``storage.service.deliver``); whatever does not fit stays in the parcel. Returns ``{"taken", "waiting", "stored", "packed"}``. Raises
+    GrantError when the parcel holds none of the item or the hero is in a running fight; nothing changes then."""
+    if await in_running_fight(session, hero):
+        raise GrantError(f"{hero.name} is in a fight")
+    row = await session.scalar(
+        select(Parcel).join(Item, Item.id == Parcel.item_id).where(Parcel.account_id == account_id, Item.key == item_key, Parcel.qty > 0)
+    )
+    if row is None:
+        raise GrantError("the parcel holds none of that")
+    want = min(qty, row.qty)
+    done = await storage_service.deliver(session, storage, hero, item_key, want)
+    taken = want - done.left
+    row.qty -= taken
+    await session.flush()
+    return {"taken": taken, "waiting": row.qty, "stored": done.stored, "packed": sum(done.packed.values())}
 
 
 async def _repeat(session, seen: StoreGrant, account_id: int, token_change: int, items: dict[str, int], message: str) -> Granted:
