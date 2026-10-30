@@ -37,7 +37,7 @@ class MapObject(Located, Timestamps, Base):
 class SavedMap(Timestamps, Base):
     """A map kept for reuse (``maps.library``): the content of a map a game generated, under the game's own ``key``, so the next place that
     wants one like it is made from this copy instead of being generated again. ``objects`` are the map's object and edge rows (without their
-    ids or the map), and ``uses`` counts the maps made from it."""
+    ids or the map), ``status`` says whether an admin let it be reused (see ``maps.library``) and ``uses`` counts the maps made from it."""
 
     __tablename__ = "saved_maps"
     __table_args__ = (UniqueConstraint("world_id", "key"),)
@@ -56,4 +56,6 @@ class SavedMap(Timestamps, Base):
     zones: Mapped[list | None] = mapped_column(JSON)
     zone_tiles: Mapped[list | None] = mapped_column(JSON)
     objects: Mapped[list] = mapped_column(JSON, default=list)
+    #: ``proposed`` (waiting for an admin; never copied), ``approved`` (copied for later places) or ``rejected`` (never copied).
+    status: Mapped[str] = mapped_column(String(16), default="proposed", server_default="proposed")
     uses: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
