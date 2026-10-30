@@ -76,6 +76,22 @@ async def set_strength(session: AsyncSession, realm: Realm, strength: int) -> Re
     return realm
 
 
+#: The furthest from zero a realm's strength goes (the admin call takes the same range).
+STRENGTH_LIMIT = 1_000_000
+
+
+async def nudge_strength(session: AsyncSession, realm: Realm, delta: int) -> Realm:
+    """Moves a realm's strength by $delta (a quest outcome), never past ``STRENGTH_LIMIT`` either way. The strength is not brought up to the
+    world clock first (that needs the game's ``Realms`` hook): the nudge is added to what is stored and the drift carries on from there."""
+    realm.strength = max(-STRENGTH_LIMIT, min(STRENGTH_LIMIT, realm.strength + delta))
+    await session.flush()
+    return realm
+
+
+async def realm_by_key(session: AsyncSession, world_id: int, key: str) -> Realm | None:
+    return await session.scalar(select(Realm).where(Realm.world_id == world_id, Realm.key == key))
+
+
 async def settlements(session: AsyncSession, realm: Realm, state: str | None = None) -> list[Settlement]:
     query = select(Settlement).where(Settlement.realm_id == realm.id).order_by(Settlement.key)
     if state is not None:

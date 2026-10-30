@@ -117,3 +117,11 @@ def test_a_team_sees_and_takes_an_open_contract_and_the_second_is_too_late(two_t
     assert accepted["state"] == "active" and accepted["b"]["team"] == "Rearguard" and accepted["a"]["team"] is None
     expect(client.post(f"/api/heroes/{aria}/contracts/{contract_id}/accept", headers=mike()), 404)  # too late
     assert expect(client.get(f"/api/heroes/{aria}/open-contracts"), 200).json() == []
+
+
+def test_an_offer_can_carry_a_payment_that_both_sides_see(two_teams):
+    client, mike, aria, _a_team, _zed, _zara, z_team = two_teams
+    made = expect(offer(client, mike(), aria, z_team, payment=50), 200).json()
+    assert made["payment"] == 50
+    assert expect(client.get(f"/api/heroes/{aria}/contracts/{made['id']}"), 200).json()["payment"] == 50
+    expect(offer(client, mike(), aria, z_team, payment=-1), 422)

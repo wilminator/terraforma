@@ -29,7 +29,11 @@ class Contract(Timestamps, Base):
     themselves are ``a_escrow_id`` and ``b_escrow_id``.
 
     An *open* contract is posted by the guild itself (``a_team_id`` is none): it binds only side ``b``, the first team to take it, and pays
-    that team ``reward_gold`` when every term is met. A breach loses their escrow to the guild."""
+    that team ``reward_gold`` when every term is met. A breach loses their escrow to the guild.
+
+    ``payment_gold`` is a fee side ``a`` pays side ``b`` for keeping b's terms. It is put into a separate deposit when the offer is made
+    (so it is returned if the offer ends unanswered) and is paid to ``b`` when the contract ends with none of b's terms broken, and
+    returned to ``a`` otherwise. It is separate from the breach escrows."""
 
     __tablename__ = "contracts"
 
@@ -42,6 +46,8 @@ class Contract(Timestamps, Base):
     b_escrow_gold: Mapped[int] = mapped_column(BigInteger, default=0)
     a_escrow_id: Mapped[int | None] = mapped_column(ForeignKey("escrows.id"), nullable=True)
     b_escrow_id: Mapped[int | None] = mapped_column(ForeignKey("escrows.id"), nullable=True)
+    payment_gold: Mapped[int] = mapped_column(BigInteger, default=0)  # side a's fee to side b, held from the offer, paid when b keeps every term
+    payment_escrow_id: Mapped[int | None] = mapped_column(ForeignKey("escrows.id"), nullable=True)
     duration: Mapped[int] = mapped_column(BigInteger)
     offer_expires_at: Mapped[int] = mapped_column(BigInteger, index=True)
     starts_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
