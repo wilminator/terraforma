@@ -69,3 +69,34 @@ class ContractTerm(Base):
     kind: Mapped[str] = mapped_column(String(32))
     params: Mapped[dict] = mapped_column(JSON, default=dict)
     state: Mapped[str] = mapped_column(String(8), default=PENDING)
+
+
+BOUNTY_OPEN = "open"
+BOUNTY_PAID = "paid"
+BOUNTY_EXPIRED = "expired"
+BOUNTY_WITHDRAWN = "withdrawn"
+
+
+class Bounty(Timestamps, Base):
+    """A reward for killing a team (or one hero of it), posted by a team or in an alliance's name, that anyone may earn without a contract.
+    ``reward_gold`` is held from the posting (in the team's deposit ``escrow_id``, or taken from the alliance's treasury) and paid once, to
+    the teams that fought the target's fall, when the target has fallen after the posting; it goes back to the poster if nobody does before
+    ``expires_at`` or the poster withdraws it. ``poster_team_id`` is the team that posted it, also for an alliance's bounty (``alliance_id``;
+    the gold goes back to that team if the alliance is gone by then)."""
+
+    __tablename__ = "bounties"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    guild: Mapped[str] = mapped_column(String(64), index=True)
+    poster_team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), index=True)
+    alliance_id: Mapped[int | None] = mapped_column(ForeignKey("alliances.id", ondelete="SET NULL"), nullable=True)
+    target_team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), index=True)
+    scope: Mapped[str] = mapped_column(String(4))  # "team" or "hero"
+    hero_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reward_gold: Mapped[int] = mapped_column(BigInteger)
+    escrow_id: Mapped[int | None] = mapped_column(ForeignKey("escrows.id"), nullable=True)
+    posted_at: Mapped[int] = mapped_column(BigInteger)  # wall clock, whole seconds: falls before it do not count
+    expires_at: Mapped[int] = mapped_column(BigInteger, index=True)
+    state: Mapped[str] = mapped_column(String(10), default=BOUNTY_OPEN, index=True)
+    paid_to: Mapped[list | None] = mapped_column(JSON, nullable=True)  # the team ids that were paid
+    settled_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

@@ -21,8 +21,9 @@ from .voice.discord import VoiceError, provider_for
 from .voice.models import VoiceRoom
 from .fights.models import PendingDrop
 from .fights.pending import OPEN, expire
+from .contracts import bounties
 from .contracts import service as contracts_service
-from .contracts.models import ACTIVE, Contract
+from .contracts.models import ACTIVE, BOUNTY_OPEN, Bounty, Contract
 from .economy import TeamGold
 from .fights.rules import Rules
 from .fighttags import service as fighttags
@@ -222,6 +223,21 @@ async def running_contracts(session: AsyncSession, now: int, settings: Settings,
             if (await contracts_service.judge(session, economy, storage, contracts, contract_id)).state != ACTIVE:
                 settled += 1
         except contracts_service.ContractError:
+            continue
+    return settled
+
+
+@job
+async def standing_bounties(session: AsyncSession, now: int, settings: Settings, rules: Rules | None = None) -> int:
+    """Pays every open bounty whose target has fallen to someone and returns the reward of those that ran out (``bounties.judge``). Returns how
+    many it settled."""
+    economy, storage, _hooks, _contracts = _trade(session)
+    settled = 0
+    for bounty_id in (await session.scalars(select(Bounty.id).where(Bounty.state == BOUNTY_OPEN).order_by(Bounty.expires_at).limit(BATCH))).all():
+        try:
+            if (await bounties.judge(session, economy, storage, bounty_id)).state != BOUNTY_OPEN:
+                settled += 1
+        except bounties.BountyError:
             continue
     return settled
 

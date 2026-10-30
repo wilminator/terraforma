@@ -381,6 +381,15 @@ async def spend(session: AsyncSession, hooks: Alliances, alliance: Alliance, act
     return alliance.gold
 
 
+async def commit_gold(session: AsyncSession, hooks: Alliances, alliance: Alliance, actor_team_id: int, amount: int) -> int:
+    """The acting team commits $amount of the treasury to something other than a member (a bounty posted in the alliance's name): the
+    same permission and voting rules as ``spend``. Takes the gold out and returns the balance; the caller must put it somewhere (or back with
+    ``treasury.put``)."""
+    await _acting(session, hooks, alliance, actor_team_id, "spend")
+    await treasury.take(session, alliance, amount)
+    return alliance.gold
+
+
 async def set_fight_tax(session: AsyncSession, hooks: Alliances, alliance: Alliance, actor_team_id: int, percent: int) -> int:
     """Sets the share of the gold member teams earn from fights that the alliance keeps. Returns the rate."""
     await _acting(session, hooks, alliance, actor_team_id, "set_fight_tax")
