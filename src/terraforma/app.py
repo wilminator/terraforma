@@ -40,6 +40,7 @@ from .alliances.ballot_routes import router as ballots_router
 from .alliances.routes import router as alliances_router
 from .alliances.taxes import AllianceTaxman
 from .challenge.routes import router as challenge_router
+from .storegrant.parcel_routes import router as parcel_router
 from .storegrant.routes import router as storegrant_router
 from .guild.routes import router as guild_router
 from .standing.routes import router as standing_router
@@ -199,6 +200,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(fightpages_router)
     app.include_router(challenge_router)
     app.include_router(storegrant_router)
+    app.include_router(parcel_router)
     app.include_router(npcs_router)
     app.include_router(disuse_router)
     app.include_router(reach_router)
