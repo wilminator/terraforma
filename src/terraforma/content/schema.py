@@ -464,12 +464,13 @@ class NpcSeed(Strict):
 
 
 class RealmSeed(Strict):
-    """A realm (a kingdom) of the game's world (``realms.json``). ``strength`` is where it starts: after that the world moves it, and a
+    """A realm of the game's world (``realms.json``): a ``kingdom`` (the default) or a ``minor`` power that holds settlements under no kingdom. ``strength`` is where it starts: after that the world moves it, and a
     later load of the seed leaves it alone."""
 
     key: Key
     name: str = Field(min_length=1, max_length=64)
     strength: int = Field(default=0, ge=-1_000_000, le=1_000_000)
+    kind: Literal["kingdom", "minor"] = "kingdom"
 
 
 class MaterialSeed(Strict):

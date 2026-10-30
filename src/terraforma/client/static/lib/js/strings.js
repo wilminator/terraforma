@@ -748,6 +748,8 @@ export const STRINGS = {
   "admin.world_realms": "Realms",
   "admin.world_settlements": "Settlements",
   "admin.world_none": "The world has no realms yet.",
+  "admin.world_kind_kingdom": "Kingdom",
+  "admin.world_kind_minor": "Minor power",
   "admin.world_strength": "Strength {strength}",
   "admin.world_strength_name": "Strength of {name}",
   "admin.world_set": "Set",

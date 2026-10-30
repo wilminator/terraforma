@@ -27,7 +27,7 @@ export function worldSection(shell) {
     const row = h(
       "li",
       { class: "row", "data-realm": realm.key },
-      h("div", {}, h("strong", {}, realm.name), h("span", { class: "muted small" }, ` ${t("admin.world_strength", { strength: realm.strength })}`)),
+      h("div", {}, h("strong", {}, realm.name), h("span", { class: "muted small" }, ` ${t(`admin.world_kind_${realm.kind}`)} · ${t("admin.world_strength", { strength: realm.strength })}`)),
       h("div", { class: "inline" }, input, h("button", { type: "button", "aria-label": t("admin.world_set_name", { name: realm.name }), onclick: () => change(async () => {
         const { realm: now } = await api.post(`/api/admin/realms/${realm.id}/strength`, { strength: Number(input.value) });
         row.replaceWith(realmRow(now));

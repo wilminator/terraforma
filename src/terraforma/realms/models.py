@@ -1,4 +1,4 @@
-"""Realms (kingdoms) and the settlements that belong to them: the living world's towns, villages and ruins."""
+"""Realms (kingdoms and minor powers) and the settlements that belong to them: the living world's towns, villages and ruins."""
 
 from sqlalchemy import BigInteger, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
@@ -12,6 +12,9 @@ RUINS = "ruins"
 #: A settlement authored in advance and not yet founded: it wakes when its realm grows (or an admin says so).
 DORMANT = "dormant"
 STATES = (LIVE, RUINS, DORMANT)
+#: A realm that is one of the world's kingdoms, or a minor power (a lesser people, a company, a free town) that holds settlements under no kingdom.
+KINGDOM, MINOR = "kingdom", "minor"
+KINDS = (KINGDOM, MINOR)
 
 
 class Realm(Timestamps, Base):
@@ -26,6 +29,9 @@ class Realm(Timestamps, Base):
     key: Mapped[str] = mapped_column(String(64))
     name: Mapped[str] = mapped_column(String(64))
     strength: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    #: ``kingdom`` or ``minor``. The engine treats them alike (a minor power has strength, settlements and a place in the game's ``Realms`` hook);
+    #: the kind is for the game and the admin to tell them apart.
+    kind: Mapped[str] = mapped_column(String(16), default=KINGDOM, server_default=KINGDOM)
     #: The world-clock tick the strength was last brought up to (see ``realms.strength``).
     as_of_tick: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
 
