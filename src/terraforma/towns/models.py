@@ -1,6 +1,6 @@
 """A party in a town: how it was put together, which of its teams are waiting to leave, and who has been told. And the towns each team has been to."""
 
-from sqlalchemy import JSON, Boolean, ForeignKey, Integer, UniqueConstraint
+from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db.base import Base, Timestamps
@@ -40,15 +40,17 @@ class TownNotice(Timestamps, Base):
 
 
 class VisitedTown(Timestamps, Base):
-    """$team_id has been to a town on $map_id, first arriving at ($x, $y). One row per team and map, written when a party
-    the team is in comes into a town (``towns.service.enter_town``). It stays for as long as the team does; whether the
+    """$team_id has been to the town $town on $map_id, first arriving at ($x, $y). One row per team, map and town ($town is the game's
+    name for the town from ``Towns.town_key``, the key of the settlement standing there by default, and "" for a map with one town and no
+    settlement), written when a party the team is in comes into a town (``towns.service.enter_town``). It stays for as long as the team does; whether the
     place is still a town is asked when it is read (``towns.service.visited_towns``), so a town that is gone is not offered."""
 
     __tablename__ = "visited_towns"
-    __table_args__ = (UniqueConstraint("team_id", "map_id"),)
+    __table_args__ = (UniqueConstraint("team_id", "map_id", "town"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), index=True)
     map_id: Mapped[int] = mapped_column(ForeignKey("maps.id"))
+    town: Mapped[str] = mapped_column(String(64), default="", server_default="")
     x: Mapped[int] = mapped_column(Integer)
     y: Mapped[int] = mapped_column(Integer)

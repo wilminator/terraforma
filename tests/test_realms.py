@@ -219,3 +219,55 @@ async def test_a_realm_is_a_kingdom_or_a_minor_power_and_nothing_else(db):
     world_id, _ = await world_with_maps(db, "north")
     with pytest.raises(service.RealmError):
         await service.create_realm(db, world_id, "odd", "Odd", kind="empire")
+
+
+async def test_several_settlements_on_one_map_are_remembered_and_forgotten_one_by_one(db):
+    _, teams = await party_of_three(db)
+    world_id, (overworld,) = await world_with_maps(db, "overworld")
+    realm = await service.create_realm(db, world_id, "ardent", "Ardent")
+    port = await service.add_settlement(db, realm, overworld.id, "port", "Port", x=3, y=4)
+    await service.add_settlement(db, realm, overworld.id, "keep", "Keep", x=20, y=9)
+    await towns_service.record_visit(db, teams, overworld.id, 3, 4)
+    await towns_service.record_visit(db, teams, overworld.id, 20, 9)
+    await towns_service.record_visit(db, teams, overworld.id, 3, 4)  # (again: nothing new)
+    listed = await towns_service.visited_towns(db, TownsEverywhere(), teams)
+    assert [(each["town"], each["x"], each["y"]) for each in listed] == [("keep", 20, 9), ("port", 3, 4)]
+    await service.fall(db, port)
+    listed = await towns_service.visited_towns(db, TownsEverywhere(), teams)
+    assert [each["town"] for each in listed] == ["keep"], "only the fallen town left the list"
+    assert await towns_service.has_visited(db, teams, overworld.id), "the map still has a live town"
+
+
+async def test_a_place_with_no_settlement_is_the_maps_unnamed_town(db):
+    _, teams = await party_of_three(db)
+    world_id, (north,) = await world_with_maps(db, "north")
+    realm = await service.create_realm(db, world_id, "ardent", "Ardent")
+    await service.add_settlement(db, realm, north.id, "camp", "Camp", x=1, y=1)
+    await towns_service.record_visit(db, teams, north.id, 9, 9)
+    await towns_service.record_visit(db, teams, north.id, 8, 8)
+    assert [(each["town"], each["x"]) for each in await towns_service.visited_towns(db, TownsEverywhere(), teams)] == [("", 9)]
+
+
+async def test_a_settlements_place_is_both_coordinates_or_neither(db):
+    world_id, (north,) = await world_with_maps(db, "north")
+    realm = await service.create_realm(db, world_id, "ardent", "Ardent")
+    for bad in ({"x": 1}, {"y": 1}, {"x": -1, "y": 0}):
+        with pytest.raises(service.RealmError):
+            await service.add_settlement(db, realm, north.id, "odd", "Odd", **bad)
+    placed = await service.add_settlement(db, realm, north.id, "fine", "Fine", x=0, y=0)
+    assert service.settlement_view(placed)["x"] == 0
+    assert service.settlement_view(await service.add_settlement(db, realm, north.id, "free", "Free"))["x"] is None
+
+
+async def test_the_seed_places_settlements_and_refuses_two_in_one_spot(db):
+    data = seed()
+    data["settlements"][0].update(x=0, y=1)
+    await load_content(db, data)
+    capital = await db.scalar(select(Settlement).where(Settlement.key == "capital"))
+    assert (capital.x, capital.y) == (0, 1)
+    data["settlements"][1].update(map="meadow", x=0, y=1, state="live")
+    with pytest.raises(ContentError, match="stands where capital does"):
+        check_seed(data)
+    data["settlements"][1].update(x=None)
+    with pytest.raises(ContentError):
+        check_seed(data)

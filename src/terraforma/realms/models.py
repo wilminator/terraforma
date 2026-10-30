@@ -52,6 +52,10 @@ class Settlement(Timestamps, Base):
     name: Mapped[str] = mapped_column(String(64))
     state: Mapped[str] = mapped_column(String(16), default=LIVE, index=True)
     tier: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    #: Where the settlement is on its map (its entrance tile), or None when the game has not placed it. Many settlements may share one map
+    #: (the overworld is one big map), told apart by where they are; the default ``Towns.town_key`` finds a settlement by this tile.
+    x: Mapped[int | None] = mapped_column(Integer, default=None)
+    y: Mapped[int | None] = mapped_column(Integer, default=None)
 
 
 class Material(Timestamps, Base):
