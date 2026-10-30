@@ -157,6 +157,8 @@ async def supply_gaps(session: AsyncSession, hooks: Needs, world: World) -> list
         rng = WorldRng(world.seed).stream("needs", key, serial)
         amount = hooks.supply_amount(settlement, material, level, row.capacity)
         spec = {"supply": {"settlement": settlement.key, "material": material.key, "amount": amount}, "band": key, "reason": SUPPLY}
+        if reward := hooks.supply_reward(rng, settlement, material, amount):
+            spec["reward"] = reward
         proposal = QuestProposal(band=key, slot=slot, pxp_min=0, pxp_max=0, reason=SUPPLY, name=check_name(hooks.supply_name(rng, settlement, material)),
                                  spec=check_spec(spec))
         try:
