@@ -79,6 +79,7 @@ from .pvp.routes import router as pvp_router
 from .towns.routes import router as towns_router
 from .trading.routes import router as trading_router
 from .marketplace.routes import router as marketplace_router
+from .coliseum.routes import router as coliseum_router
 from .contracts.routes import router as contracts_router
 from . import client, housekeeping
 from .keys import KeyRing
@@ -174,6 +175,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(storage_router)
     app.include_router(trading_router)
     app.include_router(marketplace_router)
+    app.include_router(coliseum_router)
     app.include_router(contracts_router)
     app.include_router(pending_drops_router)
     app.include_router(relations_router)
