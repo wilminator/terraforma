@@ -21,6 +21,7 @@ from ..models import Account, Map
 from ..disuse.models import DisuseTalk, SetAside
 from ..npcs.models import NpcTalk
 from ..parties.models import PartyRequest, PartyTeam
+from ..npcs.fight_models import ScriptedFight
 from ..towns.models import VisitedTown
 from ..fighttags.models import FightTeam, TeamKept, TeamTag
 from ..profiles.models import TeamProfile
@@ -261,6 +262,7 @@ async def delete_team(session: AsyncSession, account: Account, team_id: int, all
     await session.execute(delete(PartyRequest).where(PartyRequest.team_id == team.id))
     await standing.forget(session, "team", team.id)
     await session.execute(delete(VisitedTown).where(VisitedTown.team_id == team.id))
+    await session.execute(delete(ScriptedFight).where(ScriptedFight.team_id == team.id))
     await session.delete(team)
     await session.flush()
 

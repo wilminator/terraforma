@@ -868,11 +868,18 @@ def check_seed(seed: dict[str, list[dict]], stats: tuple[str, ...] = STATS, reso
             return [f"{where} names {parts[2]!r} at {parts[1]!r}, which that settlement doesn't keep"]
         return []
 
+    def fight_problems(where: str, parts: list[str]) -> list[str]:
+        """What is wrong with a dialog's ``npc_fight`` tag: a monster monsters.json doesn't have."""
+        if parts[0] != "npc_fight":
+            return []
+        return [f"{where} fights {foe!r}, which monsters.json doesn't have" for foe in parts[2].split("+") if foe not in keys["monsters"]]
+
     for row in checked["maps"]:
         scripts = [(f"object {each.key}", each.script) for each in row.objects] + [(f"{direction} edge", script) for direction, script in row.edges.items()]
         for what, script in scripts:
             for parts in tags(script):
                 problems.extend(supply_problems(f"maps.json {row.key}: the {what}", parts))
+                problems.extend(fight_problems(f"maps.json {row.key}: the {what}", parts))
                 if parts[0] not in ("warp", "warp_visited"):
                     continue
                 target, x, y = parts[1], int(parts[2]), int(parts[3])
@@ -891,6 +898,7 @@ def check_seed(seed: dict[str, list[dict]], stats: tuple[str, ...] = STATS, reso
             problems.append(f"npcs.json {npc.key}: stands at ({npc.x}, {npc.y}), which is off {npc.map!r}")
         for parts in tags(npc.dialog):
             problems.extend(supply_problems(f"npcs.json {npc.key}: the dialog", parts))
+            problems.extend(fight_problems(f"npcs.json {npc.key}: the dialog", parts))
             if parts[0] in ("warp", "warp_visited") and parts[1] not in drawn and parts[1] != "hub":
                 problems.append(f"npcs.json {npc.key}: the dialog warps to {parts[1]!r}, which maps.json doesn't have")
     placed: dict[tuple, str] = {}
@@ -916,6 +924,7 @@ def check_seed(seed: dict[str, list[dict]], stats: tuple[str, ...] = STATS, reso
     for tree in checked["dialogs"]:
         for parts in tags(tree.text):
             problems.extend(supply_problems(f"dialogs.json {tree.key}: the text", parts))
+            problems.extend(fight_problems(f"dialogs.json {tree.key}: the text", parts))
             if parts[0] in ("warp", "warp_visited") and parts[1] not in drawn and parts[1] != "hub":
                 problems.append(f"dialogs.json {tree.key}: the text warps to {parts[1]!r}, which maps.json doesn't have")
     kinds = {row.key: row.kind for row in checked["statuses"]}

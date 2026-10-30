@@ -45,6 +45,12 @@ its command, followed by comma separated parameters. Text outside tags is shown.
                          fight now: apart in a town, a hero already in a fight) and leaves the dialog; ``won`` and ``lost`` finish the team's quest
                          by how its fight ended (as won, or failed for poor performance) and go on; each goes to the label while there is no
                          fight, it is still running, or it ended the other way
+    npc_fight,name,monster+monster,label  the party the hero acts in fights those monsters (monster keys from monsters.json joined by +, 1 to 20; the
+                         party's size limit is checked when it starts) and the dialog is over; the fight is kept under the dialog's own $name
+                         for each team of the party. The label if the party cannot fight now (apart in a town, a hero already in a fight)
+    npc_fight_result,name,won|lost|running,label  go on if the talking hero's team's latest fight under that name is in that state (won: the team
+                         won it; lost: it ended and the team did not win, fled included; running: not over yet), else jump to the label
+                         (also when there is no such fight)
     manual_quest,event,enter|finish_win|finish_lose,label  the talking hero's team's entry in an admin's event (``quests.manual``, an event's key):
                          enter it while it is open (the label if it is not open, is full or the game refuses the team), or finish the entry
                          as won or lost (the label if the team has no entry running in time)
@@ -104,7 +110,7 @@ from dataclasses import dataclass
 SCOPES = ("any", "lead", "each")
 OPS = ("eq", "ne", "lt", "le", "gt", "ge")
 #: The tags that read or change the game's state, which the engine itself runs (through ``advance``'s $state).
-STATE_TAGS = ("set_job", "lost", "have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker", "add_guild_points", "set_guild_rank", "guild_points", "guild_rank", "guild_rank_any", "party_gate", "open_party", "add_status", "has_status", "have_tokens", "spend_tokens", "add_tokens", "add_gold", "warp", "warp_visited", "enter_instance", "complete_instance", "leave_instance", "instance_won", "weekly_quest", "slot_quest", "slot_template", "slot_boss", "manual_quest", "supply_level", "supply_add", "supply_take")
+STATE_TAGS = ("set_job", "lost", "have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker", "add_guild_points", "set_guild_rank", "guild_points", "guild_rank", "guild_rank_any", "party_gate", "open_party", "add_status", "has_status", "have_tokens", "spend_tokens", "add_tokens", "add_gold", "warp", "warp_visited", "enter_instance", "complete_instance", "leave_instance", "instance_won", "weekly_quest", "slot_quest", "slot_template", "slot_boss", "npc_fight", "npc_fight_result", "manual_quest", "supply_level", "supply_add", "supply_take")
 MAX_TEXT = 20000
 #: How many guilds one ``guild_rank_any`` may list.
 MAX_GUILD_CHOICES = 8
@@ -265,6 +271,20 @@ def check_tag(parts: list[str]) -> list[str]:
         count(3)
         _name(command, args[0], "a quest slot key")
         _one_of(command, args[1], ("fight", "won", "lost"), "the action")
+        return [args[2]]
+    elif command == "npc_fight":
+        count(3)
+        _name(command, args[0], "a name for the fight")
+        foes = args[1].split("+")
+        if not 1 <= len(foes) <= 20:
+            raise ScriptError("npc_fight tag: it fights 1 to 20 monsters, joined by +")
+        for foe in foes:
+            _name(command, foe, "a monster key")
+        return [args[2]]
+    elif command == "npc_fight_result":
+        count(3)
+        _name(command, args[0], "a name for the fight")
+        _one_of(command, args[1], ("won", "lost", "running"), "the state")
         return [args[2]]
     elif command == "manual_quest":
         count(3)
@@ -602,7 +622,7 @@ async def advance(script: Script, pos: int, prompt: dict | None, choice: int | N
             failed = await state(command, args)
             if failed:
                 pos = go(failed)
-            elif (command in ("warp", "warp_visited", "enter_instance", "leave_instance") and not (command == "enter_instance" and args[1] == "public")) or (command == "slot_boss" and args[1] == "fight"):  # the hero is somewhere else now, or in a fight: the dialog is over
+            elif (command in ("warp", "warp_visited", "enter_instance", "leave_instance") and not (command == "enter_instance" and args[1] == "public")) or (command == "slot_boss" and args[1] == "fight") or command == "npc_fight":  # the hero is somewhere else now, or in a fight: the dialog is over
                 return over()
         elif command == "ack":
             return stopped({"type": "ack"}, pos)
