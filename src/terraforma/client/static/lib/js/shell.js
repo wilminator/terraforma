@@ -20,10 +20,12 @@
 // shell.actions   the actions the nearby list can ask for (talk, invite, open, search, fight, help); a game pushes the names it adds
 // shell.activities  what the talk panel shows when an NPC's dialog reaches an activity: the engine's shop, and shell.activities.add(command, build)
 // shell.conversation  the conversation the hero is in (lines said, the prompt); the talk panel draws it
+// shell.audio     the page's sound (see audio.js): shell.audio.add({ cue: file }) and shell.audio.addMusic({ scene: file }) say which of the game's files go with what happens
 
 import { Activities } from "./activities.js";
 import * as api from "./api.js";
 import { Art } from "./art.js";
+import { Sounds } from "./audio.js";
 import { Conversation } from "./conversation.js";
 import { Panels } from "./panels.js";
 import { Text } from "./strings.js";
@@ -34,6 +36,7 @@ export class Shell {
   account = null;
   text = new Text();
   art = new Art((name) => this.assetUrl(name));
+  audio = new Sounds({ url: (name) => this.assetUrl(name) });
   api = api;
   panels = new Panels();
   activities = new Activities();

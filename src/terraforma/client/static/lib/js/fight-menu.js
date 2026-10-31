@@ -145,6 +145,7 @@ export class FightMenu {
   }
 
   back() {
+    this.scene.shell.audio.play("menu.cancel");
     const list = this.mode === "target" ? this.pick.list : null;
     this.#to(list ? "list" : "commands");
     this.list = list;
@@ -172,6 +173,7 @@ export class FightMenu {
 
   async #send({ command, using }, target) {
     const scene = this.scene;
+    scene.shell.audio.play("menu.confirm");
     const model = this.model;
     const round = model.round;
     const hero = this.hero;

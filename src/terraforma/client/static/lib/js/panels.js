@@ -82,8 +82,10 @@ export function mountPanels(shell, roster, first) {
     for (const button of buttons.children) button.setAttribute("aria-pressed", String(button.dataset.panel === open));
   }
 
-  function toggle(id) {
-    open = open === id ? null : id;
+  function toggle(id, quiet = false) {
+    const closing = open === id;
+    open = closing ? null : id;
+    if (!quiet) shell.audio.play(closing ? "panel.close" : "panel.open");
     draw();
     if (open) shown.get(open).show?.();
   }
@@ -102,7 +104,7 @@ export function mountPanels(shell, roster, first) {
     buttons,
     [...shown.keys()].map((id) => h("button", { type: "button", "data-panel": id, "aria-pressed": "false", onclick: () => toggle(id) }, t(`panel.${id}`))),
   );
-  drawer.prepend(h("button", { type: "button", class: "close", "aria-label": t("panel.close"), onclick: () => { open = null; draw(); } }, "×"));
-  if (first && shown.has(first)) toggle(first);
+  drawer.prepend(h("button", { type: "button", class: "close", "aria-label": t("panel.close"), onclick: () => { open = null; shell.audio.play("panel.close"); draw(); } }, "×"));
+  if (first && shown.has(first)) toggle(first, true);
   return { buttons, drawer };
 }

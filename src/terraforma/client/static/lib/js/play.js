@@ -32,9 +32,17 @@ async function showGame() {
   const tabs = h("div", { class: "tabs-host" });
   const problem = h("p", { class: "problem", role: "alert" });
   const logout = h("button", { type: "button", id: "logout", onclick: async () => { await shell.logout(); toLogin(); } }, t("play.logout"));
+  // The sound button shows only when the game gave the page some sound; its words say what the sound is now, and a tap turns it the other way.
+  const sound = h("button", { type: "button", id: "sound", onclick: () => shell.audio.set({ muted: !shell.audio.muted }) });
+  const drawSound = () => {
+    sound.hidden = !shell.audio.available;
+    sound.textContent = t(shell.audio.muted ? "play.sound_off" : "play.sound_on");
+  };
+  shell.audio.onChange(drawSound);
+  drawSound();
   replace(
     app,
-    h("div", { class: "game" }, main, h("header", { class: "bar" }, h("span", { id: "who" }, t("play.signed_in", { username: shell.account.username })), tabs, problem, logout)),
+    h("div", { class: "game" }, main, h("header", { class: "bar" }, h("span", { id: "who" }, t("play.signed_in", { username: shell.account.username })), tabs, problem, sound, logout)),
   );
   fitStage(frame, stage, canvas);
 
@@ -56,6 +64,7 @@ async function showGame() {
   async function enterFight(id) {
     if (!(await fight.enter(id, (text) => (note.textContent = text)))) return;
     map.suspend();
+    shell.audio.music("fight");
     shell.panels.close(); // (a panel over the stage's right side would cover half the fight)
     view.style.display = "none";
     stage.dataset.scene = "fight";
@@ -65,10 +74,12 @@ async function showGame() {
     fight.close();
     view.style.display = "";
     stage.dataset.scene = "map";
+    shell.audio.music("map");
     await roster.load(); // (a fight pays out: levels, gold and drops)
     await map.resume();
   }
   shell.on("fight", ({ fight: id }) => enterFight(id));
+  shell.audio.music("map");
   stage.addEventListener("fight-leave", leaveFight);
   shell.emit("game", { roster });
 

@@ -14,6 +14,8 @@ export const STRINGS = {
   "login.busy": "Logging in…",
   "login.retry": "Too many tries. Try again in {seconds} seconds.",
   "play.logout": "Log out",
+  "play.sound_on": "Sound on",
+  "play.sound_off": "Sound off",
   "play.signed_in": "Playing as {username}",
   "play.stage": "The game",
   "play.rotate": "Turn your device sideways to play.",
