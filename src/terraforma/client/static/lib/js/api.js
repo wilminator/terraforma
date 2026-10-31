@@ -14,10 +14,21 @@ export function setCsrfToken(token) {
   csrfToken = token;
 }
 
-/** The text of a failed call's answer: FastAPI sends a string, or a list of problems for a body it refused. */
+/** A body that is already JSON text, sent exactly as it is (a file the server hashes, whose numbers must not be re-written: 1.0 would become 1). */
+export class RawJson {
+  constructor(text) {
+    this.text = text;
+  }
+}
+
+/** The text of a failed call's answer: FastAPI sends a string, a list of problems for a body it refused, or (the state calls) a message with its problems. */
 function detailOf(body, status) {
   const detail = body?.detail;
   if (typeof detail === "string") return detail;
+  if (typeof detail?.message === "string") {
+    const problems = Array.isArray(detail.problems) ? detail.problems.map((problem) => (problem.section ? `${problem.section}: ${problem.message}` : problem.message)) : [];
+    return [detail.message, ...problems].join(" ");
+  }
   if (Array.isArray(detail)) return detail.map((problem) => problem.msg).join("; ");
   return `The server answered ${status}.`;
 }
@@ -30,7 +41,7 @@ export async function call(method, path, body, extra = {}) {
   if (method !== "GET" && csrfToken) headers["X-CSRF-Token"] = csrfToken;
   let response;
   try {
-    response = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), credentials: "same-origin" });
+    response = await fetch(path, { method, headers, body: body === undefined ? undefined : body instanceof RawJson ? body.text : JSON.stringify(body), credentials: "same-origin" });
   } catch {
     throw new ApiError(0, "The server can't be reached. Check your connection and try again.");
   }
