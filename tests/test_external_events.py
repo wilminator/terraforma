@@ -173,10 +173,10 @@ def asking(sub=SUBJECT, **changes) -> str:
     return _signed({"sub": sub, **changes})
 
 
-def _signed(claims: dict) -> str:
+def _signed(claims: dict, typ="account-lookup+jwt") -> str:
     now = int(time.time())
     every = {"iss": ISSUER, "aud": "client-1", "iat": now, "exp": now + 300, "jti": "j2", **claims}
-    return jwt.encode({k: v for k, v in every.items() if v is not None}, KEY, algorithm="ES256", headers={"kid": "k1", "typ": "secevent+jwt"})
+    return jwt.encode({k: v for k, v in every.items() if v is not None}, KEY, algorithm="ES256", headers={"kid": "k1", "typ": typ})
 
 
 def test_the_lookup_says_whether_the_person_has_an_account_here(client, idp):
@@ -193,6 +193,8 @@ def test_the_lookup_changes_nothing(client, idp):
 
 
 def test_a_lookup_that_does_not_check_out_is_refused(client):
+    expect(lookup(client, _signed({"sub": SUBJECT}, typ="secevent+jwt")), 400)  # an event cannot pass as a lookup
+    expect(post(client, _signed({"events": {DELETED: {"sub": SUBJECT}}})), 400)  # nor a lookup as an event
     expect(lookup(client, asking(aud="client-2")), 400)
     expect(lookup(client, asking(jti=None)), 400)
     expect(lookup(client, asking(sub=None)), 400)
