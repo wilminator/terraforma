@@ -48,6 +48,14 @@ class Contracts:
         true once the contract's time is up; a term still pending then counts as broken. Pending, by default."""
         return PENDING
 
+    async def check_offer(
+        self, session: AsyncSession, a_team_id: int, b_team_id: int, my_terms: list[tuple[str, dict]], their_terms: list[tuple[str, dict]],
+    ) -> str | None:
+        """Why an offer from team $a_team_id to team $b_team_id with these terms (each a (kind, params) pair; mine bind the offering side) cannot
+        be made, or None (the default). The engine calls it once the terms have passed ``validate``, before anything is paid. It is for what
+        only the database can tell: that a team a term names exists, or is not the side the term binds."""
+        return None
+
     def minimum_percent(self, guild: str) -> int:
         """How much of the other side's total at stake (the worth of their terms plus their escrow) a side's escrow must be at least, in
         percent. Half, by default. Below 100, so that both sides' minimums can be met at once."""

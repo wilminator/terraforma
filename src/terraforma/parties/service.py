@@ -196,6 +196,10 @@ async def leave_party(session: AsyncSession, team_id: int) -> int | None:
     if row is None:
         return None
     party_id = row.party_id
+    from ..contracts import escort  # (here, since contracts reads the parties)
+
+    if await escort.locked(session, team_id):
+        raise PartyError("that team is on an escort contract: it stays in its party until the contract ends")
     if await session.scalar(select(TownTeam.id).where(TownTeam.team_id == team_id)) is not None:
         raise PartyError("that team is in a town with its party: it leaves with the town's own call")
     await session.delete(row)

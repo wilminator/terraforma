@@ -30,6 +30,7 @@ from ..quests import bossfight, manual, rotation
 from ..quests.manual_models import PUBLISHED, ManualQuest
 from ..quests.hooks import ManualQuests, RotatingQuests, WeeklyQuests
 from ..quests.weekly_models import OFFERED, QuestTemplate
+from ..realms import service as realms
 from ..realms import supply
 from ..standing import service as standing
 from ..towns import service as towns
@@ -374,6 +375,10 @@ class DialogState:
         if spot != (int(x), int(y)) or not target.tile(*spot)["passable"]:
             raise ScriptError(f"{tag} tag: ({x}, {y}) on {map_key} can't be stood on")
         acting = await self.party()
+        from ..contracts import escort  # (here, since contracts reads the maps)
+
+        if acting is not None and not visited and await escort.restricted(self.session, acting.team_ids):
+            visited = True  # a party on an escort contract warps only where every team in it has been
         if visited and (acting is None or not await towns.has_visited(self.session, acting.team_ids, target.id)):
             return label
         if acting is None:  # a hero on no team goes alone
@@ -493,6 +498,25 @@ class DialogState:
         if row.level < int(amount):
             return label
         await supply.take(self.session, town, material, int(amount))
+        return ""
+
+    # --- A realm's strength -----------------------------------------------------------------------------------------------
+
+    async def _realm(self, command: str, key: str):
+        """The realm of the hero's world. A dialog that names one the world does not have is the game's mistake, and says so."""
+        found = await realms.realm_by_key(self.session, (await self.session.get(Map, self.hero.map_id)).world_id, key)
+        if found is None:
+            raise ScriptError(f"{command}: there is no realm {key!r}")
+        return found
+
+    async def realm_strength(self, realm: str, op: str, value: str, label: str) -> str:
+        """The label unless the realm's strength compares true with $value."""
+        found = await self._realm("realm_strength", realm)
+        return "" if quests.compare(op, found.strength, int(value)) else label
+
+    async def realm_nudge(self, realm: str, delta: str) -> str:
+        """A quest outcome moves the realm's strength by $delta."""
+        await realms.nudge_strength(self.session, await self._realm("realm_nudge", realm), int(delta))
         return ""
 
     # --- Challenge Tokens and gold -------------------------------------------------------------------------------------

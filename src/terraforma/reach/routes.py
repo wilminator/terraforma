@@ -55,6 +55,28 @@ async def help_with_item(
         raise refuse_hero(error) from error
 
 
+class HelpWithAbility(Strict):
+    """$ability is the key of an ability the caller's hero knows; the target is hero number $member (from 0) of party $party_id."""
+
+    ability: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")
+    party_id: int = Field(ge=1)
+    member: int = Field(ge=0, le=64)
+
+
+@router.post("/help/use-ability")
+async def help_with_ability(
+    hero_id: Id, body: HelpWithAbility, request: Request, account: ActingAccount, db: Db, reach: GameReach, rules: GameRules, relations: GameRelations
+) -> dict:
+    """Casts an ability the hero knows on a hero of a party in reach (healing, mana, a revive) unless the hero's team counts that party as an enemy;
+    the cost comes out of the caster. The target's resources before and after come back; the other player is not asked."""
+    await limited(request, ratelimit.HELP_BY_ACCOUNT, str(account.id))
+    try:
+        hero = await heroes.own_hero(db, account, hero_id)
+        return await helping.help_with_ability(db, reach, rules, relations, hero, body.ability, body.party_id, body.member)
+    except (heroes.HeroError, inventory.InventoryError) as error:
+        raise refuse_hero(error) from error
+
+
 @router.get("/talk/party/{party_id}")
 async def talk_to_party(
     hero_id: Id, party_id: Id, account: CurrentAccount, db: Db, reach: GameReach, zones: GamePvp, rules: GameRules, relations: GameRelations

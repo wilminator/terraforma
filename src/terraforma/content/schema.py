@@ -860,6 +860,8 @@ def check_seed(seed: dict[str, list[dict]], stats: tuple[str, ...] = STATS, reso
     def supply_problems(where: str, parts: list[str]) -> list[str]:
         """What is wrong with a dialog's supply tag (``supply_level``, ``supply_add``, ``supply_take``: settlement and material first): a settlement or
         a supply the seed does not have."""
+        if parts[0] in ("realm_strength", "realm_nudge"):
+            return [] if parts[1] in keys["realms"] else [f"{where} names the realm {parts[1]!r}, which realms.json doesn't have"]
         if parts[0] not in ("supply_level", "supply_add", "supply_take"):
             return []
         if parts[1] not in supplied:

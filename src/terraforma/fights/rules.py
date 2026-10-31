@@ -88,6 +88,8 @@ class Rules:
     alliance_top_size: int = 10
     alliance_retention_slots: int = 50
     fight_keep_days: int = 30
+    #: How long a coliseum challenge waits for an answer, in seconds of wall clock (a day).
+    coliseum_offer_seconds: int = 86400
     #: A drop's chance is out of this (10000: one in ten thousand is the rarest, 10000 is a sure thing).
     drop_chance_scale: int = 10000
     #: Whether the area's drop tables (the map's) roll once for the fight (the default) or for every monster that dies.

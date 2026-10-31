@@ -123,3 +123,42 @@ def test_dropping_the_edits_makes_the_draft_the_live_state_again(page, live_serv
     )
     expect(page.locator("#state-draft")).to_contain_text("the same as live")
     expect(page.locator("#state-value")).to_have_value('{\n  "xp": 1\n}')
+
+
+def export_file(page, tmp_path, name, source):
+    """An export file of the planned or live state, written as the browser's link would download it."""
+    body = page.request.get(f"/api/admin/state/export?source={source}").text()
+    path = tmp_path / name
+    path.write_text(body)
+    return path
+
+
+def test_an_export_file_is_imported_into_the_draft(page, live_server, tmp_path):
+    open_settings(page, live_server)
+    live_file = export_file(page, tmp_path, "live.json", "live")
+    edit(page, '{"xp": 7}')
+    expect(page.locator("#state-draft")).to_contain_text("different from live")
+    page.locator("#state-import").set_input_files(live_file)
+    expect(page.locator("#state-note")).to_have_text(
+        "Imported: the draft is the file's state."
+    )
+    expect(page.locator("#state-draft")).to_contain_text("the same as live")
+    expect(page.locator("#state-draft")).to_contain_text("It came from an import")
+    expect(page.locator("#state-value")).to_have_value('{\n  "xp": 1\n}')
+
+
+def test_a_file_that_is_not_json_or_not_an_export_is_refused(
+    page, live_server, tmp_path, console
+):
+    console.allow("status of 422")  # the browser logs the refusal itself
+    open_settings(page, live_server)
+    junk = tmp_path / "junk.json"
+    junk.write_text("{not json")
+    page.locator("#state-import").set_input_files(junk)
+    expect(page.locator("#state-problem")).to_have_text("That file is not valid JSON.")
+    other = tmp_path / "other.json"
+    other.write_text('{"hello": "world"}')
+    page.locator("#state-import").set_input_files(other)
+    expect(page.locator("#state-problem")).not_to_have_text("")
+    expect(page.locator("#state-note")).to_have_text("")
+    expect(page.locator("#state-draft")).to_contain_text("the same as live")

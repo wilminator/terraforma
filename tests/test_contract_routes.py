@@ -117,3 +117,32 @@ def test_a_team_sees_and_takes_an_open_contract_and_the_second_is_too_late(two_t
     assert accepted["state"] == "active" and accepted["b"]["team"] == "Rearguard" and accepted["a"]["team"] is None
     expect(client.post(f"/api/heroes/{aria}/contracts/{contract_id}/accept", headers=mike()), 404)  # too late
     assert expect(client.get(f"/api/heroes/{aria}/open-contracts"), 200).json() == []
+
+
+def test_an_offer_can_carry_a_payment_that_both_sides_see(two_teams):
+    client, mike, aria, _a_team, _zed, _zara, z_team = two_teams
+    made = expect(offer(client, mike(), aria, z_team, payment=50), 200).json()
+    assert made["payment"] == 50
+    assert expect(client.get(f"/api/heroes/{aria}/contracts/{made['id']}"), 200).json()["payment"] == 50
+    expect(offer(client, mike(), aria, z_team, payment=-1), 422)
+
+
+def test_entering_an_instance_is_refused_for_a_contract_that_hires_no_one_to_enter(two_teams):
+    client, mike, aria, _a_team, zed, zara, z_team = two_teams
+    made = expect(offer(client, mike(), aria, z_team), 200).json()
+    expect(client.post(f"/api/heroes/{zara}/contracts/{made['id']}/accept", headers=zed()), 200)
+    assert "no instance" in expect(client.post(f"/api/heroes/{zara}/contracts/{made['id']}/enter-instance", headers=zed()), 409).json()["detail"]
+    expect(client.post(f"/api/heroes/{zara}/contracts/99999/enter-instance", headers=zed()), 404)
+
+
+def test_a_bounty_is_posted_listed_and_withdrawn_over_http(two_teams):
+    client, mike, aria, _a_team, zed, zara, z_team = two_teams
+    body = {"guild": "vanguard", "target_team_id": z_team, "scope": "team", "reward": 50, "lifetime": 3600}
+    posted = expect(client.post(f"/api/heroes/{aria}/bounties", json=body, headers=mike()), 200).json()
+    assert posted["reward"] == 50 and posted["state"] == "open" and posted["target_team_id"] == z_team
+    listed = expect(client.get(f"/api/heroes/{aria}/bounties", params={"guild": "vanguard"}), 200).json()  # (still signed in as Mike)
+    assert [row["id"] for row in listed] == [posted["id"]]
+    expect(client.post(f"/api/heroes/{zara}/bounties/{posted['id']}/withdraw", headers=zed()), 404)  # not Zed's to take back
+    assert expect(client.post(f"/api/heroes/{aria}/bounties/{posted['id']}/withdraw", headers=mike()), 200).json()["state"] == "withdrawn"
+    expect(client.post(f"/api/heroes/{aria}/bounties", json={**body, "scope": "all"}, headers=mike()), 422)
+    assert "itself" in expect(client.post(f"/api/heroes/{aria}/bounties", json={**body, "target_team_id": _a_team}, headers=mike()), 409).json()["detail"]

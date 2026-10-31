@@ -9,6 +9,9 @@ through its fee rule (``Game(fees=...)``), so a higher rank pays less, and each 
 Escrow protects each side from the other's breach, and it has a floor: a side's escrow is at least ``Contracts.minimum_percent`` of the
 other side's total at stake (the worth of their terms plus their escrow), checked for both sides when the offer is made.
 
+Side ``a`` may also set a *payment*: a fee for ``b`` that is held from the offer and paid to ``b`` when the contract ends with none of
+b's terms broken (returned to ``a`` if b broke one, or if the offer ends unanswered). It is a deposit of its own, apart from the escrows.
+
 ``judge`` asks the game's ``Contracts.check`` about every term still pending. A broken term ends the contract ``breached``: the escrow of
 the side that broke it goes to the other side and the other's comes back (if both broke, each goes to the other). When time is up and
 nothing is broken, or every term is met, it ends ``fulfilled`` and both escrows come back. Contracts never move items between teams; a
@@ -24,8 +27,12 @@ from ..economy import Economy, NotEnoughGold
 from ..escrow import service as escrow
 from ..guild.fees import Fees
 from ..heroes.models import Hero, Team, TeamMember
+from ..instances import service as instances
+from ..parties import service as parties
 from ..storage.hooks import Storage
 from .hooks import Contracts
+from .escort import ESCORT
+from .terms import KILL_BOSS
 from .models import (
     ACTIVE, BREACHED, BROKEN, DECLINED, EXPIRED, FULFILLED, MET, OFFERED, PENDING, SIDES, WITHDRAWN, Contract, ContractTerm,
 )
@@ -87,10 +94,12 @@ async def _hold(session: AsyncSession, economy: Economy, hero: Hero, contract: C
 async def offer(
     session: AsyncSession, economy: Economy, fees: Fees, contracts: Contracts, hero: Hero, guild: str, to_team_id: int,
     my_terms: list[tuple[str, dict]], their_terms: list[tuple[str, dict]], my_escrow: int, their_escrow: int, duration: int,
+    payment_gold: int = 0,
 ) -> Contract:
     """$hero's team offers team $to_team_id a contract at $guild that runs $duration seconds once accepted. $my_terms bind the offering
     side and $their_terms the other; each is a list of (kind, params). Each side puts down gold as breach escrow, $my_escrow now and
-    $their_escrow when they accept; both must meet the minimum. The offering side pays its fee now. Raises ContractError, changing
+    $their_escrow when they accept; both must meet the minimum. $payment_gold is held now and paid to the other side if they keep their
+    terms (see the module). The offering side pays its fee now. Raises ContractError, changing
     nothing, for anything wrong or short."""
     if not guild:
         raise ContractError("a contract needs a guild")
@@ -103,9 +112,11 @@ async def offer(
         raise ContractError("a contract binds someone to something")
     if not 1 <= duration <= MAX_DURATION:
         raise ContractError("a contract runs from a second to a year")
-    if not (0 <= my_escrow <= MAX_AMOUNT and 0 <= their_escrow <= MAX_AMOUNT):
-        raise ContractError("escrow is zero or more gold")
+    if not (0 <= my_escrow <= MAX_AMOUNT and 0 <= their_escrow <= MAX_AMOUNT and 0 <= payment_gold <= MAX_AMOUNT):
+        raise ContractError("escrow and payment are zero or more gold")
     worth = {"a": _check_terms(contracts, "a", my_terms), "b": _check_terms(contracts, "b", their_terms)}
+    if (why := await contracts.check_offer(session, a_team, to_team_id, my_terms, their_terms)) is not None:
+        raise ContractError(why)
     put = {"a": my_escrow, "b": their_escrow}
     for side, other in (("a", "b"), ("b", "a")):
         least = minimum_escrow(contracts, guild, worth[other], put[other])
@@ -115,7 +126,7 @@ async def offer(
     async with session.begin_nested():
         contract = Contract(
             guild=guild, a_team_id=a_team, b_team_id=to_team_id, a_escrow_gold=my_escrow, b_escrow_gold=their_escrow,
-            duration=duration, offer_expires_at=wallclock.timestamp() + contracts.offer_lifetime(guild),
+            payment_gold=payment_gold, duration=duration, offer_expires_at=wallclock.timestamp() + contracts.offer_lifetime(guild),
         )
         session.add(contract)
         await session.flush()
@@ -125,6 +136,8 @@ async def offer(
         await _pay(session, economy, hero, fee)
         deposit = await _hold(session, economy, hero, contract, "a", my_escrow)
         contract.a_escrow_id = None if deposit is None else deposit.id
+        payment = await _hold(session, economy, hero, contract, "p", payment_gold)
+        contract.payment_escrow_id = None if payment is None else payment.id
         await session.flush()
     return contract
 
@@ -175,9 +188,13 @@ async def terms_of(session: AsyncSession, contract: Contract) -> list[ContractTe
     return list((await session.scalars(select(ContractTerm).where(ContractTerm.contract_id == contract.id).order_by(ContractTerm.id))).all())
 
 
-async def accept(session: AsyncSession, economy: Economy, fees: Fees, contracts: Contracts, hero: Hero, contract_id: int) -> Contract:
+async def accept(
+    session: AsyncSession, economy: Economy, fees: Fees, contracts: Contracts, hero: Hero, contract_id: int, party_size: int = 20,
+) -> Contract:
     """The asked team accepts: they pay their fee and put their escrow down, and the contract starts. Raises ContractError, changing
-    nothing, if the offer is gone, was not made to the hero's team, or anything is short."""
+    nothing, if the offer is gone, was not made to the hero's team, or anything is short. For an escort term the escort team must own a
+    party with room for the escorted team ($party_size is the most heroes a party holds): the escorted team joins it, and the term records
+    where the party stands, to bring the escorted back to if the destination is a dungeon (see ``contracts.escort``)."""
     contract = await session.get(Contract, contract_id)
     if contract is None or contract.state != OFFERED or contract.offer_expires_at <= wallclock.timestamp():
         raise ContractError("that offer is gone")
@@ -199,26 +216,49 @@ async def accept(session: AsyncSession, economy: Economy, fees: Fees, contracts:
         deposit = await _hold(session, economy, hero, contract, "b", b_gold)
         if deposit is not None:
             await session.execute(update(Contract).where(Contract.id == contract_id).values(b_escrow_id=deposit.id))
+        await session.refresh(contract)
+        await _join_escorts(session, contract, party_size)
     await session.refresh(contract)
     return contract
+
+
+async def _join_escorts(session: AsyncSession, contract: Contract, party_size: int) -> None:
+    """For each escort term: the escort team (the one it binds) must own a party with room, the escorted team joins it, and the party's
+    place is recorded as the origin."""
+    for term in await terms_of(session, contract):
+        if term.kind != ESCORT:
+            continue
+        escort = contract.a_team_id if term.side == "a" else contract.b_team_id
+        escorted = contract.b_team_id if term.side == "a" else contract.a_team_id
+        party = await parties.party_of(session, escort)
+        owner = await session.scalar(select(Team.account_id).where(Team.id == escort))
+        if party is None or await parties.leader_account(session, party.id) != owner:
+            raise ContractError("an escort team must own the party it escorts in")
+        try:
+            await parties.join_party(session, party.id, escorted, party_size)
+        except parties.PartyError as error:
+            raise ContractError(str(error)) from error
+        term.params = {**term.params, "origin": [party.map_id, party.x, party.y]}
+    await session.flush()
 
 
 async def _close_offer(session: AsyncSession, economy: Economy, storage: Storage, contract_id: int, state: str) -> Contract:
     contract = await session.get(Contract, contract_id)
     if contract is None:
         raise ContractError("there is no such contract")
-    a_escrow_id = contract.a_escrow_id
+    a_escrow_id, payment_id = contract.a_escrow_id, contract.payment_escrow_id
     async with session.begin_nested():
         claimed = await session.execute(
             update(Contract).where(Contract.id == contract_id, Contract.state == OFFERED).values(state=state, settled_at=wallclock.timestamp())
         )
         if claimed.rowcount == 0:
             raise ContractError("that offer is settled already")
-        if a_escrow_id is not None:
-            try:
-                await escrow.refund(session, economy, storage, a_escrow_id)
-            except escrow.EscrowError as error:
-                raise ContractError(str(error)) from error
+        try:
+            for deposit_id in (a_escrow_id, payment_id):
+                if deposit_id is not None:
+                    await escrow.refund(session, economy, storage, deposit_id)
+        except escrow.EscrowError as error:
+            raise ContractError(str(error)) from error
     await session.refresh(contract)
     return contract
 
@@ -266,6 +306,7 @@ async def judge(session: AsyncSession, economy: Economy, storage: Storage, contr
         return contract
     ended = contract.ends_at <= wallclock.timestamp()
     a_escrow_id, b_escrow_id, a_team, b_team = contract.a_escrow_id, contract.b_escrow_id, contract.a_team_id, contract.b_team_id
+    payment_id = contract.payment_escrow_id
     reward = contract.reward_gold
     async with session.begin_nested():
         terms = await terms_of(session, contract)
@@ -299,9 +340,45 @@ async def judge(session: AsyncSession, economy: Economy, storage: Storage, contr
                     await escrow.forfeit(session, economy, storage, escrow_id, other)
                 else:
                     await escrow.refund(session, economy, storage, escrow_id)
+            if payment_id is not None:  # the fee: to b if b kept every term, else back to a
+                if "b" in broke:
+                    await escrow.refund(session, economy, storage, payment_id)
+                else:
+                    await escrow.forfeit(session, economy, storage, payment_id, b_team)
             if a_team is None and not broke and reward:
                 await economy.credit_team(session, b_team, reward)
         except escrow.EscrowError as error:
             raise ContractError(str(error)) from error
     await session.refresh(contract)
+    return contract
+
+
+async def enter_instance(session: AsyncSession, hero: Hero, contract_id: int) -> Contract:
+    """The hired side's party goes into the other side's instance of a quest, to do a ``kill_boss`` term of an active contract. The
+    hero's team must be a side bound by such a term, both teams must be in parties, and the other side's party must be in an instance.
+    The term records the instance's map (``entered_map_id``), which is how it is judged. Raises ContractError, changing nothing, for
+    anything that stops it (the instances' own refusals included)."""
+    contract = await session.get(Contract, contract_id)
+    team_id = await _team_of(session, hero)
+    if contract is None or contract.state != ACTIVE or team_id not in (contract.a_team_id, contract.b_team_id):
+        raise ContractError("there is no such contract of yours")
+    side = "a" if team_id == contract.a_team_id else "b"
+    other = contract.b_team_id if side == "a" else contract.a_team_id
+    terms = [term for term in await terms_of(session, contract) if term.kind == KILL_BOSS and term.side == side and term.state == PENDING]
+    if not terms or other is None:
+        raise ContractError("that contract hires you to enter no instance")
+    mine, theirs = await parties.party_of(session, team_id), await parties.party_of(session, other)
+    if mine is None or theirs is None:
+        raise ContractError("both teams must be in a party to go into an instance")
+    host = await instances.instance_of(session, theirs.id)
+    if host is None:
+        raise ContractError("the other side is not in an instance")
+    async with session.begin_nested():
+        try:
+            await instances.admit(session, mine.id, host.id)
+        except instances.InstanceError as error:
+            raise ContractError(str(error)) from error
+        for term in terms:
+            term.params = {**term.params, "entered_map_id": host.map_id}
+        await session.flush()
     return contract

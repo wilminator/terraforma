@@ -58,6 +58,9 @@ its command, followed by comma separated parameters. Text outside tags is shown.
                          capacity, ``realms.supply``) compares true with percent (0 to 100): a quest board offers a fetch quest only while a supply is low
     supply_add,settlement,material,amount,label  a delivery: brings up to amount of the material into the settlement's supply (what fits under its capacity);
                          the label if none fits. It takes nothing from the hero (take the goods first with remove_item)
+    realm_strength,realm,op,value,label  jump to the label unless the realm's strength (``realms.json``; may be negative) compares true with value: a quest
+                         board offers a rescue quest only while a realm is weak
+    realm_nudge,realm,delta  a quest outcome moves the realm's strength by delta (whole, not 0, may be negative; it stays within 1000000 of zero)
     supply_take,settlement,material,amount,label  a crafter at work: uses amount of the material up, all or nothing; the label (and nothing taken) if the
                          settlement keeps less
     heal, recharge, select_team         the game's actions
@@ -110,7 +113,7 @@ from dataclasses import dataclass
 SCOPES = ("any", "lead", "each")
 OPS = ("eq", "ne", "lt", "le", "gt", "ge")
 #: The tags that read or change the game's state, which the engine itself runs (through ``advance``'s $state).
-STATE_TAGS = ("set_job", "lost", "have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker", "add_guild_points", "set_guild_rank", "guild_points", "guild_rank", "guild_rank_any", "party_gate", "open_party", "add_status", "has_status", "have_tokens", "spend_tokens", "add_tokens", "add_gold", "warp", "warp_visited", "enter_instance", "complete_instance", "leave_instance", "instance_won", "weekly_quest", "slot_quest", "slot_template", "slot_boss", "npc_fight", "npc_fight_result", "manual_quest", "supply_level", "supply_add", "supply_take")
+STATE_TAGS = ("set_job", "lost", "have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker", "add_guild_points", "set_guild_rank", "guild_points", "guild_rank", "guild_rank_any", "party_gate", "open_party", "add_status", "has_status", "have_tokens", "spend_tokens", "add_tokens", "add_gold", "warp", "warp_visited", "enter_instance", "complete_instance", "leave_instance", "instance_won", "weekly_quest", "slot_quest", "slot_template", "slot_boss", "npc_fight", "npc_fight_result", "manual_quest", "supply_level", "supply_add", "supply_take", "realm_strength", "realm_nudge")
 MAX_TEXT = 20000
 #: How many guilds one ``guild_rank_any`` may list.
 MAX_GUILD_CHOICES = 8
@@ -128,6 +131,12 @@ class ScriptError(ValueError):
 def _whole(command: str, value: str, what: str) -> int:
     if not value.isascii() or not value.isdigit() or len(value) > 9:
         raise ScriptError(f"{command} tag: {what} must be a whole number of at most 9 digits, got {value!r}")
+    return int(value)
+
+
+def _signed(command: str, value: str, what: str) -> int:
+    """A whole number that may be negative (at most 9 digits)."""
+    _whole(command, value.removeprefix("-"), what)
     return int(value)
 
 
@@ -245,6 +254,17 @@ def check_tag(parts: list[str]) -> list[str]:
         if _whole(command, args[3], "the percent") > 100:
             raise ScriptError(f"{command} tag: the percent is at most 100")
         return [args[4]]
+    elif command == "realm_strength":
+        count(4)
+        _name(command, args[0], "a realm key")
+        _one_of(command, args[1], OPS, "the comparison")
+        _signed(command, args[2], "the strength")
+        return [args[3]]
+    elif command == "realm_nudge":
+        count(2)
+        _name(command, args[0], "a realm key")
+        if _signed(command, args[1], "the change") == 0:
+            raise ScriptError(f"{command} tag: the change is not 0")
     elif command in ("supply_add", "supply_take"):
         count(4)
         _name(command, args[0], "a settlement key")

@@ -212,9 +212,11 @@ def test_every_housekeeping_job_is_registered_and_so_runs():
         "unconfirmed_security_keys",
         "expired_oidc_codes_and_tokens",
         "old_unkept_fights",
+        "coliseum_offers",
         "quest_needs",
         "realm_strength",
         "ended_listings",
         "unanswered_contract_offers",
         "running_contracts",
+        "standing_bounties",
     ]

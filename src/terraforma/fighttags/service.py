@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import wallclock
 from ..alliances.models import AllianceMember
 from ..challenge.models import ChallengeEntry
+from ..coliseum.models import Bout
 from ..fights.events import Event
 from ..fights.fight import Fight
 from ..fights.models import (
@@ -53,7 +54,7 @@ async def record_fight(session: AsyncSession, record: FightRecord, fight: Fight,
     for result in results:
         session.add(FightTeam(fight_id=record.id, team_id=result.team_id, party=result.party, pvp=result.pvp, won=result.won,
                               overkill=result.overkill, underdog=result.underdog))
-    if rules.public_fight(fight):
+    if rules.public_fight(fight) or await session.scalar(select(Bout.id).where(Bout.fight_id == record.id).limit(1)) is not None:  # (a coliseum bout is always public)
         session.add(PublicFight(fight_id=record.id))
     await session.flush()
     for result in results:
@@ -189,7 +190,7 @@ DELETED_WITH_THE_FIGHT = {
     QuestBossFight.__tablename__: QuestBossFight,
     ScriptedFight.__tablename__: ScriptedFight,
 }
-LET_GO = {ChallengeEntry.__tablename__: ChallengeEntry}
+LET_GO = {ChallengeEntry.__tablename__: ChallengeEntry, Bout.__tablename__: Bout}
 
 
 async def sweep(session: AsyncSession, rules: Rules, now: int) -> int:
@@ -209,5 +210,6 @@ async def sweep(session: AsyncSession, rules: Rules, now: int) -> int:
         for table in (PendingDrop, FightParticipant, FightActionRecord, FightCommandRecord, FightJoinRecord, JoinOffer, RatingPrompt, FightTeam, MonsterSeat, QuestBossFight, ScriptedFight):
             await session.execute(delete(table).where(table.fight_id.in_(ids)))
         await session.execute(update(ChallengeEntry).where(ChallengeEntry.fight_id.in_(ids)).values(fight_id=None))
+        await session.execute(update(Bout).where(Bout.fight_id.in_(ids)).values(fight_id=None))
         await session.execute(delete(FightRecord).where(FightRecord.id.in_(ids)))
     return len(old)
