@@ -8,7 +8,7 @@ section in ``settings.toml`` says ``deletion_events = true``.
 
 The token is checked against the provider's published signing keys (found by the ``kid`` in its header; the algorithm must be
 one of ``ALGORITHMS``, never ``none`` or a shared-secret one), and its issuer, audience (this site's ``client_id``) and expiry.
-Only the event ``<issuer>/events/account-deleted`` is understood; a token with any other event is accepted and ignored.
+The token must carry a ``jti`` (the provider's one-per-message id); it is not remembered, because a deletion done twice is the same as once and nothing else is acted on. Only the event ``<issuer>/events/account-deleted`` is understood; a token with any other event is accepted and ignored.
 
 What a deletion does here: the link between the person's account here and the provider is removed, and every login of that
 account ends. The account itself (heroes, teams, history) is not deleted: that is a decision for the game, and an account with a
@@ -61,7 +61,7 @@ async def verify(http, provider, where: oidc.Endpoints, token: str) -> dict:
             audience=provider.client_id,
             issuer=where.issuer,
             leeway=oidc.CLOCK_LEEWAY,
-            options={"require": ["exp", "iat", "iss", "aud"]},
+            options={"require": ["exp", "iat", "iss", "aud", "jti"]},
         )
     except oidc.SignInError:
         raise

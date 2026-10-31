@@ -120,12 +120,13 @@ def test_a_deletion_without_a_subject_is_refused(client):
         event(iss="https://evil.test"),
         event(exp=int(time.time()) - 3600),
         event(exp=None),
+        event(jti=None),
         event(headers={"typ": "JWT"}),
         event(headers={"kid": "k2"}),
         "not-a-token",
         jwt.encode({"iss": ISSUER, "aud": "client-1", "exp": int(time.time()) + 300, "iat": 1, "events": {DELETED: {"sub": SUBJECT}}}, "a-shared-secret-of-at-least-32-bytes!", algorithm="HS256", headers={"kid": "k1", "typ": "secevent+jwt"}),
     ],
-    ids=["other-key", "audience", "issuer", "expired", "no-expiry", "type", "unknown-key", "garbage", "shared-secret"],
+    ids=["other-key", "audience", "issuer", "expired", "no-expiry", "no-jti", "type", "unknown-key", "garbage", "shared-secret"],
 )
 def test_a_message_that_does_not_check_out_changes_nothing(client, idp, token):
     new_player(client, idp)
