@@ -33,3 +33,6 @@ async def relocate(session: AsyncSession, party: Party, game_map: Map, x: int, y
     party.route, party.steps = None, 0
     await session.flush()
     await move_heroes(session, party)
+    from ..contracts import escort  # (here, since contracts reads the maps)
+
+    await escort.note(session, party)

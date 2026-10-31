@@ -31,6 +31,7 @@ from ..instances import service as instances
 from ..parties import service as parties
 from ..storage.hooks import Storage
 from .hooks import Contracts
+from .escort import ESCORT
 from .terms import KILL_BOSS
 from .models import (
     ACTIVE, BREACHED, BROKEN, DECLINED, EXPIRED, FULFILLED, MET, OFFERED, PENDING, SIDES, WITHDRAWN, Contract, ContractTerm,
@@ -187,9 +188,13 @@ async def terms_of(session: AsyncSession, contract: Contract) -> list[ContractTe
     return list((await session.scalars(select(ContractTerm).where(ContractTerm.contract_id == contract.id).order_by(ContractTerm.id))).all())
 
 
-async def accept(session: AsyncSession, economy: Economy, fees: Fees, contracts: Contracts, hero: Hero, contract_id: int) -> Contract:
+async def accept(
+    session: AsyncSession, economy: Economy, fees: Fees, contracts: Contracts, hero: Hero, contract_id: int, party_size: int = 20,
+) -> Contract:
     """The asked team accepts: they pay their fee and put their escrow down, and the contract starts. Raises ContractError, changing
-    nothing, if the offer is gone, was not made to the hero's team, or anything is short."""
+    nothing, if the offer is gone, was not made to the hero's team, or anything is short. For an escort term the escort team must own a
+    party with room for the escorted team ($party_size is the most heroes a party holds): the escorted team joins it, and the term records
+    where the party stands, to bring the escorted back to if the destination is a dungeon (see ``contracts.escort``)."""
     contract = await session.get(Contract, contract_id)
     if contract is None or contract.state != OFFERED or contract.offer_expires_at <= wallclock.timestamp():
         raise ContractError("that offer is gone")
@@ -211,8 +216,30 @@ async def accept(session: AsyncSession, economy: Economy, fees: Fees, contracts:
         deposit = await _hold(session, economy, hero, contract, "b", b_gold)
         if deposit is not None:
             await session.execute(update(Contract).where(Contract.id == contract_id).values(b_escrow_id=deposit.id))
+        await session.refresh(contract)
+        await _join_escorts(session, contract, party_size)
     await session.refresh(contract)
     return contract
+
+
+async def _join_escorts(session: AsyncSession, contract: Contract, party_size: int) -> None:
+    """For each escort term: the escort team (the one it binds) must own a party with room, the escorted team joins it, and the party's
+    place is recorded as the origin."""
+    for term in await terms_of(session, contract):
+        if term.kind != ESCORT:
+            continue
+        escort = contract.a_team_id if term.side == "a" else contract.b_team_id
+        escorted = contract.b_team_id if term.side == "a" else contract.a_team_id
+        party = await parties.party_of(session, escort)
+        owner = await session.scalar(select(Team.account_id).where(Team.id == escort))
+        if party is None or await parties.leader_account(session, party.id) != owner:
+            raise ContractError("an escort team must own the party it escorts in")
+        try:
+            await parties.join_party(session, party.id, escorted, party_size)
+        except parties.PartyError as error:
+            raise ContractError(str(error)) from error
+        term.params = {**term.params, "origin": [party.map_id, party.x, party.y]}
+    await session.flush()
 
 
 async def _close_offer(session: AsyncSession, economy: Economy, storage: Storage, contract_id: int, state: str) -> Contract:

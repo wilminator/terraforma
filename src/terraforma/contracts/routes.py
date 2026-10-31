@@ -8,7 +8,7 @@ from sqlalchemy import or_, select
 
 from ..accounts import ratelimit
 from ..accounts.routes import Strict, limited
-from ..api.deps import ActingAccount, CurrentAccount, Db, GameContracts, GameEconomy, GameFees, GameStorage
+from ..api.deps import ActingAccount, CurrentAccount, Db, GameContracts, GameEconomy, GameFees, GameRules, GameStorage
 from ..heroes import service
 from ..heroes.models import Hero, Team, TeamMember
 from ..heroes.routes import Id
@@ -78,11 +78,12 @@ async def offer_contract(
 @router.post("/contracts/{contract_id}/accept")
 async def accept_contract(
     hero_id: Id, contract_id: Id, request: Request, account: ActingAccount, db: Db, economy: GameEconomy, fees: GameFees, contracts: GameContracts,
+    rules: GameRules,
 ) -> dict:
     await limited(request, ratelimit.CONTRACT_BY_ACCOUNT, str(account.id))
     try:
         hero = await service.own_hero(db, account, hero_id)
-        return await _view(db, await contracts_service.accept(db, economy, fees, contracts, hero, contract_id))
+        return await _view(db, await contracts_service.accept(db, economy, fees, contracts, hero, contract_id, rules.party_size))
     except (service.HeroError, contracts_service.ContractError) as error:
         raise refuse(error) from error
 
