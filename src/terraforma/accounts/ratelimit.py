@@ -39,6 +39,8 @@ EMAIL_CHANGE_BY_ACCOUNT = Limit("email-change", 5, 60 * 60)
 EXTERNAL_START_BY_ADDRESS = Limit("external-start", 30, 15 * 60)
 EXTERNAL_CALLBACK_BY_ADDRESS = Limit("external-callback", 30, 15 * 60)
 EXTERNAL_FINISH_BY_ADDRESS = Limit("external-finish", 10, 60 * 60)
+# The provider telling this site that a person deleted their account there (no login: the signed message is the proof).
+EXTERNAL_EVENTS_BY_ADDRESS = Limit("external-events", 60, 15 * 60)
 # Linking, unlinking and setting a first password all change the ways into an account.
 SIGN_IN_METHOD_BY_ACCOUNT = Limit("sign-in-method", 20, 60 * 60)
 TRADE_BY_ACCOUNT = Limit("trade", 120, 60 * 60)

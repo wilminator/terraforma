@@ -17,6 +17,7 @@ from sqlalchemy import text
 
 from . import __doc__ as ENGINE
 from . import logscrub
+from .accounts.external_events import router as external_events_router
 from .accounts.external_routes import router as external_router
 from .accounts.routes import router as account_router
 from .accounts.twofa_routes import admin_router, router as twofa_router
@@ -171,6 +172,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(twofa_router)
     app.include_router(admin_router)
     app.include_router(external_router)
+    app.include_router(external_events_router)
     app.include_router(heroes_router)
     app.include_router(inventory_router)
     app.include_router(storage_router)
