@@ -1,6 +1,6 @@
 // The planned and live state (gamestate/routes.py): an admin edits a section of the draft, checks it, commits it to make it live, or reverts it, and
 // reads the committed snapshots. The sections are the game's own, so each is edited as JSON; the server checks it again and its words are shown as they
-// are. Importing an export file is not here yet (the export links are).
+// are. An export file is imported here too (it replaces the draft, frozen, and the check says what is wrong with it).
 
 import * as api from "./api.js";
 import { h, replace } from "./dom.js";
@@ -108,6 +108,26 @@ export function stateSection(shell) {
     },
   });
 
+  /** An export file picked from the admin's disk: its text goes to the server as it is (the server checks the file, the add-ons and every section). */
+  const upload = h("input", { type: "file", id: "state-import", accept: "application/json,.json", "aria-label": t("admin.state_import"), onchange: (event) => {
+    const [file] = event.target.files;
+    event.target.value = ""; // (so the same file can be picked again)
+    if (!file) return;
+    note.textContent = "";
+    attempt(shell, problem, async () => {
+      const text = await file.text();
+      try {
+        JSON.parse(text);
+      } catch {
+        throw new api.ApiError(0, t("admin.state_import_bad"));
+      }
+      await api.post(`${BASE}/import`, new api.RawJson(text));  // (as it is: re-writing it would change numbers like 1.0, and so the hash)
+      replace(found);
+      await load();
+      note.textContent = t("admin.state_imported");
+    });
+  } });
+
   const element = h(
     "section",
     { id: "admin-state", "aria-labelledby": "admin-state-title" },
@@ -126,6 +146,7 @@ export function stateSection(shell) {
     found,
     h("div", { class: "card" }, h("h3", {}, t("admin.state_history")), history),
     h("p", { class: "inline" }, h("a", { href: `${BASE}/export`, id: "state-export-planned" }, t("admin.state_export_planned")), " ", h("a", { href: `${BASE}/export?source=live`, id: "state-export-live" }, t("admin.state_export_live"))),
+    h("div", { class: "field" }, h("label", { for: "state-import" }, t("admin.state_import")), upload, h("p", { class: "hint" }, t("admin.state_import_hint"))),
   );
   return { element, load: reload };
 }
