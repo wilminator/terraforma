@@ -27,8 +27,11 @@ from ..economy import Economy, NotEnoughGold
 from ..escrow import service as escrow
 from ..guild.fees import Fees
 from ..heroes.models import Hero, Team, TeamMember
+from ..instances import service as instances
+from ..parties import service as parties
 from ..storage.hooks import Storage
 from .hooks import Contracts
+from .terms import KILL_BOSS
 from .models import (
     ACTIVE, BREACHED, BROKEN, DECLINED, EXPIRED, FULFILLED, MET, OFFERED, PENDING, SIDES, WITHDRAWN, Contract, ContractTerm,
 )
@@ -320,4 +323,35 @@ async def judge(session: AsyncSession, economy: Economy, storage: Storage, contr
         except escrow.EscrowError as error:
             raise ContractError(str(error)) from error
     await session.refresh(contract)
+    return contract
+
+
+async def enter_instance(session: AsyncSession, hero: Hero, contract_id: int) -> Contract:
+    """The hired side's party goes into the other side's instance of a quest, to do a ``kill_boss`` term of an active contract. The
+    hero's team must be a side bound by such a term, both teams must be in parties, and the other side's party must be in an instance.
+    The term records the instance's map (``entered_map_id``), which is how it is judged. Raises ContractError, changing nothing, for
+    anything that stops it (the instances' own refusals included)."""
+    contract = await session.get(Contract, contract_id)
+    team_id = await _team_of(session, hero)
+    if contract is None or contract.state != ACTIVE or team_id not in (contract.a_team_id, contract.b_team_id):
+        raise ContractError("there is no such contract of yours")
+    side = "a" if team_id == contract.a_team_id else "b"
+    other = contract.b_team_id if side == "a" else contract.a_team_id
+    terms = [term for term in await terms_of(session, contract) if term.kind == KILL_BOSS and term.side == side and term.state == PENDING]
+    if not terms or other is None:
+        raise ContractError("that contract hires you to enter no instance")
+    mine, theirs = await parties.party_of(session, team_id), await parties.party_of(session, other)
+    if mine is None or theirs is None:
+        raise ContractError("both teams must be in a party to go into an instance")
+    host = await instances.instance_of(session, theirs.id)
+    if host is None:
+        raise ContractError("the other side is not in an instance")
+    async with session.begin_nested():
+        try:
+            await instances.admit(session, mine.id, host.id)
+        except instances.InstanceError as error:
+            raise ContractError(str(error)) from error
+        for term in terms:
+            term.params = {**term.params, "entered_map_id": host.map_id}
+        await session.flush()
     return contract

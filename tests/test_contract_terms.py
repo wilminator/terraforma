@@ -68,7 +68,7 @@ async def fight(db, hero_map, attacker, defender):
 # --- validation --------------------------------------------------------------------------------------------------------
 
 def test_the_standard_kinds_and_their_checks_and_worth():
-    assert TERMS.kinds() == {"truce", "parcel", "assassinate"}
+    assert TERMS.kinds() == {"truce", "parcel", "assassinate", "kill_boss"}
     assert TERMS.validate("truce", {}) is None and TERMS.validate("truce", {"value": 300}) is None
     assert "zero or more" in TERMS.validate("truce", {"value": -1})
     assert "zero or more" in TERMS.validate("truce", {"value": True})

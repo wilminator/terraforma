@@ -16,6 +16,12 @@
   target's heroes the scope names have each *fallen* (a ``Died`` event; a later revive does not undo it). It is broken if time runs out first.
   The target may not be the bound side or the other side of the contract (an offer that says so is refused).
 
+* ``kill_boss``: the bound side kills a boss (``monster``, a monster key) inside the other side's run of a quest. The other side's party is
+  in an instance of the quest; ``service.enter_instance`` lets the bound side's party in (it records the instance's map on the term as
+  ``entered_map_id``). It is met once a fight on that map that began after the contract started, with a hero of the bound side in it, has
+  a ``Died`` event for a fighter of that monster, and broken if the party never went in or the boss stands when time runs out. Who gets
+  the drops is the contract's to settle (a ``parcel`` term sends them on). Params: ``monster``, ``value``.
+
 A game adds kinds by subclassing ``StandardTerms`` and extending ``kinds``, ``validate``, ``value`` and ``check`` (calling ``super()`` for
 the standard ones).
 """
@@ -36,6 +42,7 @@ from .models import BROKEN, MET, PENDING
 TRUCE = "truce"
 PARCEL = "parcel"
 ASSASSINATE = "assassinate"
+KILL_BOSS = "kill_boss"
 SCOPES = ("team", "hero")
 PURPOSE = "contract"  # the parcel's purpose
 
@@ -46,7 +53,7 @@ def _whole(value) -> bool:
 
 class StandardTerms(Contracts):
     def kinds(self) -> set[str]:
-        return {TRUCE, PARCEL, ASSASSINATE}
+        return {TRUCE, PARCEL, ASSASSINATE, KILL_BOSS}
 
     def validate(self, kind: str, params: dict) -> str | None:
         if "value" in params and not _whole(params["value"]):
@@ -68,6 +75,8 @@ class StandardTerms(Contracts):
                 return "an assassination kills the whole team or one hero of it"
             if params["scope"] == "hero" and not (isinstance(params.get("hero_id"), int) and not isinstance(params.get("hero_id"), bool) and params["hero_id"] >= 1):
                 return "an assassination of one hero names the hero"
+        if kind == KILL_BOSS and not (isinstance(params.get("monster"), str) and 1 <= len(params["monster"]) <= 64):
+            return "a boss kill names the boss, a monster key"
         return None
 
     async def check_offer(self, session, a_team_id, b_team_id, my_terms, their_terms) -> str | None:
@@ -102,6 +111,10 @@ class StandardTerms(Contracts):
             return BROKEN if ended else PENDING
         if term.kind == ASSASSINATE:
             if await self._assassinated(session, contract, term):
+                return MET
+            return BROKEN if ended else PENDING
+        if term.kind == KILL_BOSS:
+            if await self._boss_killed(session, contract, term):
                 return MET
             return BROKEN if ended else PENDING
         return await super().check(session, contract, term, ended)
@@ -184,3 +197,29 @@ class StandardTerms(Contracts):
                     if kind == EventType.DIED.value and tuple(data[:3]) in seats:
                         fallen.add(seats[tuple(data[:3])])
         return wanted <= fallen
+
+    async def _boss_killed(self, session: AsyncSession, contract, term) -> bool:
+        map_id = term.params.get("entered_map_id")
+        bound, _other = self._sides(contract, term)
+        mine = await self._heroes(session, bound)
+        if map_id is None or not mine:
+            return False
+        since = datetime.fromtimestamp(contract.starts_at, UTC)
+        hero, boss = FightParticipant, FightParticipant.__table__.alias("boss")
+        fights = (await session.scalars(
+            select(hero.fight_id).join(FightRecord, FightRecord.id == hero.fight_id).join(boss, boss.c.fight_id == hero.fight_id)
+            .where(FightRecord.created_at >= since, FightRecord.map_id == map_id, hero.hero_id.in_(mine), boss.c.monster_key == term.params["monster"])
+            .distinct()
+        )).all()
+        for fight_id in fights:
+            seats = {
+                (party, group, character)
+                for party, group, character in (await session.execute(
+                    select(FightParticipant.party, FightParticipant.group_index, FightParticipant.character)
+                    .where(FightParticipant.fight_id == fight_id, FightParticipant.monster_key == term.params["monster"])
+                )).all()
+            }
+            for events in (await session.scalars(select(FightActionRecord.events).where(FightActionRecord.fight_id == fight_id))).all():
+                if any(kind == EventType.DIED.value and tuple(data[:3]) in seats for kind, data in events):
+                    return True
+        return False
