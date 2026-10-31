@@ -40,6 +40,7 @@ from .alliances.ballot_routes import router as ballots_router
 from .alliances.routes import router as alliances_router
 from .alliances.taxes import AllianceTaxman
 from .challenge.routes import router as challenge_router
+from .storegrant.parcel_routes import router as parcel_router
 from .storegrant.routes import router as storegrant_router
 from .guild.routes import router as guild_router
 from .standing.routes import router as standing_router
@@ -79,6 +80,7 @@ from .pvp.routes import router as pvp_router
 from .towns.routes import router as towns_router
 from .trading.routes import router as trading_router
 from .marketplace.routes import router as marketplace_router
+from .coliseum.routes import router as coliseum_router
 from .contracts.routes import router as contracts_router
 from . import client, housekeeping
 from .keys import KeyRing
@@ -174,6 +176,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(storage_router)
     app.include_router(trading_router)
     app.include_router(marketplace_router)
+    app.include_router(coliseum_router)
     app.include_router(contracts_router)
     app.include_router(pending_drops_router)
     app.include_router(relations_router)
@@ -201,6 +204,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.include_router(fightpages_router)
     app.include_router(challenge_router)
     app.include_router(storegrant_router)
+    app.include_router(parcel_router)
     app.include_router(npcs_router)
     app.include_router(disuse_router)
     app.include_router(reach_router)

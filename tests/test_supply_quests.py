@@ -132,3 +132,24 @@ async def test_delivery_to_a_fallen_settlement_or_a_quest_without_goods_does_not
     assert await needs.deliver(db, spec) == 0
     with pytest.raises(needs.NeedsError):
         await needs.deliver(db, {"bosses": []})
+
+
+class Rewarding(Hungry):
+    """Pays a crafted blade for the iron, drawn from the quest's stream so the same world draws the same one."""
+
+    def supply_reward(self, rng, settlement, material, amount):
+        return {"item": rng.choice(["iron-sword", "iron-axe"]), "count": 1, "for": amount}
+
+
+async def test_a_game_can_name_the_reward_a_supply_quest_carries(db):
+    town = await a_town(db)
+    await supply.set_cut(db, town, "iron", 100)
+    await advance_clock(db, town.world_id, 2)
+    plain = (await run(db, Hungry()))[0]
+    assert "reward" not in plain.spec, "nothing is carried unless the game names it"
+    await db.delete(plain)
+    await db.flush()
+    made = (await run(db, Rewarding()))[0]
+    assert made.spec["reward"]["item"] in ("iron-sword", "iron-axe")
+    assert made.spec["reward"]["for"] == made.spec["supply"]["amount"]
+    assert made.spec["reward"]["count"] == 1

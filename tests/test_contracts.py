@@ -84,8 +84,8 @@ TRUCE = [("truce", {})]
 ESCORT = [("escort", {"to": "Eastgate"})]
 
 
-async def offered(db, aria, b, my_terms=TRUCE, their_terms=ESCORT, mine=250, theirs=325, duration=DAY, guild="vanguard", contracts=PACTS, fees=FEES):
-    return await service.offer(db, ECONOMY, fees, contracts, aria, guild, b.id, my_terms, their_terms, mine, theirs, duration)
+async def offered(db, aria, b, my_terms=TRUCE, their_terms=ESCORT, mine=250, theirs=325, duration=DAY, guild="vanguard", contracts=PACTS, fees=FEES, payment_gold=0):
+    return await service.offer(db, ECONOMY, fees, contracts, aria, guild, b.id, my_terms, their_terms, mine, theirs, duration, payment_gold)
 
 
 # --- offering ----------------------------------------------------------------------------------------------------------
@@ -292,3 +292,60 @@ async def test_judging_an_offer_or_a_settled_contract_does_nothing(clock, db):
     assert (await service.judge(db, ECONOMY, STORAGE, PACTS, offer.id)).state == OFFERED
     with pytest.raises(service.ContractError, match="no such contract"):
         await service.judge(db, ECONOMY, STORAGE, PACTS, 9999)
+
+
+# --- the payment: held from the offer, paid when the other side keeps its terms -----------------------------------------
+
+async def test_a_payment_is_held_from_the_offer_and_paid_when_the_other_side_keeps_its_terms(clock, db):
+    a, b, aria, cole = await two_sides(db)
+    contract, pacts = await active(db, aria, b, cole, payment_gold=300)
+    assert await gold_of(db, a) == 1000 - 10 - 250 - 300  # the payment left a's purse with the offer
+    deposit = await db.get(Escrow, contract.payment_escrow_id)
+    assert (deposit.state, deposit.gold, deposit.ref) == (HELD, 300, f"{contract.id}:p")
+    clock.move(DAY)
+    done = await service.judge(db, ECONOMY, STORAGE, pacts, contract.id)
+    assert done.state == FULFILLED and done.payment_gold == 300
+    assert await gold_of(db, a) == 990 - 300 and await gold_of(db, b) == 990 + 300
+    assert (await db.get(Escrow, done.payment_escrow_id)).state == FORFEITED  # handed to b
+
+
+async def test_a_payment_goes_back_when_the_paid_side_breaks_a_term(clock, db):
+    a, b, aria, cole = await two_sides(db)
+    contract, pacts = await active(db, aria, b, cole, payment_gold=300)
+    pacts.verdicts = {(contract.id, "escort"): BROKEN}
+    done = await service.judge(db, ECONOMY, STORAGE, pacts, contract.id)
+    assert (done.state, done.breached_by) == (BREACHED, "b")
+    assert await gold_of(db, a) == 990 + 325 and await gold_of(db, b) == 990 - 325  # b's escrow went to a; the payment came back
+    assert (await db.get(Escrow, done.payment_escrow_id)).state == REFUNDED
+
+
+async def test_a_payment_is_still_owed_when_only_the_offering_side_broke_a_term(clock, db):
+    a, b, aria, cole = await two_sides(db)
+    contract, pacts = await active(db, aria, b, cole, payment_gold=300)
+    pacts.verdicts = {(contract.id, "truce"): BROKEN, (contract.id, "escort"): MET}
+    done = await service.judge(db, ECONOMY, STORAGE, pacts, contract.id)
+    assert (done.state, done.breached_by) == (BREACHED, "a")
+    assert await gold_of(db, b) == 990 + 250 + 300 and await gold_of(db, a) == 990 - 250 - 300
+
+
+async def test_a_payment_comes_back_when_the_offer_is_declined_withdrawn_or_expires(clock, db):
+    a, b, aria, cole = await two_sides(db)
+    declined = await offered(db, aria, b, payment_gold=300)
+    assert await gold_of(db, a) == 1000 - 10 - 250 - 300
+    await service.decline(db, ECONOMY, STORAGE, cole, declined.id)
+    assert await gold_of(db, a) == 990
+    withdrawn = await offered(db, aria, b, payment_gold=300)
+    await service.withdraw(db, ECONOMY, STORAGE, aria, withdrawn.id)
+    assert await gold_of(db, a) == 980
+    stale = await offered(db, aria, b, payment_gold=300)
+    clock.move(4 * DAY)
+    assert await service.expire_offers(db, ECONOMY, STORAGE) == 1
+    assert await gold_of(db, a) == 970 and (await db.get(Escrow, stale.payment_escrow_id)).state == REFUNDED
+
+
+async def test_a_payment_the_offering_side_cannot_afford_changes_nothing(clock, db):
+    a, b, aria, _cole = await two_sides(db)
+    with pytest.raises(service.ContractError):
+        await offered(db, aria, b, payment_gold=900)
+    assert await gold_of(db, a) == 1000
+    assert await db.scalar(select(func.count()).select_from(Contract)) == 0

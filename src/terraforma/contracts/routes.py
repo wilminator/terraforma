@@ -32,6 +32,7 @@ class Offer(Strict):
     my_escrow: int = Field(default=0, ge=0, le=contracts_service.MAX_AMOUNT)
     their_escrow: int = Field(default=0, ge=0, le=contracts_service.MAX_AMOUNT)
     duration: int = Field(ge=1, le=contracts_service.MAX_DURATION)
+    payment: int = Field(default=0, ge=0, le=contracts_service.MAX_AMOUNT)
 
 
 def refuse(error: ValueError) -> HTTPException:
@@ -48,7 +49,7 @@ async def _team_id(db, hero: Hero) -> int | None:
 async def _view(db, contract: Contract) -> dict:
     names = dict((await db.execute(select(Team.id, Team.name).where(Team.id.in_([t for t in (contract.a_team_id, contract.b_team_id) if t is not None])))).all())
     return {
-        "id": contract.id, "guild": contract.guild, "state": contract.state, "open": contract.a_team_id is None, "reward": contract.reward_gold,
+        "id": contract.id, "guild": contract.guild, "state": contract.state, "open": contract.a_team_id is None, "reward": contract.reward_gold, "payment": contract.payment_gold,
         "a": {"team_id": contract.a_team_id, "team": names.get(contract.a_team_id), "escrow": contract.a_escrow_gold},
         "b": {"team_id": contract.b_team_id, "team": names.get(contract.b_team_id), "escrow": contract.b_escrow_gold},
         "terms": [{"side": t.side, "kind": t.kind, "params": t.params, "state": t.state} for t in await contracts_service.terms_of(db, contract)],
@@ -67,7 +68,7 @@ async def offer_contract(
         contract = await contracts_service.offer(
             db, economy, fees, contracts, hero, body.guild, body.to_team_id,
             [(t.kind, t.params) for t in body.my_terms], [(t.kind, t.params) for t in body.their_terms],
-            body.my_escrow, body.their_escrow, body.duration,
+            body.my_escrow, body.their_escrow, body.duration, body.payment,
         )
         return await _view(db, contract)
     except (service.HeroError, contracts_service.ContractError) as error:
@@ -82,6 +83,16 @@ async def accept_contract(
     try:
         hero = await service.own_hero(db, account, hero_id)
         return await _view(db, await contracts_service.accept(db, economy, fees, contracts, hero, contract_id))
+    except (service.HeroError, contracts_service.ContractError) as error:
+        raise refuse(error) from error
+
+
+@router.post("/contracts/{contract_id}/enter-instance")
+async def enter_contract_instance(hero_id: Id, contract_id: Id, request: Request, account: ActingAccount, db: Db) -> dict:
+    await limited(request, ratelimit.CONTRACT_BY_ACCOUNT, str(account.id))
+    try:
+        hero = await service.own_hero(db, account, hero_id)
+        return await _view(db, await contracts_service.enter_instance(db, hero, contract_id))
     except (service.HeroError, contracts_service.ContractError) as error:
         raise refuse(error) from error
 
