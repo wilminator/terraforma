@@ -157,7 +157,7 @@ class Needs:
         game decides what that is: it may make a map in the database, pick one it has, or build nothing (None, the default: the quest has no dungeon
         and the game's dialog finds somewhere to hold the fight). What it returns is a JSON object of the game's own (the map's key, say), kept
         in the quest's ``spec["dungeon"]``, which the game's dialog reads when the quest is offered. It is called inside the transaction that records
-        the proposal, so a dungeon made here is undone with it; $rng is the same stream the bosses were drawn from, so a replayed world builds
+        the proposal, so a dungeon made here is undone with it (``terraforma.maps.library.reuse_or_make`` keeps a generated map for the next quest that wants one like it); $rng is the same stream the bosses were drawn from, so a replayed world builds
         the same one. A mistake raised here skips this band for the run (the others go on) and is logged."""
         return None
 
@@ -178,6 +178,13 @@ class Needs:
     def supply_name(self, rng: Random, settlement: Settlement, material: Material) -> str:
         """The supply quest's name (up to 64 characters)."""
         return f"Supply {settlement.name}: {material.name}"[:64]
+
+    def supply_reward(self, rng: Random, settlement: Settlement, material: Material, amount: int) -> dict:
+        """What the players are given for bringing the goods of a supply quest: a JSON object of the game's own (an item the town's crafter makes
+        from the material, gold, guild points), kept in the quest's ``spec["reward"]`` for the game's dialog to read and hand out when the quest
+        is finished. $rng is the stream the quest is drawn from, so a replayed world picks the same one. Nothing, the default: the engine only
+        carries it, so a rare material's craftable item is the game's to name. Must be small (the spec is checked)."""
+        return {}
 
     async def dungeon_gone(self, session: AsyncSession, proposal_id: int, dungeon: dict) -> None:
         """The quest holding $dungeon (as ``dungeon`` returned it) was rejected or retired, so the game may take the place down. Teams that took

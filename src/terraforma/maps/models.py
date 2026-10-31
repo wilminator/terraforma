@@ -1,6 +1,6 @@
 """Things that stand on a map and run an event script when a hero uses them: chests, doors, signs, and a map's edges."""
 
-from sqlalchemy import ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db.base import Base, Timestamps
@@ -32,3 +32,28 @@ class MapObject(Located, Timestamps, Base):
     action: Mapped[str] = mapped_column(String(32))
     dialog: Mapped[str] = mapped_column(Text)
     edge: Mapped[str | None] = mapped_column(String(5), nullable=True)
+
+
+class SavedMap(Timestamps, Base):
+    """A map kept for reuse (``maps.library``): the content of a map a game generated, under the game's own ``key``, so the next place that
+    wants one like it is made from this copy instead of being generated again. ``objects`` are the map's object and edge rows (without their
+    ids or the map), and ``uses`` counts the maps made from it."""
+
+    __tablename__ = "saved_maps"
+    __table_args__ = (UniqueConstraint("world_id", "key"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    world_id: Mapped[int] = mapped_column(ForeignKey("worlds.id"), index=True)
+    key: Mapped[str] = mapped_column(String(64))
+    title: Mapped[str] = mapped_column(String(64), default="", server_default="")
+    width: Mapped[int] = mapped_column(Integer, default=1)
+    height: Mapped[int] = mapped_column(Integer, default=1)
+    wrap_x: Mapped[bool] = mapped_column(Boolean, default=False)
+    wrap_y: Mapped[bool] = mapped_column(Boolean, default=False)
+    safe_steps: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    tileset: Mapped[list | None] = mapped_column(JSON)
+    tiles: Mapped[list | None] = mapped_column(JSON)
+    zones: Mapped[list | None] = mapped_column(JSON)
+    zone_tiles: Mapped[list | None] = mapped_column(JSON)
+    objects: Mapped[list] = mapped_column(JSON, default=list)
+    uses: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
