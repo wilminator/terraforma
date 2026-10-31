@@ -6,6 +6,9 @@ with the header ``typ`` ``secevent+jwt``) posted as ``{"token": "..."}`` to ``/a
 player login and no CSRF token: it is not made by a browser, and the signature is the proof. It is off unless the provider's
 section in ``settings.toml`` says ``deletion_events = true``.
 
+The provider's deletion page also asks, with the same kind of signed message (its ``sub`` claim) at ``/api/external/<name>/account-lookup``,
+whether the person has an account here: the answer is ``{"exists": bool}`` and, when true, a short ``summary``.
+
 The token is checked against the provider's published signing keys (found by the ``kid`` in its header; the algorithm must be
 one of ``ALGORITHMS``, never ``none`` or a shared-secret one), and its issuer, audience (this site's ``client_id``) and expiry.
 The token must carry a ``jti`` (the provider's one-per-message id); it is not remembered, because a deletion done twice is the same as once and nothing else is acted on. Only the event ``<issuer>/events/account-deleted`` is understood; a token with any other event is accepted and ignored.
@@ -20,8 +23,10 @@ import logging
 import jwt
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import Field
+from sqlalchemy import func, select
 
 from ..api.deps import Db, client_address
+from ..heroes.models import Team
 from ..models import Account
 from . import oidc, ratelimit, service
 from .common import Strict, limited
@@ -69,9 +74,8 @@ async def verify(http, provider, where: oidc.Endpoints, token: str) -> dict:
         raise oidc.SignInError("failed", f"{provider.name}: the message was not accepted") from error
 
 
-@router.post("/{name}/events")
-async def events(name: str, body: EventRequest, request: Request, db: Db) -> dict:
-    """The provider's "account deleted" message: unlinks the person and ends their logins here. Answers the same whether or not they were known."""
+async def checked(name: str, token: str, request: Request) -> tuple[dict, oidc.Endpoints]:
+    """The claims of the signed message in the request body, if $name's provider signed it for this site (else 404 or 400)."""
     provider = provider_of(request, name)
     if not provider.deletion_events:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no such sign-in provider")
@@ -79,10 +83,16 @@ async def events(name: str, body: EventRequest, request: Request, db: Db) -> dic
     http = request.app.state.http_client
     try:
         where = await oidc.endpoints(http, provider)
-        claims = await verify(http, provider, where, body.token)
+        return await verify(http, provider, where, token), where
     except oidc.SignInError as error:
-        log.warning("refused an event from %s: %s", name, error)
+        log.warning("refused a message from %s: %s", name, error)
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "the message is not accepted") from error
+
+
+@router.post("/{name}/events")
+async def events(name: str, body: EventRequest, request: Request, db: Db) -> dict:
+    """The provider's "account deleted" message: unlinks the person and ends their logins here. Answers the same whether or not they were known."""
+    claims, where = await checked(name, body.token, request)
     events = claims.get("events")
     deleted = events.get(where.issuer.rstrip("/") + DELETED) if isinstance(events, dict) else None
     if deleted is None:
@@ -97,3 +107,17 @@ async def events(name: str, body: EventRequest, request: Request, db: Db) -> dic
         if account is not None:
             account.session_version += 1
     return {"ok": True}
+
+
+@router.post("/{name}/account-lookup")
+async def account_lookup(name: str, body: EventRequest, request: Request, db: Db) -> dict:
+    """Does the person ($sub of the signed message) have an account here? The provider shows the answer on its deletion page."""
+    claims, _ = await checked(name, body.token, request)
+    subject = claims.get("sub")
+    if not isinstance(subject, str) or not 0 < len(subject) <= 255:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "the message is not accepted")
+    identity = await service.find_identity(db, name, subject)
+    if identity is None:
+        return {"exists": False}
+    teams = await db.scalar(select(func.count()).select_from(Team).where(Team.account_id == identity.account_id))
+    return {"exists": True, "summary": f"an account with {teams} team{'' if teams == 1 else 's'}"}

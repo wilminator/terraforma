@@ -161,3 +161,46 @@ def test_the_body_is_strict(client):
     expect(client.post("/api/external/fake/events", json={"token": event(), "extra": 1}), 422)
     expect(client.post("/api/external/fake/events", json={"token": 5}), 422)
     expect(client.post("/api/external/fake/events", json={"token": ""}), 422)
+
+
+# --- the lookup ---------------------------------------------------------------------------------------------------------------
+
+def lookup(client, token):
+    return client.post("/api/external/fake/account-lookup", json={"token": token})
+
+
+def asking(sub=SUBJECT, **changes) -> str:
+    return _signed({"sub": sub, **changes})
+
+
+def _signed(claims: dict) -> str:
+    now = int(time.time())
+    every = {"iss": ISSUER, "aud": "client-1", "iat": now, "exp": now + 300, "jti": "j2", **claims}
+    return jwt.encode({k: v for k, v in every.items() if v is not None}, KEY, algorithm="ES256", headers={"kid": "k1", "typ": "secevent+jwt"})
+
+
+def test_the_lookup_says_whether_the_person_has_an_account_here(client, idp):
+    assert expect(lookup(client, asking()), 200).json() == {"exists": False}
+    new_player(client, idp)
+    assert expect(lookup(client, asking()), 200).json() == {"exists": True, "summary": "an account with 0 teams"}
+    assert expect(lookup(client, asking("someone-else")), 200).json() == {"exists": False}
+
+
+def test_the_lookup_changes_nothing(client, idp):
+    new_player(client, idp)
+    expect(lookup(client, asking()), 200)
+    assert logged_in(client) and len(identities_in_db(client)) == 1
+
+
+def test_a_lookup_that_does_not_check_out_is_refused(client):
+    expect(lookup(client, asking(aud="client-2")), 400)
+    expect(lookup(client, asking(jti=None)), 400)
+    expect(lookup(client, asking(sub=None)), 400)
+    expect(lookup(client, asking(sub=5)), 400)
+    expect(lookup(client, "not-a-token"), 400)
+    expect(client.post("/api/external/fake/account-lookup", json={"token": "x", "extra": 1}), 422)
+
+
+def test_the_lookup_is_off_without_deletion_events(client):
+    client.app.state.settings.external_providers = [events_provider().model_copy(update={"deletion_events": False})]
+    expect(lookup(client, asking()), 404)
