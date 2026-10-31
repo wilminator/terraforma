@@ -20,6 +20,8 @@ from ..instances import service as instances
 from ..maps import travel
 from ..heroes.models import Hero, HeroItem, Team, TeamMember
 from ..parties import service as parties
+from ..fighttags.models import FightTeam
+from ..fights.models import FightRecord
 from ..models import Account, Map
 from ..parties.models import Party
 from ..quests import service as quests
@@ -32,6 +34,7 @@ from ..realms import service as realms
 from ..realms import supply
 from ..standing import service as standing
 from ..towns import service as towns
+from .fight_models import ScriptedFight
 from .script import ScriptError
 
 
@@ -220,6 +223,39 @@ class DialogState:
         except rotation.RotationError as error:
             raise ScriptError(str(error)) from error
         return label if record is None else ""
+
+    async def npc_fight(self, name: str, monsters: str, label: str) -> str:
+        """The party the hero acts in fights $monsters (keys joined by +), and each of its teams is tied to the fight under $name so
+        ``npc_fight_result`` can ask how it ended. The label if the party cannot fight now (apart in a town, a hero already in a fight)."""
+        acting = await self.party()
+        if acting is None or acting.ethereal:
+            return label
+        if self.rules is None:
+            raise ScriptError("this dialog starts a fight (npc_fight), which needs the game's rules, and there are none to use")
+        try:
+            record = await live.start_party_fight(self.session, acting.party_id, monsters.split("+"), self.rules)
+        except live.Refused:
+            return label
+        for team_id in acting.team_ids:
+            self.session.add(ScriptedFight(fight_id=record.id, team_id=team_id, key=name))
+        await self.session.flush()
+        return ""
+
+    async def npc_fight_result(self, name: str, state: str, label: str) -> str:
+        """Goes on if the talking hero's team's latest fight under $name is ``won``, ``lost`` or ``running``; otherwise (or with no such fight) the label."""
+        team_id = await self.team_id()
+        if team_id is None:
+            return label
+        record = await self.session.scalar(
+            select(FightRecord).join(ScriptedFight, ScriptedFight.fight_id == FightRecord.id)
+            .where(ScriptedFight.team_id == team_id, ScriptedFight.key == name).order_by(ScriptedFight.id.desc()).limit(1))
+        if record is None:
+            return label
+        if not record.finished:
+            now = "running"
+        else:
+            now = "won" if await self.session.scalar(select(FightTeam.won).where(FightTeam.fight_id == record.id, FightTeam.team_id == team_id)) else "lost"
+        return "" if now == state else label
 
     async def manual_quest(self, event: str, action: str, label: str) -> str:
         """The talking hero's own team's entry in an admin's event (``quests.manual``). ``enter``: enters the event while it is open (the label if
