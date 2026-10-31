@@ -9,6 +9,7 @@
 // back to its "base"; a sheet without that name just keeps its "base", and a dead fighter holds the last frame of its "die".
 
 import { drawFrame, frameRect } from "./art.js";
+import { cuesOf } from "./audio.js";
 import { h, replace } from "./dom.js";
 import { FightMenu } from "./fight-menu.js";
 import { FightModel } from "./fight-model.js";
@@ -78,6 +79,7 @@ export class FightScene {
       state: (state) => this.#linkChanged(run, state),
     });
     this.link.start();
+    this.shell.audio.play("fight.start");
     return true;
   }
 
@@ -182,6 +184,7 @@ export class FightScene {
   async #play(run, marks) {
     if (this.skipping) return;
     const motion = !reducedMotion();
+    for (const mark of marks) this.shell.audio.play(...cuesOf(mark)); // (a sound is no motion: it plays with reduced motion too)
     if (motion && !this.skipping) for (const mark of marks) this.#mark(mark);
     await Promise.all(marks.map((mark) => (motion ? this.#move(mark) : null)));
     if (run === this.run && !this.skipping) await this.#wait(READ_MS / this.speed);
@@ -275,6 +278,7 @@ export class FightScene {
   }
 
   #finish() {
+    this.shell.audio.play(`fight.${this.model.result()}`);
     this.#paint();
     this.#data();
     this.stage.dispatchEvent(new CustomEvent("fight-over", { detail: { id: this.model.id } }));

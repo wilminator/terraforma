@@ -63,6 +63,14 @@ export class FightModel {
     }
   }
 
+  /** How a finished fight went for the player: "victory" (one of their heroes stands, or got away: the server's own rule for who won), "defeat",
+   * or "over" when none of the heroes shown are theirs (a fight watched). */
+  result() {
+    const mine = [...this.fighters.values()].filter((each) => each.yours);
+    if (!mine.length) return "over";
+    return mine.some((each) => each.alive || each.fled) ? "victory" : "defeat";
+  }
+
   /** The vital resource as [current, maximum]. */
   vitalOf(fighter) {
     return fighter.resources[this.vital] ?? [0, 0];
