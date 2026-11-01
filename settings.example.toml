@@ -82,6 +82,8 @@ key_dir = "keys"
 # client_id = "..."
 # client_secret = "..."
 # scopes = ["openid", "email"]              # the default; both are required
+# jwks_uri = "https://.../jwks"             # the provider's signing keys; read from its published settings when left out
+# deletion_events = true                    # accept the provider's signed "this person deleted their account" message (off by default)
 
 # Facebook: create an app with Facebook Login, add the redirect address above as a valid OAuth redirect URI, and use its app id
 # and secret. Facebook gives an email address only when the person has a confirmed one, and that is what the account gets.

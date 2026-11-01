@@ -66,6 +66,8 @@ class Endpoints:
     issuer: str
     authorization: str
     token: str
+    # Where the provider's signing keys are (empty when unknown: only needed to check the provider's own messages).
+    jwks: str = ""
 
 
 @dataclass(frozen=True)
@@ -125,13 +127,18 @@ async def endpoints(http: httpx.AsyncClient, provider: ExternalProvider) -> Endp
     if provider.kind == "steam":
         return Endpoints("steam", STEAM_LOGIN, STEAM_LOGIN)
     if provider.authorization_endpoint and provider.token_endpoint:
-        return Endpoints(provider.issuer, provider.authorization_endpoint, provider.token_endpoint)
+        return Endpoints(provider.issuer, provider.authorization_endpoint, provider.token_endpoint, provider.jwks_uri or "")
     address = provider.issuer.rstrip("/") + "/.well-known/openid-configuration"
     try:
         answer = await http.get(address, timeout=TIMEOUT)
         answer.raise_for_status()
         found = answer.json()
-        return Endpoints(str(found["issuer"]), str(found["authorization_endpoint"]), str(found["token_endpoint"]))
+        return Endpoints(
+            str(found["issuer"]),
+            str(found["authorization_endpoint"]),
+            str(found["token_endpoint"]),
+            provider.jwks_uri or str(found.get("jwks_uri") or ""),
+        )
     except (httpx.HTTPError, ValueError, KeyError, TypeError) as error:
         raise SignInError("failed", f"{provider.name}: could not read the provider's settings") from error
 

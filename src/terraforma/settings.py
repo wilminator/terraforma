@@ -119,8 +119,13 @@ class ExternalProvider(BaseModel):
     # Both set: used instead of the provider's published settings (for a provider that publishes none). Only for kind "oidc".
     authorization_endpoint: str | None = None
     token_endpoint: str | None = None
+    # Where the provider publishes the keys that sign its messages (found in its published settings when not given). Only for kind "oidc".
+    jwks_uri: str | None = None
+    # true: the provider may tell this site that a person deleted their account there (POST <public_url>/api/external/<name>/events,
+    # a signed "account deleted" message). Off by default. Only for kind "oidc".
+    deletion_events: bool = False
 
-    @field_validator("issuer", "authorization_endpoint", "token_endpoint")
+    @field_validator("issuer", "authorization_endpoint", "token_endpoint", "jwks_uri")
     @classmethod
     def _is_a_web_address(cls, value: str | None, info) -> str | None:
         return value if value is None or value == "" else _web_address(value, info.field_name)
@@ -140,13 +145,17 @@ class ExternalProvider(BaseModel):
                     raise ValueError(f"{setting} is needed")
             if (self.authorization_endpoint is None) != (self.token_endpoint is None):
                 raise ValueError("authorization_endpoint and token_endpoint are set together or not at all")
+            if self.deletion_events and self.authorization_endpoint and not self.jwks_uri:
+                raise ValueError("deletion_events with endpoints given here needs jwks_uri too")
             return self
         # Facebook and Steam have fixed addresses, so the settings that point elsewhere are mistakes, not options.
-        for setting in ("issuer", "authorization_endpoint", "token_endpoint"):
+        for setting in ("issuer", "authorization_endpoint", "token_endpoint", "jwks_uri"):
             if getattr(self, setting):
                 raise ValueError(f"{setting} is only for kind \"oidc\"")
         if self.scopes != ["openid", "email"]:
             raise ValueError('scopes is only for kind "oidc"')
+        if self.deletion_events:
+            raise ValueError('deletion_events is only for kind "oidc"')
         if self.kind == "facebook" and not (self.client_id and self.client_secret):
             raise ValueError("client_id and client_secret are needed")
         if self.kind == "steam" and (self.client_id or self.client_secret):
