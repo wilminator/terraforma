@@ -4,7 +4,10 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from argon2 import PasswordHasher
+
 from terraforma import wallclock
+from terraforma.accounts import service as accounts_service
 
 pytest_plugins = ["terraforma.testing"]
 
@@ -13,6 +16,28 @@ pytest_plugins = ["terraforma.testing"]
 # window's end would count its attempts in two windows and fail now and then. A fixed start
 # means every run counts the same way.
 START = datetime(2026, 10, 1, 12, 2, 0, tzinfo=UTC)
+
+
+#: The hasher the site really uses (RFC 9106 defaults: 64 MiB, 3 passes, 4 lanes), about 70 ms a hash or check on a quiet machine and several
+#: times that when the tests run in parallel. A test makes an account or signs in several times, and measured over the "heroes" category
+#: 61% of all test time went into Argon2. The tests run on this cheap one instead (the same algorithm, Argon2id, and the same hash format,
+#: so checking and the "needs rehash" logic behave the same); `real_hasher` below puts the real one back for the test that checks its settings.
+PRODUCTION_HASHER = accounts_service._hasher
+CHEAP_HASHER = PasswordHasher(time_cost=1, memory_cost=8, parallelism=1)
+
+
+@pytest.fixture(autouse=True)
+def cheap_passwords(monkeypatch):
+    """Makes and checks passwords with a cheap Argon2id for the test (the work factor is what costs, and no test depends on it)."""
+    monkeypatch.setattr(accounts_service, "_hasher", CHEAP_HASHER)
+    monkeypatch.setattr(accounts_service, "_DUMMY_HASH", CHEAP_HASHER.hash("not a real password"))
+
+
+@pytest.fixture
+def real_hasher(monkeypatch, cheap_passwords):
+    """The site's own hasher, for the one test that checks its settings."""
+    monkeypatch.setattr(accounts_service, "_hasher", PRODUCTION_HASHER)
+    return PRODUCTION_HASHER
 
 
 @pytest.fixture(autouse=True)
