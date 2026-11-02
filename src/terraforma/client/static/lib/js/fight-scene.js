@@ -214,14 +214,14 @@ export class FightScene {
     const card = this.cards.get(mark.key);
     if (!card) return;
     const ms = MOVE_MS / this.speed;
-    const toward = card.dataset.side === "left" ? 1 : -1;
+    const toward = card.dataset.side === "left" ? -1 : 1; // (the viewer's side is at the bottom: toward the foe is up)
     const run = (element, keyframes, options) => {
       const animation = element.animate(keyframes, { duration: ms, easing: "ease-out", ...options });
       this.moving.add(animation);
       return animation.finished.catch(() => {}).finally(() => this.moving.delete(animation));
     };
     if (mark.kind === "act" || mark.kind === "turn") {
-      await run(card, [{ transform: "translateX(0)" }, { transform: `translateX(${toward * 10}px)` }, { transform: "translateX(0)" }]);
+      await run(card, [{ transform: "translateY(0)" }, { transform: `translateY(${toward * 14}px)` }, { transform: "translateY(0)" }]);
     } else if (mark.kind === "damage" || mark.kind === "heal" || mark.kind === "miss") {
       const text = mark.kind === "miss" ? this.t("fight.miss_float") : `${mark.kind === "damage" ? "−" : "+"}${mark.amount}`;
       const floating = h("span", { class: `fight-float ${mark.kind}`, "aria-hidden": "true" }, text);
@@ -300,11 +300,22 @@ export class FightScene {
     this.#clearSprites();
     this.layer?.remove();
     this.cards = new Map();
+    // Each side stands in rows, one row per group (DragonStar's formation): a group's fighters are spread across the stage, a group of
+    // more than four is staggered in two lines, and a number marks the group. The viewer's own side is at the bottom, seen from behind;
+    // the other side stands further up the stage, facing the viewer.
     const sides = { left: h("div", { class: "fight-side left" }), right: h("div", { class: "fight-side right" }) };
+    const rows = new Map();
     for (const [key, fighter] of this.model.fighters) {
+      const side = this.#side(fighter);
+      const group = `${side}:${fighter.party}.${fighter.group}`;
+      if (!rows.has(group)) {
+        const row = h("div", { class: "fight-group", "data-group": `${fighter.party}.${fighter.group}`, "data-side": side }, h("span", { class: "fight-group-tag", "aria-hidden": "true" }, String(fighter.group + 1)));
+        rows.set(group, row);
+        sides[side].append(row);
+      }
       const card = h(
         "div",
-        { class: "fighter", "data-fighter": key, "data-side": this.#side(fighter), "data-view": this.#view(fighter) },
+        { class: "fighter", "data-fighter": key, "data-side": side, "data-view": this.#view(fighter), "data-line": String(fighter.character % 2) },
         fighter.art ? this.#spot(key) : null,
         h("span", { class: "fighter-name" }, fighter.name),
         h("span", { class: "fighter-bar" }, h("span", { class: "fighter-fill" })),
@@ -312,8 +323,10 @@ export class FightScene {
         h("span", { class: "fighter-mark", "aria-hidden": "true" }),
       );
       this.cards.set(key, card);
-      sides[this.#side(fighter)].append(card);
+      rows.get(group).append(card);
     }
+    for (const row of rows.values()) row.dataset.size = String(row.querySelectorAll(".fighter").length);
+    for (const side of Object.values(sides)) side.dataset.groups = String(side.querySelectorAll(".fight-group").length);
     this.statusLine = h("span", { class: "fight-round", id: "fight-round", role: "status" });
     this.skipButton = h("button", { type: "button", id: "fight-skip", onclick: () => this.skip() }, this.t("fight.skip"));
     this.speedButton = h("button", { type: "button", id: "fight-speed", onclick: () => this.cycleSpeed() });
@@ -324,7 +337,7 @@ export class FightScene {
       "div",
       { class: "fight-layer", id: "fight-layer", role: "group", "aria-label": this.t("fight.label") },
       h("div", { class: "fight-bar" }, this.statusLine, this.skipButton, this.speedButton, this.backButton, this.leaveButton),
-      h("div", { class: "fight-field" }, sides.left, sides.right),
+      h("div", { class: "fight-field" }, sides.right, sides.left),
       this.lines,
     );
     this.host.append(this.layer);

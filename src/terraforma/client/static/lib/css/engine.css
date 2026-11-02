@@ -118,19 +118,24 @@ body.play { height: 100dvh; min-height: 0; overflow: hidden; }
 .fight-bar { display: flex; align-items: center; gap: 4px; padding: 3px 4px; background: #0c0f14; }
 .fight-bar .fight-round { margin-right: auto; font-weight: 600; }
 .fight-bar button { font-size: 9px; padding: 1px 6px; }
-.fight-field { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 6px; min-height: 0; }
-.fight-side { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; align-content: start; }
-.fighter { position: relative; display: grid; grid-template-columns: 1fr auto; gap: 1px 3px; padding: 3px 4px; border: 1px solid #3a4452; border-radius: 3px; background: #1d2530; }
-.fighter[data-side="right"] { background: #2a1e22; border-color: #523a42; }
-.fighter-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fighter-bar { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: #0c0f14; overflow: hidden; }
+/* The stage: the other side stands up the stage, the viewer's own side at the bottom, a row for each group (the formation of DragonStar). */
+.fight-field { position: relative; display: flex; flex-direction: column; justify-content: space-between; gap: 2px; padding: 2px 6px; min-height: 0; background: linear-gradient(#1b2433 0 45%, #26331f 45% 100%); }
+.fight-side { display: flex; flex-direction: column; gap: 1px; }
+.fight-side.left { flex-direction: column-reverse; }
+.fight-group { position: relative; display: flex; justify-content: center; align-items: flex-end; gap: 10px; min-height: 48px; }
+.fight-group-tag { position: absolute; left: 0; top: 0; padding: 0 3px; border-radius: 2px; background: #0c0f14; color: #aeb8c4; font-size: 8px; }
+.fight-side[data-groups="2"] .fight-group, .fight-side[data-groups="3"] .fight-group { min-height: 40px; }
+.fight-group[data-size="5"] .fighter[data-line="1"], .fight-group[data-size="6"] .fighter[data-line="1"] { transform: translateY(-10px); }
+.fighter { position: relative; display: grid; grid-template-columns: 1fr auto; align-content: end; gap: 0 3px; width: 64px; padding: 1px 2px; border: 1px solid transparent; border-radius: 3px; background: transparent; text-align: center; }
+.fighter-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 8px; text-align: left; }
+.fighter-bar { grid-column: 1 / -1; height: 3px; border-radius: 2px; background: #0c0f14; overflow: hidden; }
 .fighter-fill { display: block; height: 100%; background: #58b368; }
 .fighter[data-side="right"] .fighter-fill { background: #c4584c; }
-.fighter-hp { font-size: 8px; color: #aeb8c4; }
+.fighter-hp { font-size: 7px; color: #aeb8c4; text-align: left; }
 .fighter-mark { font-size: 8px; text-align: right; }
-.fighter-sprite { grid-column: 1 / -1; justify-self: center; width: 48px; height: 48px; image-rendering: pixelated; }
+.fighter-sprite { grid-column: 1 / -1; justify-self: center; order: -1; width: 40px; height: 40px; image-rendering: pixelated; }
 .join-offer { margin-top: 0.5rem; padding: 0.5rem; border: 1px solid #f2c94c; border-radius: 3px; }
-.fight-float { position: absolute; right: 4px; top: -2px; font-weight: 700; pointer-events: none; }
+.fight-float { position: absolute; right: 4px; top: 0; font-weight: 700; pointer-events: none; }
 .fight-float.damage { color: #ff7b6b; }
 .fight-float.heal { color: #7be08a; }
 .fight-float.miss { color: #d9d9d9; }
