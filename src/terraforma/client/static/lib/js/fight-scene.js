@@ -18,7 +18,11 @@ import { playerSource } from "./fight-source.js";
 const SPEEDS = [1, 2, 4];
 const READ_MS = 650; // how long an event stays before the next at normal speed
 const MOVE_MS = 260; // how long one movement takes at normal speed
-const SPRITE = 48; // the size of a fighter's picture on the card (the sprite sheet's frame is scaled to it)
+// The fight is drawn at twice the stage's resolution (see engine.css), and a fighter's picture at a whole multiple of its sheet's frame so the
+// pixels stay square: three times with one row of fighters on each side, twice when there are more rows (a 32 pixel frame is 96 or 64).
+const SPRITE_BIG = 3;
+const SPRITE_SMALL = 2;
+const SPRITE_FRAME = 32; // (what a fighter's picture is sized for until its sheet has loaded and says its frame)
 // The animation a fighter plays for what happens to it (an acting fighter's own is named by the model: attack_close, skill, spell, item).
 const CUES = { damage: "hit", died: "die", fled: "flee" };
 
@@ -37,6 +41,7 @@ export class FightScene {
     this.model = null;
     this.link = null;
     this.cards = new Map();
+    this.factor = SPRITE_BIG;
     this.menu = new FightMenu(this);
     this.queue = [];
     this.playing = false;
@@ -305,6 +310,9 @@ export class FightScene {
     // the other side stands further up the stage, facing the viewer.
     const sides = { left: h("div", { class: "fight-side left" }), right: h("div", { class: "fight-side right" }) };
     const rows = new Map();
+    const lines = { left: new Set(), right: new Set() };
+    for (const fighter of this.model.fighters.values()) lines[this.#side(fighter)].add(`${fighter.party}.${fighter.group}`);
+    this.factor = Math.max(lines.left.size, lines.right.size) > 1 ? SPRITE_SMALL : SPRITE_BIG;
     for (const [key, fighter] of this.model.fighters) {
       const side = this.#side(fighter);
       const group = `${side}:${fighter.party}.${fighter.group}`;
@@ -350,7 +358,7 @@ export class FightScene {
 
   /** The place on a card where a fighter's picture goes once it has loaded (a fighter whose picture fails to load stays a plain card). */
   #spot(key) {
-    const canvas = h("canvas", { class: "fighter-sprite", width: SPRITE, height: SPRITE, "aria-hidden": "true", hidden: true });
+    const canvas = h("canvas", { class: "fighter-sprite", width: SPRITE_FRAME * this.factor, height: SPRITE_FRAME * this.factor, "aria-hidden": "true", hidden: true });
     this.sprites.set(key, { canvas, loaded: null, frame: 0, player: null, cue: null, hold: false });
     return canvas;
   }
@@ -372,6 +380,9 @@ export class FightScene {
         const loaded = await this.shell.art.load(art).catch(() => null);
         if (!loaded?.source || run !== this.run || this.sprites.get(key) !== sprite) return;
         sprite.loaded = loaded;
+        const [width, height] = loaded.frame ?? [SPRITE_FRAME, SPRITE_FRAME];
+        sprite.canvas.width = width * this.factor; // (a whole multiple of the sheet's frame)
+        sprite.canvas.height = height * this.factor;
         sprite.frame = typeof art === "object" ? (art.frame ?? 0) : 0;
         sprite.player = loaded.animations && art.animations && !reducedMotion() ? loaded.animations.play("base", { direction: this.#view(fighter) }) : null;
         sprite.canvas.hidden = false;
@@ -403,12 +414,12 @@ export class FightScene {
       const player = sprite.cue ?? sprite.player;
       const shows = sprite.hold ? player.frameAt(Infinity) : player.frameAt(); // (a held death shows its last frame)
       sprite.shown = `${player.name}:${shows.index}`;
-      drawFrame(context, loaded, shows.frame, 0, 0, SPRITE, SPRITE, shows.ops);
+      drawFrame(context, loaded, shows.frame, 0, 0, canvas.width, canvas.height, shows.ops);
     } else if (loaded.frame) {
       const rect = frameRect(loaded, sprite.frame);
-      context.drawImage(loaded.source, rect.x, rect.y, rect.w, rect.h, 0, 0, SPRITE, SPRITE);
+      context.drawImage(loaded.source, rect.x, rect.y, rect.w, rect.h, 0, 0, canvas.width, canvas.height);
     } else {
-      context.drawImage(loaded.source, 0, 0, SPRITE, SPRITE);
+      context.drawImage(loaded.source, 0, 0, canvas.width, canvas.height);
     }
   }
 
