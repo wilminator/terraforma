@@ -24,3 +24,17 @@ def test_the_viewers_side_stands_below_the_foe_and_each_group_is_a_numbered_row(
         box = card.bounding_box()
         assert stage["x"] <= box["x"] and box["x"] + box["width"] <= stage["x"] + stage["width"]
         assert stage["y"] <= box["y"] and box["y"] + box["height"] <= stage["y"] + stage["height"]
+
+
+def test_the_fight_is_drawn_at_twice_the_stages_resolution_and_pictures_at_a_whole_multiple_of_their_frame(page, live_server):
+    into_the_marsh(page, live_server)
+    layer = page.locator("#fight-layer")
+    expect(page.locator(".fighter-sprite").first).to_be_visible()
+    size = layer.evaluate("(el) => [el.offsetWidth, el.offsetHeight]")
+    assert size == [960, 540], "the layer has its own design resolution, twice the stage's"
+    shown = layer.bounding_box()
+    stage = page.locator("#stage").bounding_box()
+    assert abs(shown["width"] - stage["width"]) < 1 and abs(shown["height"] - stage["height"]) < 1, "and is scaled back to fill the stage"
+    # (the example's fighters are drawn on 32 pixel frames; one row of fighters on each side, so three times)
+    sprite = page.locator(".fighter-sprite").first.evaluate("(el) => [el.width, el.height]")
+    assert sprite == [96, 96]
