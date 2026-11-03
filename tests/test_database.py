@@ -114,6 +114,14 @@ async def test_passwords_are_stored_as_argon2id(db):
     assert "correct horse battery" not in account.password_hash
 
 
+async def test_the_site_hashes_passwords_with_the_rfc_9106_settings(db, real_hasher):
+    """The other tests run on a cheap hasher (tests/conftest.py); this one checks the strength the site really uses."""
+    account = await create_account(db, "Mike", "correct horse battery", email="mike@example.com")
+    assert "$argon2id$v=19$m=65536,t=3,p=4$" in account.password_hash
+    assert (await authenticate(db, "Mike", "correct horse battery")) is account
+    assert (await authenticate(db, "Mike", "a different long password")) is None
+
+
 @pytest.mark.parametrize(
     ("username", "password", "email"),
     [
