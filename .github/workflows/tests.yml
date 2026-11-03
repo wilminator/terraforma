@@ -9,11 +9,33 @@ on:
     branches: [main]
   pull_request:
 
+# A newer push to the same pull request cancels the older run (its result is stale, and the minutes are saved).
+# Runs on main are never cancelled, so every merge keeps its own result.
+concurrency:
+  group: tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # Decides whether the test jobs are needed at all (not for a change that only touches license texts, CLAUDE.md or docs/).
+  # The jobs are skipped rather than the workflow, so the `test` check below still reports and branch protection is satisfied.
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.changes.outputs.code }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: changes
+        uses: ./.github/actions/changes
+
   # Builds the virtual environment when pyproject.toml (or Python) changed, and saves it for the
   # jobs below, which wait for it and only restore it.
   environment:
     name: environment
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -112,15 +134,18 @@ jobs:
       - run: pytest -n auto -m "db and ${{ matrix.category }}"
 
   # The one check to require in branch protection: it passes only when every job above did.
-  # (A skipped or cancelled job counts as a failure, so nothing slips through.)
+  # (A skipped or cancelled job counts as a failure, so nothing slips through.) The one exception is a change
+  # that only touched notes: `changes` says so, every test job is skipped, and this check passes.
   test:
     name: test
     if: always()
-    needs: [environment, no-database, sqlite, postgres, mysql]
+    needs: [changes, environment, no-database, sqlite, postgres, mysql]
     runs-on: ubuntu-latest
     steps:
       - name: Every test job must have passed
         run: |
+          test "${{ needs.changes.result }}" = success
+          if [ "${{ needs.changes.outputs.code }}" = false ]; then echo "Only notes changed: no tests needed."; exit 0; fi
           test "${{ needs.environment.result }}" = success
           test "${{ needs.no-database.result }}" = success
           test "${{ needs.sqlite.result }}" = success

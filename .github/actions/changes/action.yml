@@ -1,0 +1,30 @@
+name: Did any file besides plain notes change?
+description: >-
+  Sets `code` to "false" when a pull request touches only files that no test reads or runs (the license texts, CLAUDE.md,
+  ASSET-POLICY.md, docs/), and to "true" otherwise. Pushes to main always say "true". Check the code out with
+  `fetch-depth: 0` first. README.md and every ASSETS.md are NOT on the list: tests read them.
+outputs:
+  code:
+    description: '"true" when the test jobs should run, "false" when they can be skipped.'
+    value: ${{ steps.diff.outputs.code }}
+runs:
+  using: composite
+  steps:
+    - id: diff
+      shell: bash
+      env:
+        EVENT: ${{ github.event_name }}
+        BASE: ${{ github.event.pull_request.base.sha }}
+        HEAD: ${{ github.event.pull_request.head.sha }}
+      run: |
+        code=true
+        if [ "$EVENT" = pull_request ]; then
+          # Three dots: the files this branch changed since it left the base, not what the base gained meanwhile.
+          changed=$(git diff --name-only "$BASE...$HEAD")
+          echo "Changed files:"; echo "$changed"
+          # Any changed file that is not a plain note makes the answer "true". An empty diff stays "true" (be safe).
+          if [ -n "$changed" ] && ! echo "$changed" | grep -qvE '^(CLAUDE\.md|ASSET-POLICY\.md|LICENSE[^/]*|docs/.*)$'; then
+            code=false
+          fi
+        fi
+        echo "code=$code" >> "$GITHUB_OUTPUT"

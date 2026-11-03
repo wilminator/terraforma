@@ -10,11 +10,31 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, labeled]
 
+# A newer push to the same pull request cancels the older run. Runs on main are never cancelled. Another label being added
+# (not browser-all-databases) gets a group of its own, so it can neither cancel a running test nor be cancelled itself.
+concurrency:
+  group: browser-${{ github.event.pull_request.number || github.ref }}${{ github.event.action == 'labeled' && github.event.label.name != 'browser-all-databases' && format('-label-{0}', github.run_id) || '' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # Not needed for a change that only touches license texts, CLAUDE.md or docs/ (the skipped jobs count as passed).
+  changes:
+    name: changes
+    if: github.event.action != 'labeled' || github.event.label.name == 'browser-all-databases'
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.changes.outputs.code }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: changes
+        uses: ./.github/actions/changes
+
   environment:
     name: environment
-    # Another label being added is no reason to run again.
-    if: github.event.action != 'labeled' || github.event.label.name == 'browser-all-databases'
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
