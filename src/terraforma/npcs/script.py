@@ -40,6 +40,11 @@ its command, followed by comma separated parameters. Text outside tags is shown.
                          (the label if none is active or its time ran out)
     slot_template,slot,template,label  the label unless the quest the slot holds now was made from that quest template (a template's key from
                          quest_templates.json): how a dialog sends a team to the dungeon of the quest the slot is offering this period
+    slot_supply,slot,settlement,material,label  the label unless the quest the slot holds now is a supply quest (``quests.needs``) for that settlement
+                         and material: how a board tells which town's goods are wanted, and says so, before it offers to take them
+    slot_supply_deliver,slot,item,label  hands in the goods of the supply quest the slot holds: takes the amount the quest asks of the item from the party's
+                         heroes and brings it to the settlement's supply (only what fits under the capacity is taken); the label, with nothing taken, if
+                         the slot holds no supply quest, the party has less than asked, or nothing fits. The reward is the dialog's (``add_item``)
     slot_boss,slot,fight|won|lost,label  the boss fight of a quest the engine made (``quests.bossfight``; the quest's spec holds promoted bosses): ``fight``
                          starts the party's fight against them (the label if the team took no such quest of the slot, or the party cannot
                          fight now: apart in a town, a hero already in a fight) and leaves the dialog; ``won`` and ``lost`` finish the team's quest
@@ -113,7 +118,7 @@ from dataclasses import dataclass
 SCOPES = ("any", "lead", "each")
 OPS = ("eq", "ne", "lt", "le", "gt", "ge")
 #: The tags that read or change the game's state, which the engine itself runs (through ``advance``'s $state).
-STATE_TAGS = ("set_job", "lost", "have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker", "add_guild_points", "set_guild_rank", "guild_points", "guild_rank", "guild_rank_any", "party_gate", "open_party", "add_status", "has_status", "have_tokens", "spend_tokens", "add_tokens", "add_gold", "warp", "warp_visited", "enter_instance", "complete_instance", "leave_instance", "instance_won", "weekly_quest", "slot_quest", "slot_template", "slot_boss", "npc_fight", "npc_fight_result", "manual_quest", "supply_level", "supply_add", "supply_take", "realm_strength", "realm_nudge")
+STATE_TAGS = ("set_job", "lost", "have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker", "add_guild_points", "set_guild_rank", "guild_points", "guild_rank", "guild_rank_any", "party_gate", "open_party", "add_status", "has_status", "have_tokens", "spend_tokens", "add_tokens", "add_gold", "warp", "warp_visited", "enter_instance", "complete_instance", "leave_instance", "instance_won", "weekly_quest", "slot_quest", "slot_template", "slot_boss", "slot_supply", "slot_supply_deliver", "npc_fight", "npc_fight_result", "manual_quest", "supply_level", "supply_add", "supply_take", "realm_strength", "realm_nudge")
 MAX_TEXT = 20000
 #: How many guilds one ``guild_rank_any`` may list.
 MAX_GUILD_CHOICES = 8
@@ -310,6 +315,17 @@ def check_tag(parts: list[str]) -> list[str]:
         count(3)
         _name(command, args[0], "an event key")
         _one_of(command, args[1], ("enter", "finish_win", "finish_lose"), "the action")
+        return [args[2]]
+    elif command == "slot_supply":
+        count(4)
+        _name(command, args[0], "a quest slot key")
+        _name(command, args[1], "a settlement key")
+        _name(command, args[2], "a material key")
+        return [args[3]]
+    elif command == "slot_supply_deliver":
+        count(3)
+        _name(command, args[0], "a quest slot key")
+        _name(command, args[1], "an item key")
         return [args[2]]
     elif command == "slot_template":
         count(3)
