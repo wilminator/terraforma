@@ -297,6 +297,42 @@ class DialogState:
         key = await self.session.scalar(select(QuestTemplate.key).where(QuestTemplate.id == held.template_id))
         return "" if key == template else label
 
+    async def _held_supply(self, slot: str) -> dict | None:
+        """What the supply quest the slot holds now asks (``{"settlement", "material", "amount"}``), or None if the slot holds no supply quest."""
+        hooks = self.session.info.get("rotating_quests") or RotatingQuests()
+        try:
+            held = await rotation.current(self.session, hooks, await rotation.get_slot(self.session, slot))
+        except rotation.RotationError as error:
+            raise ScriptError(str(error)) from error
+        if held is None or held.template_id is None:
+            return None
+        spec = await self.session.scalar(select(QuestTemplate.spec).where(QuestTemplate.id == held.template_id))
+        goal = spec.get("supply") if isinstance(spec, dict) else None
+        return goal if isinstance(goal, dict) else None
+
+    async def slot_supply(self, slot: str, settlement: str, material: str, label: str) -> str:
+        """The label unless the quest the slot holds now is a supply quest (``quests.needs``) for that settlement and material."""
+        goal = await self._held_supply(slot)
+        return "" if goal is not None and goal.get("settlement") == settlement and goal.get("material") == material else label
+
+    async def slot_supply_deliver(self, slot: str, item: str, label: str) -> str:
+        """Hands in a supply quest's goods: takes the quest's amount of $item from the party's heroes and brings it to the settlement
+        (``quests.needs.deliver``). All or nothing for the hero, except that only what fits under the settlement's capacity is taken. The label,
+        with nothing taken, if the slot holds no supply quest, the hero has less than the quest asks, or nothing fits (the settlement is full or has fallen)."""
+        from ..quests import needs
+
+        goal = await self._held_supply(slot)
+        if goal is None:
+            return label
+        found = await self.item(item)
+        have = sum(stack.qty for stack, other in await inventory.stacks(self.session, self.hero) if other.id == found.id)
+        if have < goal["amount"]:
+            return label
+        fitted = await needs.deliver(self.session, {"supply": goal})
+        if fitted <= 0:
+            return label
+        return await self.remove_item(item, str(fitted), label)
+
     # --- the guild --------------------------------------------------------------------------------------------------------
 
     async def _standing_team(self) -> int:

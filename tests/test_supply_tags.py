@@ -122,3 +122,73 @@ def test_a_dialog_that_names_a_supply_the_seed_has_checks_and_one_that_does_not_
             check_seed(seed("`supply_add,nowhere,iron,5,no``label,no`", where))
         with pytest.raises(ContentError, match="names 'gold' at 'capital', which that settlement doesn't keep"):
             check_seed(seed("`supply_take,capital,gold,5,no``label,no`", where))
+
+
+# --- the supply quest a slot holds ------------------------------------------------------------------------------------------
+
+def test_the_slot_supply_tags_are_checked_when_the_text_is_placed():
+    parse("`slot_supply,rank-e,town,herbs,no``slot_supply_deliver,rank-e,potion,no``label,no`")
+    for bad in (
+        "`slot_supply,rank-e,town,herbs`",  # too few parameters
+        "`slot_supply,,town,herbs,end`",  # no slot
+        "`slot_supply,rank-e,,herbs,end`",  # no settlement
+        "`slot_supply_deliver,rank-e,potion`",  # too few parameters
+        "`slot_supply_deliver,rank-e,,end`",  # no item
+        "`slot_supply_deliver,rank-e,potion,nowhere`",  # label never defined
+    ):
+        with pytest.raises(ScriptError):
+            parse(bad)
+
+
+async def a_supply_board(db, amount=10, level=40):
+    """A party, a town keeping $level of 100 herbs, and a slot whose only quest asks for $amount herbs for the town."""
+    from .test_rotating_quests import Hooks, a_world, template
+
+    goal = {"supply": {"settlement": "town", "material": "herbs", "amount": amount}, "reason": "supply"}
+    await a_world(db, template("need-1", spec=goal))
+    hero = (await a_party(db)).heroes[0]
+    town, row = await a_town(db, hero, level=level)
+    db.info["rotating_quests"] = Hooks()
+    return hero, town, row
+
+
+async def test_a_board_tells_which_town_the_slots_supply_quest_is_for(db):
+    hero, _town, _row = await a_supply_board(db)
+    board = "`slot_supply,rank-s,town,herbs,no`Town needs herbs.`end``label,no`Nothing for me."
+    assert await says(db, hero, board) == "Town needs herbs."
+    assert await says(db, hero, board.replace("town,herbs", "town,iron")) == "Nothing for me."
+    assert await says(db, hero, board.replace("town,herbs", "elsewhere,herbs")) == "Nothing for me."
+
+
+async def test_handing_in_the_goods_takes_the_amount_asked_and_fills_the_supply(db):
+    from sqlalchemy import select
+
+    from terraforma.heroes.models import HeroItem
+
+    hero, _town, row = await a_supply_board(db, amount=10, level=40)
+    await says(db, hero, "`add_item,potion,12,no``label,no`")
+    hand_in = "`slot_supply_deliver,rank-s,potion,no`Delivered.`end``label,no`Not enough."
+    assert await says(db, hero, hand_in) == "Delivered."
+    assert (await supply.settle(db, _town, row)).level == 50, "the quest asked for 10"
+    left = sum((await db.scalars(select(HeroItem.qty).where(HeroItem.hero_id == hero.id))).all())
+    assert left == 2, "ten of the twelve were taken"
+    assert await says(db, hero, hand_in) == "Not enough.", "two are not the ten asked for"
+
+
+async def test_handing_in_goes_to_the_label_when_nothing_fits_under_the_capacity(db):
+    hero, _town, _row = await a_supply_board(db, amount=10, level=100)
+    await says(db, hero, "`add_item,potion,12,no``label,no`")
+    assert await says(db, hero, "`slot_supply_deliver,rank-s,potion,no`Delivered.`end``label,no`Full already.") == "Full already."
+    assert await says(db, hero, "`remove_item,potion,12,gone`Still had them.`end``label,gone`Gone.") == "Still had them.", "nothing was taken"
+
+
+async def test_handing_in_goes_to_the_label_when_the_slot_holds_no_supply_quest(db):
+    from .test_rotating_quests import Hooks, a_world, template
+
+    await a_world(db, template("dragon"))  # a boss, not a supply quest
+    hero = (await a_party(db)).heroes[0]
+    await a_town(db, hero, level=40)
+    db.info["rotating_quests"] = Hooks()
+    await says(db, hero, "`add_item,potion,12,no``label,no`")
+    assert await says(db, hero, "`slot_supply_deliver,rank-s,potion,no`Delivered.`end``label,no`No such quest.") == "No such quest."
+    assert await says(db, hero, "`slot_supply,rank-s,town,herbs,no`Wanted.`end``label,no`Not wanted.") == "Not wanted."
