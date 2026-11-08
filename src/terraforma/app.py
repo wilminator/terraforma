@@ -23,6 +23,7 @@ from .accounts.routes import router as account_router
 from .accounts.twofa_routes import admin_router, router as twofa_router
 from .accounts.tokens import Tokens
 from .api.security import TolerantSessionMiddleware
+from .names.screen import build_screener
 from .db.session import make_engine, make_sessionmaker
 from .fights import live
 from .fights.channels import FightChannels
@@ -158,6 +159,7 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
     app.state.asset_dirs = integrated.asset_dirs
     app.state.fights = FightChannels()
     app.state.http_client = http_client
+    app.state.screener = build_screener(settings, game, lambda: app.state.http_client)
     app.state.tokens = Tokens(settings.session_secret)
     app.state.mailer = mailer or default_mailer(settings)
     app.add_middleware(

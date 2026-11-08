@@ -28,6 +28,7 @@ from ..towns.hooks import Towns
 from ..fights.rules import Rules
 from ..gamestate.document import Section
 from ..models import Account
+from ..names.screen import Screener
 from ..playtime import service as playtime
 from .security import SESSION_ACCOUNT, SESSION_VERSION, csrf_matches
 
@@ -231,6 +232,12 @@ async def viewer_id(request: Request, db: Db) -> int | None:
     return account.id
 
 
+def get_screener(request: Request) -> Screener | None:
+    """Who screens the names players type (None: nobody; the game has no filter and no provider has ``name_screen`` on)."""
+    return getattr(request.app.state, "screener", None)
+
+
+Screen = Annotated[Screener | None, Depends(get_screener)]
 CurrentAccount = Annotated[Account, Depends(current_account)]
 Viewer = Annotated[int | None, Depends(viewer_id)]
 ActingAccount = Annotated[Account, Depends(acting_account)]

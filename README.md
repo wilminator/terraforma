@@ -33,6 +33,8 @@ def app():
 
 To serve it, run `python -m terraforma serve my_game:app`. It checks the settings, brings the database up to date, then serves.
 
+A game's other public interfaces include `Game(name_screen=...)`, its own word filter for player-typed names (see "Screening names"); like the other `Game` hooks, changing it changes what the license exception covers.
+
 For tests, add `pytest_plugins = ["terraforma.testing"]` to the game's `tests/conftest.py`. Override the `game` fixture there, and `app_client` serves your game on every database under test.
 
 ## Add-ons
@@ -186,6 +188,18 @@ A provider that keeps the person's account for several games (the shared account
 The flow is the authorization code flow with PKCE, a `state` and a `nonce`, all kept in the signed session cookie and used once. The server trades the code for the ID token itself, over TLS, and checks the issuer, the audience, the expiry and the nonce; it does not read a signature, which OpenID Connect allows for a token received straight from the token endpoint. Calls: `GET /api/external/providers` (names and labels), `GET /api/external/<name>/start?next=play|profile` (or `?next=oidc&request=<the sign-in provider's signed request>`, which the login page passes on when a site's player came through `/oidc/authorize`: the request is checked, kept in the session, and handed back in the redirect as `next=oidc&request=...` so the page carries on to `/oidc/resume`, also after the first-sign-in and two-factor steps), `GET /api/external/<name>/callback` (always ends in a redirect to `/account/?external=<outcome>`, where `<outcome>` is `done`, `twofa`, `finish`, `linked` or `error` with a `reason`), `GET /api/external/pending`, `POST /api/external/finish`, `POST /api/external/2fa`, `GET /api/external/identities`, `POST /api/external/<name>/link`, `POST /api/external/unlink` and `POST /api/external/password`. Every call that changes an account needs the login and the CSRF token, as the other account calls do.
 
 The rules: every login has a local account. A first sign-in uses the provider's email only when the provider calls it verified; the player then chooses a username and a handle (the handle cannot match the username or the email), and may set a password; the account is made at that step, so abandoning it leaves nothing behind. An email that already has an account never creates or links anything, and the answer does not say how that account signs in. Linking is an explicit action from the account page, needs a current two-factor code when two-factor login is on, and refuses a provider account another player has. Unlinking needs a current two-factor code when it is on and never removes the last way in: a player whose only way in is a provider sets a password first. Two-factor login applies to every way in, a provider sign-in included. A game that wants to hide the buttons leaves the providers out of `settings.toml`.
+
+## Screening names
+
+The names players type and others see (a hero, a team, an alliance, a player's public handle) can be checked before they are saved. Two judges, and either can refuse a name: the game's own word filter and the sign-in provider's name check. The check runs after the format check, so a badly formed name never costs a call. A refused name answers HTTP 422 with "That name isn't allowed. Please pick another." and never says why. Renaming is never blocked because the old name would fail, only the new name is checked.
+
+**The game's filter** (`Game(name_screen=...)`, a public interface the license exception covers): any object with `def is_unsafe(self, name: str) -> bool` (`terraforma.names.screen.NameFilter`). The engine ships no word list; that is game content. It runs first, with no network call, and sees the name as typed (after the format check).
+
+**The provider's check**: in the `[[external_providers]]` section of an `oidc` provider that offers one (the shared account service does) set `name_screen = true`; `name_api` is its base address (`<issuer>/api/names` when left out; https only, http for localhost), and at most one provider may have it on. The calls use the provider's `client_id` and `client_secret` as HTTP Basic: `POST <name_api>/check` with `{"name": "..."}` answers `{"safe": bool, "list_changed": "<time>"}`, and `GET <name_api>/list` answers `{"list_changed": "<time>"}`. Nothing is sent to any provider unless `name_screen = true`; the text of the name (nothing else about the player) goes to that provider and is never logged here.
+
+It fails open. The wait is 2 seconds with no retries; a network error, timeout, 5xx or 429 makes the answer "unknown" and the name is accepted on the game's filter alone; 5 failures in a row stop the calls for 60 seconds, a 429's `Retry-After` is honoured, and the engine makes at most 300 calls a minute (after which answers are "unknown"). A 401 or 403 means the id or secret in `settings.toml` is wrong: one error line an hour, and names are accepted unchecked. A tiny in-memory cache (5 minutes, 2000 names, spacing and case ignored) only stops the same text being asked twice, and is dropped when a newer `list_changed` is seen.
+
+Each stored name (`Account.handle`, `Hero`, `Team`, `Alliance`) has a nullable `screened_at_list`: the `list_changed` it passed the provider's check under, or empty when it did not (no provider, or an "unknown" answer). Nothing re-checks stored names yet.
 
 ## Second factors
 

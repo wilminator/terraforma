@@ -16,6 +16,8 @@ class Hero(Located, Timestamps, Base):
     # Kept as typed; unique per account ignoring case and spacing (see heroes.service).
     name: Mapped[str] = mapped_column(String(24))
     name_key: Mapped[str] = mapped_column(String(24))
+    # The word-list time (``names.screen``) the name last passed the provider's name check under; None: never checked that way.
+    screened_at_list: Mapped[str | None] = mapped_column(String(32))
     job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), index=True)
     level: Mapped[int] = mapped_column(Integer, default=1)
     xp: Mapped[int] = mapped_column(BigInteger, default=0)
@@ -34,6 +36,8 @@ class Team(Timestamps, Base):
     account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
     name: Mapped[str] = mapped_column(String(24))
     name_key: Mapped[str] = mapped_column(String(24))
+    # The word-list time (``names.screen``) the name last passed the provider's name check under; None: never checked that way.
+    screened_at_list: Mapped[str | None] = mapped_column(String(32))
     # Where gold lives is the game's decision (``terraforma.economy``); by default it is here, on the team.
     gold: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
     #: When the team was last selected to play (wall clock, seconds); None for a team never played. Alliances count a team active for a week after.

@@ -30,7 +30,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from ..api.deps import ActingAccount, CurrentAccount, Db, client_address, current_account, sign_in_of
+from ..api.deps import ActingAccount, CurrentAccount, Db, Screen, client_address, current_account, sign_in_of
 from ..api.security import start_session
 from ..models import Account
 from ..settings import ExternalProvider
@@ -271,7 +271,7 @@ async def pending(request: Request) -> dict:
 
 
 @router.post("/finish")
-async def finish(body: FinishRequest, request: Request, db: Db) -> dict:
+async def finish(body: FinishRequest, request: Request, db: Db, screen: Screen) -> dict:
     """Makes the account of a first sign-in, with the username and handle the player chose."""
     await limited(request, ratelimit.EXTERNAL_FINISH_BY_ADDRESS, client_address(request))
     signup = request.session.get(SESSION_SIGNUP)
@@ -286,6 +286,7 @@ async def finish(body: FinishRequest, request: Request, db: Db) -> dict:
             username=body.username,
             handle=body.handle,
             password=body.password,
+            screen=screen,
         )
     except (service.UsernameTaken, service.HandleTaken) as error:
         raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error

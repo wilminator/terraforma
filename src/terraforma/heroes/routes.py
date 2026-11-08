@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Path, status
 from pydantic import Field
 
 from ..accounts.routes import Strict
-from ..api.deps import ActingAccount, CurrentAccount, Db, GameAlliances, GameRoster, GameRules, GameStart
+from ..api.deps import ActingAccount, CurrentAccount, Db, GameAlliances, GameRoster, GameRules, GameStart, Screen
 from . import service
 
 router = APIRouter(prefix="/api")
@@ -74,9 +74,9 @@ async def heroes(account: CurrentAccount, db: Db) -> list[dict]:
 
 
 @router.post("/heroes/{hero_id}/rename")
-async def rename_hero(hero_id: Id, body: NameOnly, account: ActingAccount, db: Db) -> dict:
+async def rename_hero(hero_id: Id, body: NameOnly, account: ActingAccount, db: Db, screen: Screen) -> dict:
     try:
-        hero = await service.rename_hero(db, account, hero_id, body.name)
+        hero = await service.rename_hero(db, account, hero_id, body.name, screen)
     except service.HeroError as error:
         raise refuse(error) from error
     return {"id": hero.id, "name": hero.name}
@@ -114,21 +114,21 @@ async def teams(account: CurrentAccount, db: Db) -> list[dict]:
 
 
 @router.post("/teams", status_code=status.HTTP_201_CREATED)
-async def create_team(body: NewTeam, account: ActingAccount, db: Db, rules: GameRules, start: GameStart) -> dict:
+async def create_team(body: NewTeam, account: ActingAccount, db: Db, rules: GameRules, start: GameStart, screen: Screen) -> dict:
     """Makes a team, with its heroes if the browser sends them (at most the game's ``team_max``). A team with fewer than ``team_min``
     heroes is incomplete and cannot play until the player has filled it."""
     try:
         spot = await service.start_spot(db, account, start, body.start)
-        team = await service.save_team(db, account, body.name, [(each.name, each.job) for each in body.heroes], rules, spot)
+        team = await service.save_team(db, account, body.name, [(each.name, each.job) for each in body.heroes], rules, spot, screen)
     except service.HeroError as error:
         raise refuse(error) from error
     return next(entry for entry in await service.list_teams(db, account) if entry["id"] == team.id)
 
 
 @router.post("/teams/{team_id}/rename")
-async def rename_team(team_id: Id, body: NameOnly, account: ActingAccount, db: Db) -> dict:
+async def rename_team(team_id: Id, body: NameOnly, account: ActingAccount, db: Db, screen: Screen) -> dict:
     try:
-        team = await service.rename_team(db, account, team_id, body.name)
+        team = await service.rename_team(db, account, team_id, body.name, screen)
     except service.HeroError as error:
         raise refuse(error) from error
     return {"id": team.id, "name": team.name}
@@ -145,20 +145,20 @@ async def delete_team(team_id: Id, account: ActingAccount, db: Db, alliances: Ga
 
 
 @router.post("/teams/{team_id}/heroes", status_code=status.HTTP_201_CREATED)
-async def add_hero(team_id: Id, body: AddedHero, account: ActingAccount, db: Db, rules: GameRules, start: GameStart) -> dict:
+async def add_hero(team_id: Id, body: AddedHero, account: ActingAccount, db: Db, rules: GameRules, start: GameStart, screen: Screen) -> dict:
     """A new level 1 hero in the team's first free place, while the team has room (``team_max``)."""
     try:
-        hero = await service.add_new_hero(db, account, team_id, body.name, body.job, rules, start, body.start)
+        hero = await service.add_new_hero(db, account, team_id, body.name, body.job, rules, start, body.start, screen)
     except service.HeroError as error:
         raise refuse(error) from error
     return next(entry for entry in await service.list_heroes(db, account) if entry["id"] == hero.id)
 
 
 @router.post("/teams/{team_id}/heroes/{hero_id}/replace", status_code=status.HTTP_201_CREATED)
-async def replace_hero(team_id: Id, hero_id: Id, body: NewHero, account: ActingAccount, db: Db, roster: GameRoster) -> dict:
+async def replace_hero(team_id: Id, hero_id: Id, body: NewHero, account: ActingAccount, db: Db, roster: GameRoster, screen: Screen) -> dict:
     """Removes the hero and makes a new one in their place, if the game's roster rule allows it (refused by default)."""
     try:
-        hero = await service.replace_hero(db, account, team_id, hero_id, body.name, body.job, roster)
+        hero = await service.replace_hero(db, account, team_id, hero_id, body.name, body.job, roster, screen)
     except service.HeroError as error:
         raise refuse(error) from error
     return next(entry for entry in await service.list_heroes(db, account) if entry["id"] == hero.id)
