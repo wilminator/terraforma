@@ -124,8 +124,13 @@ class ExternalProvider(BaseModel):
     # true: the provider may tell this site that a person deleted their account there (POST <public_url>/api/external/<name>/events,
     # a signed "account deleted" message). Off by default. Only for kind "oidc".
     deletion_events: bool = False
+    # true: player-typed names (hero, team, alliance, handle) are sent to this provider's name check before they are saved, with the
+    # client id and secret above (README, "Screening names"). Off by default; at most one provider. Only for kind "oidc".
+    name_screen: bool = False
+    # The name check's base address; <issuer>/api/names when left out. Must be https.
+    name_api: str = ""
 
-    @field_validator("issuer", "authorization_endpoint", "token_endpoint", "jwks_uri")
+    @field_validator("issuer", "authorization_endpoint", "token_endpoint", "jwks_uri", "name_api")
     @classmethod
     def _is_a_web_address(cls, value: str | None, info) -> str | None:
         return value if value is None or value == "" else _web_address(value, info.field_name)
@@ -147,6 +152,8 @@ class ExternalProvider(BaseModel):
                 raise ValueError("authorization_endpoint and token_endpoint are set together or not at all")
             if self.deletion_events and self.authorization_endpoint and not self.jwks_uri:
                 raise ValueError("deletion_events with endpoints given here needs jwks_uri too")
+            if self.name_api and not self.name_screen:
+                raise ValueError("name_api is for name_screen = true")
             return self
         # Facebook and Steam have fixed addresses, so the settings that point elsewhere are mistakes, not options.
         for setting in ("issuer", "authorization_endpoint", "token_endpoint", "jwks_uri"):
@@ -156,6 +163,8 @@ class ExternalProvider(BaseModel):
             raise ValueError('scopes is only for kind "oidc"')
         if self.deletion_events:
             raise ValueError('deletion_events is only for kind "oidc"')
+        if self.name_screen or self.name_api:
+            raise ValueError('name_screen and name_api are only for kind "oidc"')
         if self.kind == "facebook" and not (self.client_id and self.client_secret):
             raise ValueError("client_id and client_secret are needed")
         if self.kind == "steam" and (self.client_id or self.client_secret):
@@ -229,6 +238,8 @@ class Settings(BaseModel):
         names = [provider.name for provider in value]
         if len(names) != len(set(names)):
             raise ValueError("two external_providers share a name")
+        if sum(provider.name_screen for provider in value) > 1:
+            raise ValueError("only one of the external_providers may have name_screen = true")
         return value
 
     # A game whose store grants Challenge Tokens and items sets this (at least 32 characters) and the store's backend calls

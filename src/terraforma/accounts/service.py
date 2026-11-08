@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import wallclock
 from ..models import Account, ExternalIdentity
+from ..names.screen import Screener, screen_name
 
 USERNAME = re.compile(r"^[A-Za-z0-9_.-]{3,32}$")
 # Deliberately simple: one @, something on each side, a dot in the domain.
@@ -72,16 +73,18 @@ def check_handle(handle: str, *, username: str, email: str | None) -> None:
         raise AccountError("your handle is public, so it can't match your username or email address")
 
 
-async def set_handle(session: AsyncSession, account: Account, handle: str) -> Account:
+async def set_handle(session: AsyncSession, account: Account, handle: str, screen: Screener | None = None) -> Account:
     """Sets the player's public handle. An email change must check the handle again (check_handle)."""
     handle = handle.strip()
     check_handle(handle, username=account.username, email=account.email)
+    stamp = await screen_name(screen, handle)
     key = handle_key(handle)
     taken = await session.scalar(select(Account.id).where(Account.handle_key == key, Account.id != account.id))
     if taken:
         raise HandleTaken("another player has that handle")
     account.handle = handle
     account.handle_key = key
+    account.screened_at_list = stamp
     await session.flush()
     return account
 
@@ -234,6 +237,7 @@ async def create_external_account(
     username: str,
     handle: str,
     password: str | None = None,
+    screen: Screener | None = None,
 ) -> Account:
     """A new account for someone who signed in with a provider, once they have chosen a username and a handle.
 
@@ -245,6 +249,7 @@ async def create_external_account(
     email = check_email(email)
     handle = handle.strip()
     check_handle(handle, username=username, email=email)
+    stamp = await screen_name(screen, handle)
     password_hash = None
     if password is not None:
         check_password(password)
@@ -266,6 +271,7 @@ async def create_external_account(
         email_confirmed_at=wallclock.now(),
         handle=handle,
         handle_key=handle_key(handle),
+        screened_at_list=stamp,
     )
     session.add(account)
     await session.flush()

@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from pydantic import Field
 
-from ..api.deps import ActingAccount, CurrentAccount, Db, client_address, current_account, sign_in_of
+from ..api.deps import ActingAccount, CurrentAccount, Db, Screen, client_address, current_account, sign_in_of
 from ..api.security import SESSION_CSRF, start_session
 from ..mail import Mail
 from ..models import Account
@@ -172,10 +172,10 @@ async def session(request: Request, db: Db) -> dict:
 
 
 @router.post("/handle")
-async def set_handle(body: HandleRequest, account: ActingAccount, db: Db) -> dict:
+async def set_handle(body: HandleRequest, account: ActingAccount, db: Db, screen: Screen) -> dict:
     """Sets the name other players see: never the username or email address."""
     try:
-        await service.set_handle(db, account, body.handle)
+        await service.set_handle(db, account, body.handle, screen)
     except service.HandleTaken as error:
         raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
     except service.AccountError as error:

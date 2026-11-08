@@ -15,6 +15,7 @@ from .addons import AddOn
 from .disuse.hooks import Disuse
 from .economy import Economy, TeamGold
 from .fights.rules import Rules
+from .names.screen import NameFilter
 from .gamestate.document import Section
 from .alliances.hooks import Alliances
 from .relations.hooks import Relations
@@ -103,5 +104,8 @@ class Game:
     # Two things about logging in: how long a browser that proved a second factor may skip it, and the note a player with a single
     # second factor sees (see accounts.hooks).
     sign_in: SignIn = field(default_factory=SignIn)
+    # The game's own word filter for the names players type (hero, team, alliance, handle): ``is_unsafe(name)`` is true for a name that
+    # must be refused. The engine ships no word list. None, by default (see README, "Screening names").
+    name_screen: NameFilter | None = None
     # Where a new team starts: the engine's hub, unless the game offers places to pick from (the capitals).
     start: Start = field(default_factory=Start)

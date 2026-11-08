@@ -10,7 +10,7 @@ from pydantic import Field
 
 from ..accounts import ratelimit
 from ..accounts.routes import Strict, limited
-from ..api.deps import ActingAccount, CurrentAccount, Db, GameAlliances, GameRelations
+from ..api.deps import ActingAccount, CurrentAccount, Db, GameAlliances, GameRelations, Screen
 from ..heroes import service as heroes
 from ..heroes.routes import Id
 from ..heroes.routes import refuse as refuse_hero
@@ -101,11 +101,11 @@ async def my_alliances(account: CurrentAccount, db: Db) -> dict:
 
 
 @router.post("/alliances", status_code=status.HTTP_201_CREATED)
-async def found(body: Found, request: Request, account: ActingAccount, db: Db, alliances: GameAlliances) -> dict:
+async def found(body: Found, request: Request, account: ActingAccount, db: Db, alliances: GameAlliances, screen: Screen) -> dict:
     await limited(request, ratelimit.ALLIANCE_BY_ACCOUNT, str(account.id))
     try:
         team = await heroes.own_team(db, account, body.team_id)
-        alliance = await service.found(db, alliances, team, body.name)
+        alliance = await service.found(db, alliances, team, body.name, screen)
         return await service.view(db, alliances, alliance, team.id)
     except FAILURES as error:
         raise refuse(error) from error

@@ -18,6 +18,8 @@ class Alliance(Timestamps, Base):
     # Kept as typed; unique ignoring case and spacing.
     name: Mapped[str] = mapped_column(String(NAME_MAX))
     name_key: Mapped[str] = mapped_column(String(NAME_MAX), unique=True)
+    # The word-list time (``names.screen``) the name last passed the provider's name check under; None: never checked that way.
+    screened_at_list: Mapped[str | None] = mapped_column(String(32))
     #: The treasury: gold the member teams have given and the alliance has not spent (``alliances.treasury``).
     gold: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
     #: Whole percents of the gold its member teams earn that the alliance keeps: from fighting, and from selling on a market
