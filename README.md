@@ -33,7 +33,7 @@ def app():
 
 To serve it, run `python -m terraforma serve my_game:app`. It checks the settings, brings the database up to date, then serves.
 
-A game's other public interfaces include `Game(name_screen=...)`, its own word filter for player-typed names (see "Screening names"); like the other `Game` hooks, changing it changes what the license exception covers.
+A game's other public interfaces include `Rules.screen_name`, the check of player-typed names (see "Screening names"); like the other `Rules` and `Game` hooks, changing it changes what the license exception covers.
 
 For tests, add `pytest_plugins = ["terraforma.testing"]` to the game's `tests/conftest.py`. Override the `game` fixture there, and `app_client` serves your game on every database under test.
 
@@ -191,15 +191,27 @@ The rules: every login has a local account. A first sign-in uses the provider's 
 
 ## Screening names
 
-The names players type and others see (a hero, a team, an alliance, a player's public handle) can be checked before they are saved. Two judges, and either can refuse a name: the game's own word filter and the sign-in provider's name check. The check runs after the format check, so a badly formed name never costs a call. A refused name answers HTTP 422 with "That name isn't allowed. Please pick another." and never says why. Renaming is never blocked because the old name would fail, only the new name is checked.
+The names players type and others see (a hero, a team, an alliance, a player's public handle) are checked when they are saved or changed. **A name is never refused for failing the check.** It is saved, and the engine stores whether it passed in a nullable `name_ok` column beside it (`Account.handle`, `Hero`, `Team`, `Alliance`): true when it passed, false when somebody said it is unsafe, empty when it was not checked (no screener, no provider, or an unknown answer). The check itself is the game's rules (`Rules.screen_name`); by default it asks the sign-in provider's name check, and a game can add its own words or replace it. The check runs after the format check, so a badly formed name never costs a call, and it sees only the new name on a rename (the column is overwritten, so renaming from an unsafe name to a clean one makes it true again).
 
-**The game's filter** (`Game(name_screen=...)`, a public interface the license exception covers): any object with `def is_unsafe(self, name: str) -> bool` (`terraforma.names.screen.NameFilter`). The engine ships no word list; that is game content. It runs first, with no network call, and sees the name as typed (after the format check).
+**The game's check** (`Rules.screen_name(self, name, ask_provider)`, async; a public interface the license exception covers): it returns True (passes), False (flagged) or None (unknown, not checked). `ask_provider` is an async function that asks the provider below and answers True (fine), False (unsafe) or None (no answer, or no provider set up). The default is `return await ask_provider(name)`. The engine ships no word list; that is game content. A game that adds its own words, then defers to the provider:
+
+```python
+class MyRules(Rules):
+    async def screen_name(self, name, ask_provider):
+        if any(word in name.casefold() for word in MY_WORDS):
+            return False  # flagged with no network call
+        return await ask_provider(name)
+```
+
+It sees the name as typed (after the format check). A flagged name is never refused: it is saved with `name_ok` false and hidden from other players. An exception raised in the hook is the game's bug and is not caught (the call fails with a server error). The engine keeps the transport (the HTTP call, the cache, the breaker and the word-list time) below.
 
 **The provider's check**: in the `[[external_providers]]` section of an `oidc` provider that offers one (the shared account service does) set `name_screen = true`; `name_api` is its base address (`<issuer>/api/names` when left out; https only, http for localhost), and at most one provider may have it on. The calls use the provider's `client_id` and `client_secret` as HTTP Basic: `POST <name_api>/check` with `{"name": "..."}` answers `{"safe": bool, "list_changed": "<time>"}`, and `GET <name_api>/list` answers `{"list_changed": "<time>"}`. Nothing is sent to any provider unless `name_screen = true`; the text of the name (nothing else about the player) goes to that provider and is never logged here.
 
-It fails open. The wait is 2 seconds with no retries; a network error, timeout, 5xx or 429 makes the answer "unknown" and the name is accepted on the game's filter alone; 5 failures in a row stop the calls for 60 seconds, a 429's `Retry-After` is honoured, and the engine makes at most 300 calls a minute (after which answers are "unknown"). A 401 or 403 means the id or secret in `settings.toml` is wrong: one error line an hour, and names are accepted unchecked. A tiny in-memory cache (5 minutes, 2000 names, spacing and case ignored) only stops the same text being asked twice, and is dropped when a newer `list_changed` is seen.
+It fails open. The wait is 2 seconds with no retries; a network error, timeout, 5xx or 429 makes the answer "unknown" and the answer is empty (`ask_provider` answers None; `name_ok` stays empty unless the game's own check decides otherwise); 5 failures in a row stop the calls for 60 seconds, a 429's `Retry-After` is honoured, and the engine makes at most 300 calls a minute (after which answers are "unknown"). A 401 or 403 means the id or secret in `settings.toml` is wrong: one error line an hour, and names are saved unchecked. A tiny in-memory cache (5 minutes, 2000 names, spacing and case ignored) only stops the same text being asked twice, and is dropped when a newer `list_changed` is seen.
 
-Each stored name (`Account.handle`, `Hero`, `Team`, `Alliance`) has a nullable `screened_at_list`: the `list_changed` it passed the provider's check under, or empty when it did not (no provider, or an "unknown" answer). Nothing re-checks stored names yet.
+Each stored name also has a nullable `screened_at_list`: the `list_changed` the provider's answer (ok or unsafe) was given under, or empty when there was no such answer (no provider, an "unknown" answer, or the game's check did not ask the provider). Nothing re-checks stored names yet.
+
+**Hidden from other players.** A name whose `name_ok` is false is never shown to other players; its owner always sees their own. `terraforma.names.screen.public_name(name, name_ok, fallback, *, own=False)` is the one rule: it returns `name` when `own` is true or `name_ok` is not false (empty, "not checked", shows as before, because nobody called it unsafe), and `fallback` (a neutral label such as "Hero" or "Team") otherwise. Nothing stored is changed, so fight logs are untouched. The helper is not yet used where names are shown: the display sites (and the re-check of stored names) are the next slice.
 
 ## Second factors
 

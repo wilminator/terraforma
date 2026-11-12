@@ -25,6 +25,7 @@ technique points); how they fill and drain is up to its overrides of
 
 import math
 import random
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from .events import EventType, event
@@ -424,6 +425,24 @@ class Rules:
     monster_checkin_seconds: int = 60
     #: How long a guest (someone who plays monsters without logging in) stays known after they were last heard from.
     monster_guest_seconds: int = 4 * 3600
+
+    async def screen_name(self, name: str, ask_provider: Callable[[str], Awaitable[bool | None]]) -> bool | None:
+        """Whether $name, one a player typed (a hero, a team, an alliance, a public handle; called after the format check, with the name as
+        typed), is safe to show other players: True passes, False flags it, None is "not checked / unknown". $ask_provider is an async
+        function that asks the sign-in provider's name check (``external_providers`` with ``name_screen = true``) and answers True (fine),
+        False (unsafe) or None (no answer, or no provider is set up); it is cached and fails open, so a game may call it freely. By default
+        the provider is the only judge: ``return await ask_provider(name)``. A game overrides this to add its own words, or to replace the
+        check altogether; the engine ships no word list.
+
+            async def screen_name(self, name, ask_provider):
+                if any(word in name.casefold() for word in MY_WORDS):
+                    return False  # no call is made to the provider
+                return await ask_provider(name)
+
+        A flagged name is never refused: it is saved with ``name_ok`` False and hidden from other players (its owner still sees it). An
+        exception raised here is the game's bug and is not caught: the call fails with a server error. This is a public interface the
+        license exception covers."""
+        return await ask_provider(name)
 
     def may_queue_monsters(self, volunteer) -> str | None:
         """Whether $volunteer (a ``monsterplay.facts.Volunteer``, whose ``account_id`` may be None for someone not logged in) may
