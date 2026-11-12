@@ -233,7 +233,7 @@ async def viewer_id(request: Request, db: Db) -> int | None:
 
 
 def get_screener(request: Request) -> Screener | None:
-    """Who screens the names players type (None: nobody; the game has no filter and no provider has ``name_screen`` on)."""
+    """What screens the names players type: the app's rules (``Rules.screen_name``) and, when a provider has ``name_screen`` on, its name check."""
     return getattr(request.app.state, "screener", None)
 
 

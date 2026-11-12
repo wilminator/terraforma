@@ -1,5 +1,5 @@
-"""Is this name safe to show other players? Two judges, either of which can say no: the game's own word filter (``Game.name_screen``;
-the engine ships no word list) and, when the settings turn it on, the sign-in provider's name check (``ExternalProvider.name_screen``).
+"""Is this name safe to show other players? The check is the game's ``Rules.screen_name``; by default it asks the sign-in provider's name
+check (``ExternalProvider.name_screen``), which this module carries (``NameScreen``: HTTP, cache, breaker). The engine ships no word list.
 
 A name is never refused. ``screen_name`` says whether it passed (``Screened.name_ok``) and the caller stores that beside the name;
 ``public_name`` then hides a name that failed from everybody but its owner.
@@ -15,10 +15,10 @@ from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Protocol
 
 import httpx2 as httpx
 
+from ..fights.rules import Rules
 from ..settings import ExternalProvider
 
 log = logging.getLogger("terraforma.names")
@@ -38,12 +38,6 @@ class Verdict(Enum):
     OK = "ok"
     UNSAFE = "unsafe"
     UNKNOWN = "unknown"
-
-
-class NameFilter(Protocol):
-    """A game's own word filter (``Game.name_screen``). Public interface: the license exception covers it."""
-
-    def is_unsafe(self, name: str) -> bool: ...
 
 
 def _key(name: str) -> str:
@@ -162,45 +156,49 @@ class NameScreen:
 
 
 class Screener:
-    """What the name-taking calls use: the game's filter and the provider's check, either of which may be missing."""
+    """What the name-taking calls use: the app's rules (``Rules.screen_name`` is the check) and the provider's name transport, which may be missing."""
 
-    def __init__(self, local: NameFilter | None = None, remote: NameScreen | None = None):
-        self.local = local
+    def __init__(self, rules: Rules, remote: NameScreen | None = None):
+        self.rules = rules
         self.remote = remote
 
 
-def build_screener(settings, game, http: Callable[[], httpx.AsyncClient]) -> Screener | None:
-    """The app's screener: none at all unless the game has a filter or a provider has ``name_screen`` on."""
-    local = getattr(game, "name_screen", None) if game is not None else None
+def build_screener(settings, game, http: Callable[[], httpx.AsyncClient]) -> Screener:
+    """The app's screener: the game's rules (the engine's own without a game, as ``get_rules`` has it) and, when a provider has ``name_screen`` on, its name check."""
+    rules = game.rules if game is not None else Rules()
     provider = next((each for each in settings.external_providers if each.name_screen), None)
-    remote = NameScreen(provider, http) if provider is not None else None
-    return Screener(local, remote) if local is not None or remote is not None else None
+    return Screener(rules, NameScreen(provider, http) if provider is not None else None)
 
 
 @dataclass(frozen=True)
 class Screened:
-    """What the screen said about a name. $name_ok: False (somebody said unsafe), True (the provider said ok and the game's filter did not
-    object) or None (not checked: no screener, no provider, or an unknown answer). $list_changed: the word-list time the provider's
-    answer was given under (the ``screened_at_list`` stamp), or None when there was no such answer or the game's filter said no first."""
+    """What the screen said about a name. $name_ok: what ``Rules.screen_name`` answered (False: unsafe, True: fine, None: not checked, which
+    is also the answer with no screener). $list_changed: the word-list time the provider's answer was given under (the ``screened_at_list``
+    stamp), or None when the provider gave no answer during this check."""
 
     name_ok: bool | None = None
     list_changed: str | None = None
 
 
 async def screen_name(screen: Screener | None, name: str) -> Screened:
-    """Never raises and never refuses: the caller saves the name and stores both fields. Call it after the format check."""
+    """Never refuses: the caller saves the name and stores both fields (an exception from the game's ``Rules.screen_name`` is its bug and
+    propagates). Call it after the format check."""
     if screen is None:
         return Screened()
-    if screen.local is not None and screen.local.is_unsafe(name):
-        return Screened(False)
-    if screen.remote is None:
-        return Screened()
-    verdict = await screen.remote.check(name)
-    if verdict is Verdict.UNSAFE:
-        return Screened(False, screen.remote.list_changed)
-    if verdict is Verdict.OK:
-        return Screened(True, screen.remote.list_changed)
-    return Screened()
+    answered = False
+
+    async def ask_provider(asked: str) -> bool | None:
+        nonlocal answered
+        if screen.remote is None:
+            return None
+        verdict = await screen.remote.check(asked)
+        if verdict is Verdict.UNKNOWN:
+            return None
+        answered = True
+        return verdict is Verdict.OK
+
+    name_ok = await screen.rules.screen_name(name, ask_provider)
+    return Screened(name_ok, screen.remote.list_changed if answered and screen.remote is not None else None)
 
 
 def public_name(name: str, name_ok: bool | None, fallback: str, *, own: bool = False) -> str:

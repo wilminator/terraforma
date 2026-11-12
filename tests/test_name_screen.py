@@ -1,4 +1,4 @@
-"""Screening the names players type: the game's filter, the provider's name check (fail open), ``name_ok`` and the stamp, and the calls that use them. Nothing is ever refused."""
+"""Screening the names players type: ``Rules.screen_name`` (the game's check), the provider's name check (fail open), ``name_ok`` and the stamp, and the calls that use them. Nothing is ever refused."""
 
 import base64
 import json
@@ -11,6 +11,7 @@ from sqlalchemy import select
 
 from terraforma.accounts.service import create_account
 from terraforma.alliances.models import Alliance
+from terraforma.fights.rules import Rules
 from terraforma.game import Game
 from terraforma.heroes.models import Hero, Team
 from terraforma.models import Account
@@ -87,12 +88,30 @@ def remote(accounts, clock):
     return NameScreen(provider(), accounts.client(), clock)
 
 
-class Filter:
+class WordRules(Rules):
+    """A game's rules with its own word list; it asks the provider only for names the list lets through."""
+
     def __init__(self, *words):
         self.words = words
+        self.asked: list[str] = []
 
-    def is_unsafe(self, name: str) -> bool:
-        return any(word in name.lower() for word in self.words)
+    async def screen_name(self, name, ask_provider):
+        self.asked.append(name)
+        if any(word in name.lower() for word in self.words):
+            return False
+        return await ask_provider(name)
+
+
+class OnlyOwnWords(Rules):
+    """Replaces the check: never calls the provider."""
+
+    async def screen_name(self, name, ask_provider):
+        return "rude" not in name.lower()
+
+
+class BrokenRules(Rules):
+    async def screen_name(self, name, ask_provider):
+        raise RuntimeError("the game's bug")
 
 
 def check(remote, name="Kim") -> Verdict:
@@ -238,33 +257,58 @@ def test_the_name_is_never_logged(remote, accounts, clock, caplog):
     assert caplog.records
 
 
-# --- the two judges ---------------------------------------------------------------------------------------------------------
+# --- the rules' check and the provider ---------------------------------------------------------------------------------------
 
-def screening(local=None, remote=None):
-    return Screener(local, remote)
+def screening(rules=None, remote=None):
+    return Screener(rules or Rules(), remote)
 
 
-def test_nothing_to_screen_with_is_not_checked():
+def test_no_screener_is_not_checked():
     assert run(screen_name(None, "Anything")) == Screened(None, None)
+
+
+def test_the_default_rules_defer_to_the_provider(accounts, remote):
+    accounts.unsafe = {"Nope"}
+    assert run(screen_name(screening(remote=remote), "Kim")) == Screened(True, LIST_1)
+    assert run(screen_name(screening(remote=remote), "Nope")) == Screened(False, LIST_1)
+    accounts.respond = lambda request: httpx.Response(500)
+    assert run(screen_name(screening(remote=remote), "Lee")) == Screened(None, None)
+
+
+def test_the_default_rules_without_a_provider_check_nothing():
     assert run(screen_name(screening(), "Anything")) == Screened(None, None)
 
 
-def test_the_local_filter_alone_says_not_ok_without_a_call(accounts, remote):
-    assert run(screen_name(screening(Filter("rude"), remote), "Rude Dude")) == Screened(False, None)
+def test_rules_that_flag_their_own_words_make_no_call(accounts, remote):
+    rules = WordRules("rude")
+    assert run(screen_name(screening(rules, remote), "Rude Dude")) == Screened(False, None)
     assert accounts.calls == 0
 
 
-def test_the_provider_alone_says_not_ok_with_the_list_time(accounts, remote):
+def test_rules_may_ask_the_provider_after_their_own_check(accounts, remote):
     accounts.unsafe = {"Nope"}
-    assert run(screen_name(screening(Filter("rude"), remote), "Nope")) == Screened(False, LIST_1)
+    rules = WordRules("rude")
+    assert run(screen_name(screening(rules, remote), "Nope")) == Screened(False, LIST_1)
+    assert run(screen_name(screening(rules, remote), "Kim")) == Screened(True, LIST_1)
+    assert accounts.calls == 2
 
 
-def test_ok_gives_true_and_the_stamp_and_unknown_gives_none(accounts, remote):
-    both = screening(Filter("rude"), remote)
-    assert run(screen_name(both, "Kim")) == Screened(True, LIST_1)
-    accounts.respond = lambda request: httpx.Response(500)
-    assert run(screen_name(both, "Lee")) == Screened(None, None)
-    assert run(screen_name(screening(Filter("rude")), "Kim")) == Screened(None, None), "a local filter alone that does not object checked nothing"
+def test_rules_that_replace_the_check_never_call_the_provider(accounts, remote):
+    assert run(screen_name(screening(OnlyOwnWords(), remote), "Kim")) == Screened(True, None), "no provider answer, so no stamp"
+    assert run(screen_name(screening(OnlyOwnWords(), remote), "Rude")) == Screened(False, None)
+    assert accounts.calls == 0
+
+
+def test_the_stamp_is_given_only_when_the_provider_answered(accounts, remote):
+    check(remote, "Seen")  # (the provider's list time is known already)
+    accounts.respond = lambda request: httpx.Response(503)
+    assert run(screen_name(screening(WordRules("rude"), remote), "Kim")) == Screened(None, None), "unknown: no stamp though a time is known"
+    assert run(screen_name(screening(WordRules("rude"), remote), "Rude")) == Screened(False, None)
+
+
+def test_a_hook_that_raises_is_not_swallowed(remote):
+    with pytest.raises(RuntimeError, match="the game's bug"):
+        run(screen_name(screening(BrokenRules(), remote), "Kim"))
 
 
 def test_a_screened_result_is_frozen():
@@ -286,14 +330,20 @@ def test_public_name_defaults_to_another_viewer():
     assert public_name("Rude", False, "Hero") == "Hero"
 
 
-def test_the_screener_is_built_only_when_there_is_something_to_ask(accounts):
+def test_the_screener_holds_the_games_rules_and_the_provider_when_there_is_one(accounts):
     plain = Settings(session_secret="s" * 32)
     on = Settings(session_secret="s" * 32, external_providers=[provider()])
-    assert build_screener(plain, None, accounts.client) is None
-    assert build_screener(plain, Game(name="G"), accounts.client) is None
-    assert build_screener(plain, Game(name="G", name_screen=Filter("x")), accounts.client).local is not None
+    mine = WordRules("x")
+    assert type(build_screener(plain, None, accounts.client).rules) is Rules and build_screener(plain, None, accounts.client).remote is None
+    assert build_screener(plain, Game(name="G"), accounts.client).remote is None
+    assert build_screener(plain, Game(name="G", rules=mine), accounts.client).rules is mine
     assert build_screener(on, None, accounts.client).remote is not None
     assert accounts.calls == 0
+
+
+def test_game_has_no_name_screen_any_more():
+    with pytest.raises(TypeError):
+        Game(name="G", name_screen=object())  # type: ignore[call-arg]
 
 
 # --- settings ---------------------------------------------------------------------------------------------------------------
@@ -335,12 +385,12 @@ def game(tmp_path):
     seed_dir.mkdir()
     for kind, content in SEED.items():
         (seed_dir / f"{kind}.json").write_text(json.dumps(content))
-    return Game(name="Test Game", seed_dir=seed_dir)
+    return Game(name="Test Game", seed_dir=seed_dir, rules=WordRules("badword"))
 
 
 @pytest.fixture
 def client(app_client, accounts, clock):
-    app_client.app.state.screener = Screener(Filter("badword"), NameScreen(provider(), accounts.client(), clock))
+    app_client.app.state.screener = Screener(app_client.app.state.game.rules, NameScreen(provider(), accounts.client(), clock))
     return app_client
 
 
@@ -377,7 +427,7 @@ def test_unsafe_names_for_a_new_team_and_its_hero_are_saved_not_ok(client, heade
     expect(make_team(client, headers, "Badword team", hero="Badword hero"), 201)
     assert columns(client, Hero, "Rude hero") == [(False, LIST_1)] and columns(client, Team, "Alpha") == [(True, LIST_1)]
     assert columns(client, Team, "Rude team") == [(False, LIST_1)]
-    assert columns(client, Team, "Badword team") == [(False, None)], "the game's filter: not ok, no stamp"
+    assert columns(client, Team, "Badword team") == [(False, None)], "the game's own word: not ok, no stamp"
     assert columns(client, Hero, "Badword hero") == [(False, None)]
     assert len(client.get("/api/teams").json()) == 3 and len(client.get("/api/heroes").json()) == 3
 
@@ -461,12 +511,21 @@ def test_unknown_is_saved_and_leaves_name_ok_empty(client, headers, accounts):
     assert columns(client, Team, "Alpha") == [(None, None)] and columns(client, Hero, "Aria") == [(None, None)] and columns(client, Account, "Nice one") == [(None, None)]
     expect(client.post("/api/alliances", json={"team_id": team["id"], "name": "Nice"}, headers=headers), 201)
     assert columns(client, Alliance, "Nice") == [(None, None)]
-    expect(client.post(f"/api/teams/{team['id']}/rename", json={"name": "Badword"}, headers=headers), 200)  # (the game's filter still speaks)
+    expect(client.post(f"/api/teams/{team['id']}/rename", json={"name": "Badword"}, headers=headers), 200)  # (the game's own words still speak)
     assert columns(client, Team, "Badword") == [(False, None)]
 
 
+def test_without_a_provider_only_the_rules_speak(app_client):
+    in_app_db(app_client, lambda db: create_account(db, "Mike", PASSWORD, email="mike@example.com", confirmed=True))
+    token = app_client.post("/api/login", json={"username": "Mike", "password": PASSWORD}).json()["csrf_token"]
+    assert app_client.app.state.screener.remote is None
+    expect(make_team(app_client, {"X-CSRF-Token": token}, "Badword"), 201)
+    expect(make_team(app_client, {"X-CSRF-Token": token}, "Fine", hero="Brin"), 201)
+    assert columns(app_client, Team, "Badword") == [(False, None)] and columns(app_client, Team, "Fine") == [(None, None)]
+
+
 def test_without_a_screener_nothing_changes(app_client):
-    assert app_client.app.state.screener is None
+    app_client.app.state.screener = None
     in_app_db(app_client, lambda db: create_account(db, "Mike", PASSWORD, email="mike@example.com", confirmed=True))
     token = app_client.post("/api/login", json={"username": "Mike", "password": PASSWORD}).json()["csrf_token"]
     expect(make_team(app_client, {"X-CSRF-Token": token}, "Badword"), 201)
