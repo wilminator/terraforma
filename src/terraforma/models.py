@@ -124,6 +124,8 @@ class Account(Timestamps, Base):
     # (see accounts.service.check_handle); unique ignoring case and spacing.
     handle: Mapped[str | None] = mapped_column(String(24))
     handle_key: Mapped[str | None] = mapped_column(String(24), unique=True)
+    # Did the name pass the screen (``names.screen``)? False: it is saved but never shown to other players (``public_name``); None: not checked.
+    name_ok: Mapped[bool | None] = mapped_column(Boolean)
     # The word-list time (``names.screen``) the name last passed the provider's name check under; None: never checked that way.
     screened_at_list: Mapped[str | None] = mapped_column(String(32))
     # Every login carries this number; bumping it ends them all (a password reset does).

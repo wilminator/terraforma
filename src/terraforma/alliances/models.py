@@ -18,6 +18,8 @@ class Alliance(Timestamps, Base):
     # Kept as typed; unique ignoring case and spacing.
     name: Mapped[str] = mapped_column(String(NAME_MAX))
     name_key: Mapped[str] = mapped_column(String(NAME_MAX), unique=True)
+    # Did the name pass the screen (``names.screen``)? False: it is saved but never shown to other players (``public_name``); None: not checked.
+    name_ok: Mapped[bool | None] = mapped_column(Boolean)
     # The word-list time (``names.screen``) the name last passed the provider's name check under; None: never checked that way.
     screened_at_list: Mapped[str | None] = mapped_column(String(32))
     #: The treasury: gold the member teams have given and the alliance has not spent (``alliances.treasury``).

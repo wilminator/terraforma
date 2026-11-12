@@ -136,12 +136,12 @@ async def _acting(session, hooks: Alliances, alliance: Alliance, actor_team_id: 
 async def found(session: AsyncSession, hooks: Alliances, team: Team, name: str, screen: Screener | None = None) -> Alliance:
     """The team founds an alliance and is its commander. The alliance starts with the game's ``starting_roles``."""
     name = check_name(name)
-    stamp = await screen_name(screen, name)
+    screened = await screen_name(screen, name)
     if not await hooks.may_found(session, team):
         raise Forbidden("this team can't found an alliance")
     if await _count(session, AllianceMember, team_id=team.id) >= hooks.max_per_team:
         raise AllianceError(f"a team can be in {hooks.max_per_team} alliances")
-    alliance = Alliance(name=name, name_key=name_key(name), screened_at_list=stamp)
+    alliance = Alliance(name=name, name_key=name_key(name), name_ok=screened.name_ok, screened_at_list=screened.list_changed)
     try:
         async with session.begin_nested():  # (added inside, so a refused name leaves nothing pending in the session)
             session.add(alliance)

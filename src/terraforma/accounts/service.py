@@ -77,14 +77,14 @@ async def set_handle(session: AsyncSession, account: Account, handle: str, scree
     """Sets the player's public handle. An email change must check the handle again (check_handle)."""
     handle = handle.strip()
     check_handle(handle, username=account.username, email=account.email)
-    stamp = await screen_name(screen, handle)
+    screened = await screen_name(screen, handle)
     key = handle_key(handle)
     taken = await session.scalar(select(Account.id).where(Account.handle_key == key, Account.id != account.id))
     if taken:
         raise HandleTaken("another player has that handle")
     account.handle = handle
     account.handle_key = key
-    account.screened_at_list = stamp
+    account.name_ok, account.screened_at_list = screened.name_ok, screened.list_changed
     await session.flush()
     return account
 
@@ -249,7 +249,7 @@ async def create_external_account(
     email = check_email(email)
     handle = handle.strip()
     check_handle(handle, username=username, email=email)
-    stamp = await screen_name(screen, handle)
+    screened = await screen_name(screen, handle)
     password_hash = None
     if password is not None:
         check_password(password)
@@ -271,7 +271,8 @@ async def create_external_account(
         email_confirmed_at=wallclock.now(),
         handle=handle,
         handle_key=handle_key(handle),
-        screened_at_list=stamp,
+        name_ok=screened.name_ok,
+        screened_at_list=screened.list_changed,
     )
     session.add(account)
     await session.flush()

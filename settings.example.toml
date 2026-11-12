@@ -84,8 +84,8 @@ key_dir = "keys"
 # scopes = ["openid", "email"]              # the default; both are required
 # jwks_uri = "https://.../jwks"             # the provider's signing keys; read from its published settings when left out
 # deletion_events = true                    # accept the provider's signed "this person deleted their account" message (off by default)
-# name_screen = true                        # ask this provider whether a name players type (hero, team, alliance, handle) is allowed (off by default;
-#                                           # at most one provider). The text of the name goes to the provider, nothing else. If it can't be reached, names are accepted.
+# name_screen = true                        # ask this provider whether a name players type (hero, team, alliance, handle) is safe to show others (off by default;
+#                                           # at most one provider). The text of the name goes to the provider, nothing else. A name that isn't safe is still saved, but other players never see it. If it can't be reached, names are saved unchecked.
 # name_api = "https://.../api/names"        # where the name check is; <issuer>/api/names when left out. Must be https
 
 # Facebook: create an app with Facebook Login, add the redirect address above as a valid OAuth redirect URI, and use its app id

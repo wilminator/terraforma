@@ -1,26 +1,27 @@
-"""Is this name allowed? Two judges, either of which can refuse: the game's own word filter (``Game.name_screen``; the engine ships no
-word list) and, when the settings turn it on, the sign-in provider's name check (``ExternalProvider.name_screen``).
+"""Is this name safe to show other players? Two judges, either of which can say no: the game's own word filter (``Game.name_screen``;
+the engine ships no word list) and, when the settings turn it on, the sign-in provider's name check (``ExternalProvider.name_screen``).
 
-The provider's check is fail-open: a name is refused only when somebody says it is unsafe. A provider that is down, slow, rate
-limiting us or misconfigured makes the answer ``UNKNOWN``, and the name is accepted (on the game's filter alone). The text of a
-name is sent to the provider and nowhere else; it is never logged.
+A name is never refused. ``screen_name`` says whether it passed (``Screened.name_ok``) and the caller stores that beside the name;
+``public_name`` then hides a name that failed from everybody but its owner.
+
+The provider's check is fail-open: a name is marked not ok only when somebody says it is unsafe. A provider that is down, slow, rate
+limiting us or misconfigured makes the answer ``UNKNOWN`` (``name_ok`` None: not checked). The text of a name is sent to the
+provider and nowhere else; it is never logged.
 """
 
 import logging
 import time
 from collections import deque
 from collections.abc import Callable
+from dataclasses import dataclass
 from enum import Enum
 from typing import Protocol
 
 import httpx2 as httpx
-from fastapi import HTTPException, status
 
 from ..settings import ExternalProvider
 
 log = logging.getLogger("terraforma.names")
-
-NOT_ALLOWED = "That name isn't allowed. Please pick another."
 
 TIMEOUT = 2.0  # seconds; no retries in the request path
 CACHE_SECONDS = 300
@@ -43,13 +44,6 @@ class NameFilter(Protocol):
     """A game's own word filter (``Game.name_screen``). Public interface: the license exception covers it."""
 
     def is_unsafe(self, name: str) -> bool: ...
-
-
-class NameNotAllowed(HTTPException):
-    """HTTP 422. The message never says why (or which word)."""
-
-    def __init__(self) -> None:
-        super().__init__(status.HTTP_422_UNPROCESSABLE_CONTENT, NOT_ALLOWED)
 
 
 def _key(name: str) -> str:
@@ -183,18 +177,32 @@ def build_screener(settings, game, http: Callable[[], httpx.AsyncClient]) -> Scr
     return Screener(local, remote) if local is not None or remote is not None else None
 
 
-async def screen_name(screen: Screener | None, name: str) -> str | None:
-    """Raises ``NameNotAllowed`` (HTTP 422) when the game's filter or the provider says $name is unsafe; call it after the format check.
+@dataclass(frozen=True)
+class Screened:
+    """What the screen said about a name. $name_ok: False (somebody said unsafe), True (the provider said ok and the game's filter did not
+    object) or None (not checked: no screener, no provider, or an unknown answer). $list_changed: the word-list time the provider's
+    answer was given under (the ``screened_at_list`` stamp), or None when there was no such answer or the game's filter said no first."""
 
-    Returns the word-list time the name passed a real provider check under (the ``screened_at_list`` stamp), or None when there was
-    no such check (no provider, or the answer was unknown)."""
+    name_ok: bool | None = None
+    list_changed: str | None = None
+
+
+async def screen_name(screen: Screener | None, name: str) -> Screened:
+    """Never raises and never refuses: the caller saves the name and stores both fields. Call it after the format check."""
     if screen is None:
-        return None
+        return Screened()
     if screen.local is not None and screen.local.is_unsafe(name):
-        raise NameNotAllowed
+        return Screened(False)
     if screen.remote is None:
-        return None
+        return Screened()
     verdict = await screen.remote.check(name)
     if verdict is Verdict.UNSAFE:
-        raise NameNotAllowed
-    return screen.remote.list_changed if verdict is Verdict.OK else None
+        return Screened(False, screen.remote.list_changed)
+    if verdict is Verdict.OK:
+        return Screened(True, screen.remote.list_changed)
+    return Screened()
+
+
+def public_name(name: str, name_ok: bool | None, fallback: str, *, own: bool = False) -> str:
+    """The name to show a viewer: $name for its owner ($own) or when nobody called it unsafe (``name_ok`` is not False), else $fallback."""
+    return name if own or name_ok is not False else fallback

@@ -1,6 +1,6 @@
 """A hero belongs to one account, has a job, and stands on a map. A team groups some of an account's heroes."""
 
-from sqlalchemy import JSON, BigInteger, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, Boolean, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db.base import Base, Timestamps
@@ -16,6 +16,8 @@ class Hero(Located, Timestamps, Base):
     # Kept as typed; unique per account ignoring case and spacing (see heroes.service).
     name: Mapped[str] = mapped_column(String(24))
     name_key: Mapped[str] = mapped_column(String(24))
+    # Did the name pass the screen (``names.screen``)? False: it is saved but never shown to other players (``public_name``); None: not checked.
+    name_ok: Mapped[bool | None] = mapped_column(Boolean)
     # The word-list time (``names.screen``) the name last passed the provider's name check under; None: never checked that way.
     screened_at_list: Mapped[str | None] = mapped_column(String(32))
     job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), index=True)
@@ -36,6 +38,8 @@ class Team(Timestamps, Base):
     account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
     name: Mapped[str] = mapped_column(String(24))
     name_key: Mapped[str] = mapped_column(String(24))
+    # Did the name pass the screen (``names.screen``)? False: it is saved but never shown to other players (``public_name``); None: not checked.
+    name_ok: Mapped[bool | None] = mapped_column(Boolean)
     # The word-list time (``names.screen``) the name last passed the provider's name check under; None: never checked that way.
     screened_at_list: Mapped[str | None] = mapped_column(String(32))
     # Where gold lives is the game's decision (``terraforma.economy``); by default it is here, on the team.

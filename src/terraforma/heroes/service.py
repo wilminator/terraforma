@@ -120,15 +120,15 @@ async def team_spot(session: AsyncSession, team_id: int) -> Spot | None:
 
 
 async def create_hero(session: AsyncSession, account: Account, name: str, job_key: str, spot: Spot | None = None, screen: Screener | None = None) -> Hero:
-    """Makes a hero at $spot, or on the hub map when there is none. $screen (see ``names.screen``) may refuse the name."""
+    """Makes a hero at $spot, or on the hub map when there is none. $screen (see ``names.screen``) says whether the name is fit to show others; it never refuses."""
     name = check_name(name)
-    stamp = await screen_name(screen, name)
+    screened = await screen_name(screen, name)
     job = await session.scalar(select(Job).where(Job.key == job_key, Job.active.is_(True)))
     if job is None:
         raise NotFound("there's no such job")
     map_id, x, y = spot if spot is not None else ((await ensure_start(session)).id, 0, 0)
     hero = Hero(
-        account_id=account.id, name=name, name_key=name_key(name), screened_at_list=stamp, job_id=job.id,
+        account_id=account.id, name=name, name_key=name_key(name), name_ok=screened.name_ok, screened_at_list=screened.list_changed, job_id=job.id,
         stats=starting_stats(job), map_id=map_id, x=x, y=y,
     )
     session.add(hero)
@@ -163,7 +163,8 @@ async def own_hero(session: AsyncSession, account: Account, hero_id: int) -> Her
 async def rename_hero(session: AsyncSession, account: Account, hero_id: int, name: str, screen: Screener | None = None) -> Hero:
     hero = await own_hero(session, account, hero_id)
     name = check_name(name)
-    hero.screened_at_list = await screen_name(screen, name)
+    screened = await screen_name(screen, name)
+    hero.name_ok, hero.screened_at_list = screened.name_ok, screened.list_changed
     hero.name, hero.name_key = name, name_key(name)
     try:
         async with session.begin_nested():
@@ -211,10 +212,10 @@ def hero_view(hero: Hero, job_key: str, map_name: str) -> dict:
 
 async def create_team(session: AsyncSession, account: Account, name: str, max_teams: int = Rules.max_teams, screen: Screener | None = None) -> Team:
     name = check_name(name)
-    stamp = await screen_name(screen, name)
+    screened = await screen_name(screen, name)
     if await session.scalar(select(func.count()).select_from(Team).where(Team.account_id == account.id)) >= max_teams:
         raise HeroError(f"you can have {max_teams} teams" if max_teams != 1 else "you can have 1 team")
-    team = Team(account_id=account.id, name=name, name_key=name_key(name), screened_at_list=stamp)
+    team = Team(account_id=account.id, name=name, name_key=name_key(name), name_ok=screened.name_ok, screened_at_list=screened.list_changed)
     session.add(team)
     try:
         async with session.begin_nested():
@@ -234,7 +235,8 @@ async def own_team(session: AsyncSession, account: Account, team_id: int) -> Tea
 async def rename_team(session: AsyncSession, account: Account, team_id: int, name: str, screen: Screener | None = None) -> Team:
     team = await own_team(session, account, team_id)
     name = check_name(name)
-    team.screened_at_list = await screen_name(screen, name)
+    screened = await screen_name(screen, name)
+    team.name_ok, team.screened_at_list = screened.name_ok, screened.list_changed
     team.name, team.name_key = name, name_key(name)
     try:
         async with session.begin_nested():
@@ -407,7 +409,6 @@ async def replace_hero(session: AsyncSession, account: Account, team_id: int, he
     """Removes the hero and makes a new one in the same place, if the game's ``Roster.may_remove`` allows it."""
     _, hero, member = await _on_team(session, account, team_id, hero_id)
     name = check_name(name)
-    await screen_name(screen, name)  # (before anything is removed; the new hero is screened again, from the cache)
     if await session.scalar(select(Job.id).where(Job.key == job_key, Job.active.is_(True))) is None:
         raise NotFound("there's no such job")
     if why := await roster.may_remove(session, account, hero):

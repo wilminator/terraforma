@@ -105,7 +105,7 @@ class Game:
     # second factor sees (see accounts.hooks).
     sign_in: SignIn = field(default_factory=SignIn)
     # The game's own word filter for the names players type (hero, team, alliance, handle): ``is_unsafe(name)`` is true for a name that
-    # must be refused. The engine ships no word list. None, by default (see README, "Screening names").
+    # other players must not see (it is still saved, with ``name_ok`` false). The engine ships no word list. None, by default (see README, "Screening names").
     name_screen: NameFilter | None = None
     # Where a new team starts: the engine's hub, unless the game offers places to pick from (the capitals).
     start: Start = field(default_factory=Start)

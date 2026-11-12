@@ -1,4 +1,4 @@
-"""Screening the names players type: the game's filter, the provider's name check (fail open), the stamp, and the calls that use them."""
+"""Screening the names players type: the game's filter, the provider's name check (fail open), ``name_ok`` and the stamp, and the calls that use them. Nothing is ever refused."""
 
 import base64
 import json
@@ -15,7 +15,7 @@ from terraforma.game import Game
 from terraforma.heroes.models import Hero, Team
 from terraforma.models import Account
 from terraforma.names import screen as names
-from terraforma.names.screen import NameNotAllowed, NameScreen, Screener, Verdict, build_screener, screen_name
+from terraforma.names.screen import NameScreen, Screened, Screener, Verdict, build_screener, public_name, screen_name
 from terraforma.settings import ExternalProvider, Settings
 from terraforma.testing import in_app_db, run
 
@@ -28,7 +28,6 @@ CHECK = f"{ISSUER}/api/names/check"
 PASSWORD = "correct horse battery"
 LIST_1 = "2026-11-08T19:55:00Z"
 LIST_2 = "2026-11-09T08:00:00Z"
-REFUSAL = "That name isn't allowed. Please pick another."
 SEED = {"jobs": [{"key": "fighter", "name": "Fighter", "stat_growth": {"HP": 10.0}}]}
 
 
@@ -245,30 +244,46 @@ def screening(local=None, remote=None):
     return Screener(local, remote)
 
 
-def test_nothing_to_screen_with_is_fine():
-    assert run(screen_name(None, "Anything")) is None
-    assert run(screen_name(screening(), "Anything")) is None
+def test_nothing_to_screen_with_is_not_checked():
+    assert run(screen_name(None, "Anything")) == Screened(None, None)
+    assert run(screen_name(screening(), "Anything")) == Screened(None, None)
 
 
-def test_the_local_filter_alone_refuses_without_a_call(accounts, remote):
-    with pytest.raises(NameNotAllowed) as refused:
-        run(screen_name(screening(Filter("rude"), remote), "Rude Dude"))
-    assert refused.value.status_code == 422 and refused.value.detail == REFUSAL
+def test_the_local_filter_alone_says_not_ok_without_a_call(accounts, remote):
+    assert run(screen_name(screening(Filter("rude"), remote), "Rude Dude")) == Screened(False, None)
     assert accounts.calls == 0
 
 
-def test_the_provider_alone_refuses(accounts, remote):
+def test_the_provider_alone_says_not_ok_with_the_list_time(accounts, remote):
     accounts.unsafe = {"Nope"}
-    with pytest.raises(NameNotAllowed):
-        run(screen_name(screening(Filter("rude"), remote), "Nope"))
+    assert run(screen_name(screening(Filter("rude"), remote), "Nope")) == Screened(False, LIST_1)
 
 
-def test_both_fine_gives_the_stamp_and_unknown_gives_none(accounts, remote):
+def test_ok_gives_true_and_the_stamp_and_unknown_gives_none(accounts, remote):
     both = screening(Filter("rude"), remote)
-    assert run(screen_name(both, "Kim")) == LIST_1
+    assert run(screen_name(both, "Kim")) == Screened(True, LIST_1)
     accounts.respond = lambda request: httpx.Response(500)
-    assert run(screen_name(both, "Lee")) is None
-    assert run(screen_name(screening(Filter("rude")), "Kim")) is None, "a local filter alone stamps nothing"
+    assert run(screen_name(both, "Lee")) == Screened(None, None)
+    assert run(screen_name(screening(Filter("rude")), "Kim")) == Screened(None, None), "a local filter alone that does not object checked nothing"
+
+
+def test_a_screened_result_is_frozen():
+    with pytest.raises(AttributeError):
+        Screened(True, None).name_ok = False  # type: ignore[misc]
+
+
+# --- the one rule for showing a name -----------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize(("name_ok", "own", "shown"), [
+    (False, True, "Rude"), (True, True, "Rude"), (None, True, "Rude"),
+    (True, False, "Rude"), (None, False, "Rude"), (False, False, "Hero"),
+])
+def test_public_name(name_ok, own, shown):
+    assert public_name("Rude", name_ok, "Hero", own=own) == shown
+
+
+def test_public_name_defaults_to_another_viewer():
+    assert public_name("Rude", False, "Hero") == "Hero"
 
 
 def test_the_screener_is_built_only_when_there_is_something_to_ask(accounts):
@@ -336,9 +351,12 @@ def headers(client):
     return {"X-CSRF-Token": token}
 
 
-def stamps(client, model, name):
+def columns(client, model, name):
+    """[(name_ok, screened_at_list)] of the rows named $name."""
     async def read(db):
-        return (await db.scalars(select(model.screened_at_list).where(model.name == name if model is not Account else model.handle == name))).all()
+        column = model.handle if model is Account else model.name
+        rows = (await db.execute(select(model.name_ok, model.screened_at_list).where(column == name))).all()
+        return [tuple(row) for row in rows]
 
     return in_app_db(client, read)
 
@@ -347,69 +365,104 @@ def make_team(client, headers, name, hero="Aria"):
     return client.post("/api/teams", json={"name": name, "heroes": [{"name": hero, "job": "fighter"}]}, headers=headers)
 
 
-def test_a_hero_and_team_made_with_a_safe_name_carry_the_stamp(client, headers):
+def test_a_hero_and_team_made_with_safe_names_are_ok_and_carry_the_stamp(client, headers):
     expect(make_team(client, headers, "Alpha"), 201)
-    assert stamps(client, Hero, "Aria") == [LIST_1] and stamps(client, Team, "Alpha") == [LIST_1]
+    assert columns(client, Hero, "Aria") == [(True, LIST_1)] and columns(client, Team, "Alpha") == [(True, LIST_1)]
 
 
-def test_an_unsafe_name_is_refused_for_a_new_team_and_for_its_hero(client, headers, accounts):
+def test_unsafe_names_for_a_new_team_and_its_hero_are_saved_not_ok(client, headers, accounts):
     accounts.unsafe = {"Rude hero", "Rude team"}
-    answer = expect(make_team(client, headers, "Alpha", hero="Rude hero"), 422)
-    assert answer.json()["detail"] == REFUSAL
-    assert expect(make_team(client, headers, "Rude team"), 422).json()["detail"] == REFUSAL
-    assert expect(make_team(client, headers, "Badword team"), 422).json()["detail"] == REFUSAL, "the game's filter"
-    assert client.get("/api/teams").json() == [] and client.get("/api/heroes").json() == []
+    expect(make_team(client, headers, "Alpha", hero="Rude hero"), 201)
+    expect(make_team(client, headers, "Rude team"), 201)
+    expect(make_team(client, headers, "Badword team", hero="Badword hero"), 201)
+    assert columns(client, Hero, "Rude hero") == [(False, LIST_1)] and columns(client, Team, "Alpha") == [(True, LIST_1)]
+    assert columns(client, Team, "Rude team") == [(False, LIST_1)]
+    assert columns(client, Team, "Badword team") == [(False, None)], "the game's filter: not ok, no stamp"
+    assert columns(client, Hero, "Badword hero") == [(False, None)]
+    assert len(client.get("/api/teams").json()) == 3 and len(client.get("/api/heroes").json()) == 3
 
 
-def test_a_new_hero_on_a_team_is_screened(client, headers, accounts):
+def test_a_filtered_name_makes_no_network_call(client, headers, accounts):
+    expect(make_team(client, headers, "Badword team", hero="Badword hero"), 201)
+    assert accounts.calls == 0
+
+
+def test_a_new_and_a_replacement_hero_on_a_team_are_saved_with_their_verdict(client, headers, accounts, monkeypatch):
+    from terraforma.heroes.hooks import Roster
+
+    async def yes(self, *args):
+        return None
+
+    monkeypatch.setattr(Roster, "may_remove", yes)
     team = expect(make_team(client, headers, "Alpha"), 201).json()
-    accounts.unsafe = {"Rude"}
-    expect(client.post(f"/api/teams/{team['id']}/heroes", json={"name": "Rude", "job": "fighter"}, headers=headers), 422)
+    accounts.unsafe = {"Rude", "Rude too"}
+    expect(client.post(f"/api/teams/{team['id']}/heroes", json={"name": "Rude", "job": "fighter"}, headers=headers), 201)
     expect(client.post(f"/api/teams/{team['id']}/heroes", json={"name": "Nice", "job": "fighter"}, headers=headers), 201)
+    assert columns(client, Hero, "Rude") == [(False, LIST_1)] and columns(client, Hero, "Nice") == [(True, LIST_1)]
+    rude = next(each for each in client.get("/api/heroes").json() if each["name"] == "Rude")
+    expect(client.post(f"/api/teams/{team['id']}/heroes/{rude['id']}/replace", json={"name": "Rude too", "job": "fighter"}, headers=headers), 201)
+    assert columns(client, Hero, "Rude too") == [(False, LIST_1)] and columns(client, Hero, "Rude") == []
 
 
-def test_a_hero_is_renamed_to_a_safe_name_only(client, headers, accounts):
-    team = expect(make_team(client, headers, "Alpha"), 201).json()
+def test_renaming_a_hero_overwrites_the_verdict_both_ways(client, headers, accounts):
+    expect(make_team(client, headers, "Alpha"), 201)
     hero = client.get("/api/heroes").json()[0]
+    rename = f"/api/heroes/{hero['id']}/rename"
     accounts.unsafe = {"Rude"}
-    assert expect(client.post(f"/api/heroes/{hero['id']}/rename", json={"name": "Rude"}, headers=headers), 422).json()["detail"] == REFUSAL
-    expect(client.post(f"/api/heroes/{hero['id']}/rename", json={"name": "Badword"}, headers=headers), 422)
+    expect(client.post(rename, json={"name": "Rude"}, headers=headers), 200)
+    assert columns(client, Hero, "Rude") == [(False, LIST_1)]
     accounts.list_changed = LIST_2
-    expect(client.post(f"/api/heroes/{hero['id']}/rename", json={"name": "Brin"}, headers=headers), 200)
-    assert stamps(client, Hero, "Brin") == [LIST_2]
+    expect(client.post(rename, json={"name": "Brin"}, headers=headers), 200)
+    assert columns(client, Hero, "Brin") == [(True, LIST_2)], "unsafe to clean flips to true"
+    expect(client.post(rename, json={"name": "Rude"}, headers=headers), 200)
+    assert columns(client, Hero, "Rude") == [(False, LIST_2)], "clean to unsafe flips to false"
+    expect(client.post(rename, json={"name": "Badword"}, headers=headers), 200)
+    assert columns(client, Hero, "Badword") == [(False, None)]
 
 
-def test_a_team_is_renamed_to_a_safe_name_only_and_an_unsafe_old_name_does_not_block(client, headers, accounts):
+def test_renaming_a_team_overwrites_the_verdict_both_ways(client, headers, accounts):
     team = expect(make_team(client, headers, "Old name"), 201).json()
-    accounts.unsafe = {"Old name", "Rude"}  # the old name now fails the check
-    expect(client.post(f"/api/teams/{team['id']}/rename", json={"name": "Rude"}, headers=headers), 422)
-    expect(client.post(f"/api/teams/{team['id']}/rename", json={"name": "Fresh"}, headers=headers), 200)
-    assert stamps(client, Team, "Fresh") == [LIST_1]
+    rename = f"/api/teams/{team['id']}/rename"
+    accounts.unsafe = {"Old name", "Rude"}
+    expect(client.post(rename, json={"name": "Rude"}, headers=headers), 200)
+    assert columns(client, Team, "Rude") == [(False, LIST_1)]
+    expect(client.post(rename, json={"name": "Fresh"}, headers=headers), 200)
+    assert columns(client, Team, "Fresh") == [(True, LIST_1)]
+    expect(client.post(rename, json={"name": "Badword"}, headers=headers), 200)
+    assert columns(client, Team, "Badword") == [(False, None)]
 
 
-def test_an_alliance_is_founded_with_a_safe_name_only(client, headers, accounts):
+def test_an_alliance_is_founded_with_any_name(client, headers, accounts):
     team = expect(make_team(client, headers, "Alpha"), 201).json()
     accounts.unsafe = {"Rude"}
-    expect(client.post("/api/alliances", json={"team_id": team["id"], "name": "Rude"}, headers=headers), 422)
+    expect(client.post("/api/alliances", json={"team_id": team["id"], "name": "Rude"}, headers=headers), 201)
+    assert columns(client, Alliance, "Rude") == [(False, LIST_1)]
+    accounts.unsafe = set()
     expect(client.post("/api/alliances", json={"team_id": team["id"], "name": "Nice"}, headers=headers), 201)
-    assert stamps(client, Alliance, "Nice") == [LIST_1]
+    assert columns(client, Alliance, "Nice") == [(True, LIST_1)]
+    expect(client.post("/api/alliances", json={"team_id": team["id"], "name": "Badword"}, headers=headers), 201)
+    assert columns(client, Alliance, "Badword") == [(False, None)]
 
 
-def test_a_handle_is_set_with_a_safe_name_only(client, headers, accounts):
+def test_a_handle_is_set_with_any_name_and_a_reset_flips_the_verdict(client, headers, accounts):
     accounts.unsafe = {"Rude one"}
-    assert expect(client.post("/api/handle", json={"handle": "Rude one"}, headers=headers), 422).json()["detail"] == REFUSAL
+    expect(client.post("/api/handle", json={"handle": "Rude one"}, headers=headers), 200)
+    assert columns(client, Account, "Rude one") == [(False, LIST_1)]
     expect(client.post("/api/handle", json={"handle": "Nice one"}, headers=headers), 200)
-    assert stamps(client, Account, "Nice one") == [LIST_1]
+    assert columns(client, Account, "Nice one") == [(True, LIST_1)]
+    expect(client.post("/api/handle", json={"handle": "Badword one"}, headers=headers), 200)
+    assert columns(client, Account, "Badword one") == [(False, None)]
 
 
-def test_unknown_is_accepted_and_leaves_no_stamp(client, headers, accounts):
+def test_unknown_is_saved_and_leaves_name_ok_empty(client, headers, accounts):
     accounts.respond = lambda request: httpx.Response(503)
     team = expect(make_team(client, headers, "Alpha"), 201).json()
     expect(client.post("/api/handle", json={"handle": "Nice one"}, headers=headers), 200)
-    assert stamps(client, Team, "Alpha") == [None] and stamps(client, Hero, "Aria") == [None] and stamps(client, Account, "Nice one") == [None]
+    assert columns(client, Team, "Alpha") == [(None, None)] and columns(client, Hero, "Aria") == [(None, None)] and columns(client, Account, "Nice one") == [(None, None)]
     expect(client.post("/api/alliances", json={"team_id": team["id"], "name": "Nice"}, headers=headers), 201)
-    assert stamps(client, Alliance, "Nice") == [None]
-    expect(client.post(f"/api/teams/{team['id']}/rename", json={"name": "Badword"}, headers=headers), 422)  # (the game's filter still holds)
+    assert columns(client, Alliance, "Nice") == [(None, None)]
+    expect(client.post(f"/api/teams/{team['id']}/rename", json={"name": "Badword"}, headers=headers), 200)  # (the game's filter still speaks)
+    assert columns(client, Team, "Badword") == [(False, None)]
 
 
 def test_without_a_screener_nothing_changes(app_client):
@@ -417,4 +470,4 @@ def test_without_a_screener_nothing_changes(app_client):
     in_app_db(app_client, lambda db: create_account(db, "Mike", PASSWORD, email="mike@example.com", confirmed=True))
     token = app_client.post("/api/login", json={"username": "Mike", "password": PASSWORD}).json()["csrf_token"]
     expect(make_team(app_client, {"X-CSRF-Token": token}, "Badword"), 201)
-    assert stamps(app_client, Team, "Badword") == [None]
+    assert columns(app_client, Team, "Badword") == [(None, None)]
