@@ -195,6 +195,9 @@ class Settings(BaseModel):
     mail: MailSettings | None = None
     # How often the server looks for fights whose round time has run out, in seconds (0: never, for tests).
     fight_timer_seconds: float = Field(default=1.0, ge=0)
+    # Several servers on one database: how often a server reads the fight pushes the others wrote, in seconds (0: one server, nothing
+    # is written or read; a cluster sets about 0.5).
+    fight_event_poll_seconds: float = Field(default=0.0, ge=0)
     # How often the server tidies up what has gone stale (housekeeping jobs), in seconds (0: never, for tests).
     housekeeping_seconds: float = Field(default=3600.0, ge=0)
     # How long a pending drop (need/want or hand-out) may wait for its players before housekeeping settles it with the

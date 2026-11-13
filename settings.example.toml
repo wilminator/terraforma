@@ -19,6 +19,10 @@ key_dir = "keys"
 # How often the server looks for fights whose round time has run out, in seconds.
 # fight_timer_seconds = 1.0
 
+# Several servers on one Postgres or MySQL database only: how often a server reads the fight pushes the others wrote, in
+# seconds. 0 (the default) is a single server; a cluster sets about 0.5.
+# fight_event_poll_seconds = 0.0
+
 # How often the server tidies up what has gone stale (finished rate-limit windows, say), in seconds.
 # housekeeping_seconds = 3600.0
 
