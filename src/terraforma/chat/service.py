@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import wallclock
 from ..accounts.service import handle_key
 from ..models import Account
+from ..names.display import PLAYER, public_name
 from .hooks import Channel, ChannelKind, Place, place_of
 from .models import ACTIONED, DISMISSED, NOTE_MAX, OPEN, ChatBan, ChatFlag, ChatMessage, ChatMute
 
@@ -87,7 +88,7 @@ async def read(session: AsyncSession, game, account: Account, kind: str, key: st
     oldest first. Lines from players they muted, and ones said out of their hearing, are left out."""
     found, stored = await _open(session, game, account, kind, key)
     limit = min(limit or game.chat.history, game.chat.history)
-    query = select(ChatMessage, Account.handle).join(Account, Account.id == ChatMessage.sender_id).where(ChatMessage.kind == kind, ChatMessage.key == stored)
+    query = select(ChatMessage, Account.handle, Account.name_ok).join(Account, Account.id == ChatMessage.sender_id).where(ChatMessage.kind == kind, ChatMessage.key == stored)
     muted = await _muted(session, account.id)
     # More rows than asked for are read (and filtered) in batches, so a run of muted lines does not hide the ones behind it.
     lines: list[Line] = []
@@ -100,9 +101,9 @@ async def read(session: AsyncSession, game, account: Account, kind: str, key: st
         batch = (await session.execute(rows)).all()
         if not batch:
             break
-        for message, handle in batch:
+        for message, handle, name_ok in batch:
             if message.sender_id not in muted and await _hears(session, game, found, account.id, message):
-                lines.append(Line(message.id, handle or "?", message.body, message.created_at, message.sender_id == account.id))
+                lines.append(Line(message.id, public_name(handle, name_ok, PLAYER, own=message.sender_id == account.id) if handle else "?", message.body, message.created_at, message.sender_id == account.id))
                 if len(lines) == limit:
                     break
         cursor = batch[-1][0].id
@@ -129,8 +130,8 @@ async def unmute(session: AsyncSession, account: Account, handle: str) -> None:
 
 
 async def muted_handles(session: AsyncSession, account: Account) -> list[str]:
-    rows = await session.scalars(select(Account.handle).join(ChatMute, ChatMute.muted_id == Account.id).where(ChatMute.account_id == account.id).order_by(Account.handle_key))
-    return [each for each in rows.all() if each]
+    rows = await session.execute(select(Account.handle, Account.name_ok).join(ChatMute, ChatMute.muted_id == Account.id).where(ChatMute.account_id == account.id).order_by(Account.handle_key))
+    return [public_name(handle, name_ok, PLAYER) for handle, name_ok in rows.all() if handle]
 
 
 async def flag(session: AsyncSession, game, account: Account, message_id: int, reason: str, note: str = "") -> ChatFlag:

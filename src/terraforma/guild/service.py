@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..challenge import service as challenge
 from ..heroes.models import Hero, Team, TeamMember
+from ..names.display import TEAM, seen_by
 from ..npcs.state import DialogState
 from ..parties import service as parties
 from ..parties.models import Party, PartyRequest, PartyTeam
@@ -105,7 +106,8 @@ async def open_parties(session: AsyncSession, hero: Hero) -> list[dict]:
         teams = []
         for team_id in await parties.team_ids(session, party.id):
             visible = await session.scalar(select(TeamProfile.visible).where(TeamProfile.team_id == team_id))
-            teams.append({"name": (await session.get(Team, team_id)).name if visible else None})
+            team = await session.get(Team, team_id)
+            teams.append({"name": seen_by(team.name, team.name_ok, TEAM, team.account_id, hero.account_id) if visible else None})
         shown.append({"id": party.id, "heroes": await parties.size(session, party.id), "teams": teams})
     return shown
 
@@ -136,7 +138,12 @@ async def requests(session: AsyncSession, hero: Hero) -> list[dict]:
     if await parties.leader_account(session, party_id) != hero.account_id:
         raise GuildError("only the party's leader answers requests")
     rows = (await session.scalars(select(PartyRequest).where(PartyRequest.party_id == party_id).order_by(PartyRequest.id))).all()
-    return [{"id": row.id, "team": (await session.get(Team, row.team_id)).name, "heroes": await parties.team_size(session, row.team_id)} for row in rows]
+    asking = {team.id: team for team in (await session.scalars(select(Team).where(Team.id.in_([row.team_id for row in rows])))).all()} if rows else {}
+    return [
+        {"id": row.id, "team": seen_by(asking[row.team_id].name, asking[row.team_id].name_ok, TEAM, asking[row.team_id].account_id, hero.account_id),
+         "heroes": await parties.team_size(session, row.team_id)}
+        for row in rows
+    ]
 
 
 async def answer(session: AsyncSession, hero: Hero, request_id: int, accept: bool, party_size: int) -> dict:

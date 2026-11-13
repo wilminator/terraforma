@@ -26,6 +26,7 @@ from ..escrow.models import EscrowItem
 from ..guild.fees import Fees
 from ..heroes import inventory
 from ..heroes.models import Hero, Team, TeamMember
+from ..names.display import TEAM, seen_by
 from ..storage.hooks import Storage
 from .hooks import Marketplace
 from .models import AUCTION, CANCELLED, EXPIRED, FIXED, OPEN, SOLD, Listing, ListingAsk
@@ -127,13 +128,14 @@ async def asks_of(session: AsyncSession, listing: Listing) -> list[tuple[str, in
 
 async def search(
     session: AsyncSession, guild: str | None = None, text: str | None = None, max_gold: int | None = None,
-    limit: int = 20, offset: int = 0,
+    limit: int = 20, offset: int = 0, viewer_id: int | None = None,
 ) -> list[dict]:
     """The open listings, cheapest gold price first, at $guild or (None) at every guild, only those with an item whose name or key
-    contains $text, only those asking $max_gold or less in gold. Each is a dict with its id, guild, seller team name, prices, goods and
+    contains $text, only those asking $max_gold or less in gold ($viewer_id is the account that reads the list: a seller whose team name failed
+    the name screen is a neutral label to every other account). Each is a dict with its id, guild, seller team name, prices, goods and
     the time it closes."""
     limit = max(1, min(limit, MAX_PAGE))
-    query = select(Listing, Team.name).join(Team, Team.id == Listing.seller_team_id).where(
+    query = select(Listing, Team.name, Team.name_ok, Team.account_id).join(Team, Team.id == Listing.seller_team_id).where(
         Listing.state == OPEN, Listing.expires_at > wallclock.timestamp()
     )
     if guild is not None:
@@ -150,11 +152,11 @@ async def search(
     rows = (await session.execute(query.order_by(Listing.price_gold, Listing.id).limit(limit).offset(max(0, offset)))).all()
     return [
         {
-            "id": listing.id, "guild": listing.guild, "seller": name, "price_gold": listing.price_gold,
+            "id": listing.id, "guild": listing.guild, "seller": seen_by(name, name_ok, TEAM, owner, viewer_id), "price_gold": listing.price_gold,
             "price_tokens": listing.price_tokens, "asks": await asks_of(session, listing), "goods": await goods(session, listing),
             "expires_at": listing.expires_at, "kind": listing.kind, "bid_gold": listing.bid_gold,
         }
-        for listing, name in rows
+        for listing, name, name_ok, owner in rows
     ]
 
 

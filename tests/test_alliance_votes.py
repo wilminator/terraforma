@@ -64,6 +64,26 @@ async def test_a_team_is_active_from_the_moment_it_is_selected_to_play(db):
     assert abs((await db.get(Team, team.id)).last_played_at - wallclock.timestamp()) <= 2
 
 
+@anyio
+async def test_a_ballot_about_another_players_team_whose_name_failed_the_name_screen_reads_with_a_label(db):
+    alliance, lead, (one, two, three) = await setup(db)
+    zed = await create_account(db, "Zed", PASSWORD, email="zed@example.com", confirmed=True)
+    outsider = await heroes.create_team(db, zed, "Guest")
+    await service.set_rule(db, RULES, alliance, lead.id, "invite", "", 60)
+    ballot = await ballots.perform(db, RULES, alliance, lead.id, "invite", {"team_id": outsider.id})
+    await ballots.cast(db, RULES, alliance, one.id, ballot, 0)
+    read = lambda: ballots.view(db, RULES, alliance, ballot, lead.id)  # noqa: E731
+    assert (await read())["title"] == "Invite Guest"
+    outsider.name_ok = False
+    await db.flush()
+    shown = await read()
+    assert shown["title"] == "Invite Team" and ballot.title == "Invite Guest", "the stored title is not rewritten"
+    assert [vote["team"] for vote in shown["votes"]] == ["Lead", "T1"], "(voters are the alliance's own teams; here one player owns them all)"
+    one.name_ok = False
+    await db.flush()
+    assert [vote["team"] for vote in (await read())["votes"]] == ["Lead", "T1"], "the player's own teams are always read as they are"
+
+
 # --- rules ---------------------------------------------------------------------------------------------------------------------
 
 @anyio

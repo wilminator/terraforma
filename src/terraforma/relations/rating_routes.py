@@ -43,7 +43,7 @@ async def answer(prompt_id: Id, body: Rating, request: Request, account: ActingA
     """Rates the other team, or accepts the change the game's rule suggested. The score that results is the game's rule (``Relations.resolve``)."""
     await limited(request, ratelimit.RELATION_BY_ACCOUNT, str(account.id))
     try:
-        return await service.view(db, relations, await ratings.answer(db, relations, account.id, prompt_id, body.score, body.accept))
+        return await service.view(db, relations, await ratings.answer(db, relations, account.id, prompt_id, body.score, body.accept), account.id)
     except service.RelationError as error:
         raise refuse(error) from error
 

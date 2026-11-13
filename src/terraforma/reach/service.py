@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..fights.rules import Rules
 from ..instances import service as instances
 from ..heroes.models import Hero, Team, TeamMember
+from ..names.display import TEAM, seen_by
 from ..maps.models import EDGE, MapObject
 from ..models import Map
 from ..npcs.models import Npc
@@ -43,14 +44,14 @@ async def _candidate_parties(session: AsyncSession, reach: Reach, hero: Hero, mi
     return list((await session.scalars(query.order_by(Party.id))).all())
 
 
-async def _shown_teams(session: AsyncSession, party_id: int) -> list[dict]:
+async def _shown_teams(session: AsyncSession, party_id: int, viewer_id: int) -> list[dict]:
     """The party's teams that their players made visible: a hidden team is not named, it is just part of the party."""
     rows = await session.execute(
-        select(Team.id, Team.name).join(TeamProfile, TeamProfile.team_id == Team.id)
+        select(Team.id, Team.name, Team.name_ok, Team.account_id).join(TeamProfile, TeamProfile.team_id == Team.id)
         .where(TeamProfile.visible.is_(True), Team.id.in_(await parties.team_ids(session, party_id)))
     )
     order = {team_id: place for place, team_id in enumerate(await parties.team_ids(session, party_id))}
-    return [{"id": team_id, "name": name} for team_id, name in sorted(rows.all(), key=lambda row: order[row[0]])]
+    return [{"id": team_id, "name": seen_by(name, name_ok, TEAM, owner, viewer_id)} for team_id, name, name_ok, owner in sorted(rows.all(), key=lambda row: order[row[0]])]
 
 
 async def nearby(session: AsyncSession, reach: Reach, rules: Rules, hero: Hero, action: str) -> dict:
@@ -82,5 +83,5 @@ async def nearby(session: AsyncSession, reach: Reach, rules: Rules, hero: Hero, 
             if await towns.visit_of_party(session, party.id) is None and await instances.same_place(session, None if mine is None else mine.id, party.id) and await reach.party(session, action, hero, party) is None:
                 close.append((distance(found, here, (party.x, party.y)), party))
         close.sort(key=lambda pair: (pair[0], pair[1].id))
-        entries += [{"kind": "party", "id": party.id, "teams": await _shown_teams(session, party.id), "distance": away} for away, party in close]
+        entries += [{"kind": "party", "id": party.id, "teams": await _shown_teams(session, party.id, hero.account_id), "distance": away} for away, party in close]
     return {"action": action, "valid_for": reach.valid_for(action), "nearby": entries[: rules.nearby_limit]}

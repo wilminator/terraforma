@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..alliances.models import Alliance, AllianceMember
 from ..heroes.models import Hero, Team
 from ..models import Account, Map
+from ..names.display import PLAYER, public_name
 from ..parties.models import Party, PartyTeam
 from ..reach.hooks import distance
 from ..accounts.service import handle_key
@@ -195,7 +196,8 @@ class WhisperChat(ChannelKind):
         out = []
         for key in keys:
             other = next(int(each) for each in key.split(":") if each != mine)
-            out.append(Channel(self.name, key, await session.scalar(select(Account.handle).where(Account.id == other)) or "?"))
+            handle, name_ok = (await session.execute(select(Account.handle, Account.name_ok).where(Account.id == other))).one_or_none() or (None, None)
+            out.append(Channel(self.name, key, public_name(handle, name_ok, PLAYER) if handle else "?"))
         return out
 
 

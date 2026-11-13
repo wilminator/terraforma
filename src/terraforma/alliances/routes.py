@@ -335,7 +335,7 @@ async def relationships(alliance_id: Id, account: CurrentAccount, db: Db, allian
         alliance = await service.get_alliance(db, alliance_id)
         await service.reading_team(db, account, alliance)
         return {"bands": [{"name": band.name, "low": band.low, "high": band.high} for band in relating.bands],
-                "relationships": await relations.list_for(db, relating, Ref("alliance", alliance.id))}
+                "relationships": await relations.list_for(db, relating, Ref("alliance", alliance.id), account.id)}
     except FAILURES as error:
         raise refuse(error) from error
 
@@ -352,7 +352,7 @@ async def set_relationship(alliance_id: Id, body: SetRelationship, request: Requ
             row = await relations.apply(db, relating, Change(subject, other, score=body.score, by="player"))
         if body.note is not None:
             row = await relations.set_note(db, relating, subject, other, body.note)
-        return await relations.view(db, relating, row)
+        return await relations.view(db, relating, row, account.id)
     except FAILURES as error:
         raise refuse(error) from error
 

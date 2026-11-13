@@ -10,7 +10,7 @@ from terraforma.content.loader import load_content
 from terraforma.guild import service
 from terraforma.guild.hooks import GuestPass, Guild
 from terraforma.heroes import service as heroes
-from terraforma.heroes.models import Hero
+from terraforma.heroes.models import Hero, Team
 from terraforma.npcs import service as npcs
 from terraforma.npcs.hooks import Npcs
 from terraforma.reach.hooks import Reach
@@ -153,6 +153,21 @@ async def test_the_search_lists_open_parties_on_the_map_and_hides_hidden_teams_n
     await db.execute(TeamProfile.__table__.update().values(visible=True))
     assert (await service.open_parties(db, w.hero["Scouts"]))[0]["teams"] == [{"name": "Vanguard"}]
     assert await service.open_parties(db, w.hero["Vanguard"]) == [], "never its own party"
+
+
+async def test_a_team_name_that_failed_the_name_screen_is_a_label_to_other_players_in_the_open_parties_and_the_requests(db):
+    w = await a_world(db)
+    await ally(db, w.team["Vanguard"], w.team["Scouts"])
+    await service.set_open(db, w.party["Scouts"], True)
+    await service.set_open(db, w.party["Vanguard"], True)
+    await db.execute(TeamProfile.__table__.insert().values([{"team_id": w.team["Scouts"], "token": "s" * 20, "visible": True}]))
+    await db.execute(Team.__table__.update().where(Team.id == w.team["Scouts"]).values(name_ok=False))
+    assert (await service.open_parties(db, w.hero["Vanguard"]))[0]["teams"] == [{"name": "Team"}], "Mike is another player to Zed's team"
+    await db.execute(Team.__table__.update().where(Team.id == w.team["Scouts"]).values(name_ok=None))
+    assert (await service.open_parties(db, w.hero["Vanguard"]))[0]["teams"] == [{"name": "Scouts"}], "a name nobody checked is shown"
+    await db.execute(Team.__table__.update().where(Team.id == w.team["Scouts"]).values(name_ok=False))
+    await service.ask(db, GUILD, w.hero["Scouts"], w.party["Vanguard"], SIZE)
+    assert [row["team"] for row in await service.requests(db, w.hero["Vanguard"])] == ["Team"]
 
 
 # --- answering -------------------------------------------------------------------------------------------------------------

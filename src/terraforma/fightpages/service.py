@@ -106,23 +106,24 @@ async def can_view(session: AsyncSession, me_id: int, fight_id: int) -> bool:
     return False
 
 
-async def replay(session: AsyncSession, rules: Rules, record: FightRecord) -> dict:
+async def replay(session: AsyncSession, rules: Rules, record: FightRecord, viewer: int | None = None) -> dict:
     """The fight as it stands and every round played, with the events, so a page can play it back. $start is the fight as a viewer first
     sees it, before round 1, and $joins has, for each round that opens with a party joining, the fight just after that party arrived
-    (the events only say who joined, so a page that plays them back picks up from this)."""
+    (the events only say who joined, so a page that plays them back picks up from this). $viewer is the signed-in account that reads it (None
+    for a public page): a hero of another player whose name failed the name screen is shown as a label."""
     logged = await store.actions(session, record)
     fight = hydrate(record.initial_state)
-    start = {**await live.describe(session, record, rules, fight, 1, False, {}, set(), None), "deadline": None}  # (nothing waits in a replay)
+    start = {**await live.describe(session, record, rules, fight, 1, False, {}, set(), None, viewer), "deadline": None}  # (nothing waits in a replay)
     joins = {}
     for action in logged:
         events = [Event.from_list(each) for each in action.events]
         arrivals = [each for each in events if each.type is EventType.PARTY_JOINED]
         if arrivals:  # (they come first in the round)
             apply_events(fight, rules, arrivals)
-            joins[str(action.sequence)] = {**await live.describe(session, record, rules, fight, action.sequence, False, {}, set(), None), "deadline": None}
+            joins[str(action.sequence)] = {**await live.describe(session, record, rules, fight, action.sequence, False, {}, set(), None, viewer), "deadline": None}
         apply_events(fight, rules, [each for each in events if each.type is not EventType.PARTY_JOINED])
     return {
-        "fight": await live.view(session, record, rules),
+        "fight": await live.view(session, record, rules, viewer=viewer),
         "start": start,
         "joins": joins,
         "rounds": [{"round": action.sequence, "events": action.events} for action in logged],
@@ -133,7 +134,7 @@ async def viewable_replay(session: AsyncSession, rules: Rules, me_id: int, fight
     record = await session.get(FightRecord, fight_id)
     if record is None or not await can_view(session, me_id, fight_id):
         raise NotFound("there's no such fight")
-    return await replay(session, rules, record)
+    return await replay(session, rules, record, me_id)
 
 
 # --- the public pages ---------------------------------------------------------------------------------------------------------

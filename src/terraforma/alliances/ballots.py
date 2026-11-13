@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import wallclock
 from ..heroes.models import Team
+from ..names.display import TEAM, seen_by
 from . import service
 from .hooks import GOVERNED, Alliances
 from .models import Alliance, AllianceMember, Ballot, BallotVote, BallotVoter
@@ -307,11 +308,23 @@ async def perform(
 
 # --- what the player sees ----------------------------------------------------------------------------------------------------------
 
+async def _shown_title(session: AsyncSession, ballot: Ballot, viewer: int | None) -> str:
+    """The title as the account $viewer reads it. It was written with the name of the team it is about (``_title``); when that name failed
+    the name screen and the team is not the viewer's, the neutral label stands in for it (the stored title is never changed)."""
+    args = (ballot.payload or {}).get("args", {})
+    team_id = next((args[key] for key in ("target_team_id", "team_id", "to_team_id") if args.get(key) is not None), None)
+    team = await session.get(Team, team_id) if isinstance(team_id, int) else None
+    if team is None:
+        return ballot.title
+    return ballot.title.replace(team.name, seen_by(team.name, team.name_ok, TEAM, team.account_id, viewer), 1)
+
+
 async def view(session: AsyncSession, hooks: Alliances, alliance: Alliance, ballot: Ballot, viewer_team_id: int) -> dict:
     await refresh(session, hooks, alliance, ballot)
     voters = await _turnout(session, ballot)
+    viewer = await session.scalar(select(Team.account_id).where(Team.id == viewer_team_id))
     shown = {
-        "id": ballot.id, "kind": ballot.kind, "title": ballot.title, "options": list(ballot.options), "payload": ballot.payload,
+        "id": ballot.id, "kind": ballot.kind, "title": await _shown_title(session, ballot, viewer), "options": list(ballot.options), "payload": ballot.payload,
         "secret": ballot.secret, "opened_at": ballot.opened_at, "closes_at": ballot.closes_at, "closed": ballot.closed_at is not None,
         "turnout": len(voters), "you_voted": viewer_team_id in voters, "threshold": ballot.threshold,
     }
@@ -319,7 +332,7 @@ async def view(session: AsyncSession, hooks: Alliances, alliance: Alliance, ball
         shown["result"] = ballot.result
     if not ballot.secret:
         votes = (await session.scalars(select(BallotVote).where(BallotVote.ballot_id == ballot.id).order_by(BallotVote.id))).all()
-        names = {team.id: team.name for team in (await session.scalars(select(Team).where(Team.id.in_([vote.team_id for vote in votes])))).all()}
+        names = {team.id: seen_by(team.name, team.name_ok, TEAM, team.account_id, viewer) for team in (await session.scalars(select(Team).where(Team.id.in_([vote.team_id for vote in votes])))).all()}
         shown["votes"] = [{"team_id": vote.team_id, "team": names.get(vote.team_id), "option": vote.option, "weight": vote.weight} for vote in votes]
         shown["totals"] = await _totals(session, ballot)
         shown["your_option"] = next((vote.option for vote in votes if vote.team_id == viewer_team_id), None)

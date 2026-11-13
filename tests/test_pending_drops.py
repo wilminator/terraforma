@@ -232,6 +232,19 @@ async def test_a_hero_sees_their_own_answer_but_not_the_others_until_it_is_settl
     assert {each["hero"] for each in (await pending.view(db, drop, bram))["rolls"]} == {aria.name, bram.name}
 
 
+async def test_a_drops_heroes_are_named_by_a_label_to_another_players_party_member_when_a_name_failed_the_name_screen(db):
+    aria, bram, record = await pair_fight(db, Holding())
+    (drop,) = await held(db, record)
+    bram.name_ok = False
+    await db.flush()
+    named = lambda viewer: pending._named(db, {aria.id, bram.id}, viewer)  # noqa: E731
+    assert [each["name"] for each in await named(aria.account_id + 1000)] == ["Aria", "Hero"]
+    assert [each["name"] for each in await named(aria.account_id)] == ["Aria", "Bram"], "the owner of both reads them as they are"
+    await pending.choose(db, aria, drop.id, "want")
+    await pending.choose(db, bram, drop.id, "want")
+    assert {each["hero"] for each in (await pending.view(db, drop, aria))["rolls"]} == {"Aria", "Bram"}, "(one player's party: nothing is hidden)"
+
+
 # --- the calls -----------------------------------------------------------------------------------------------------------
 
 def test_the_calls_need_a_login_and_a_token_and_take_strict_bodies(pair):

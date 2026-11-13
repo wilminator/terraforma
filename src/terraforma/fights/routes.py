@@ -120,7 +120,7 @@ async def watch(guid: Guid, request: Request, account: CurrentAccount) -> dict:
         record = await session.scalar(select(FightRecord).where(FightRecord.guid == guid))
         if record is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "there's no such fight")
-        return await live.view(session, record, rules_of(request))
+        return await live.view(session, record, rules_of(request), viewer=account.id)
 
 
 @router.get("/{fight_id}")

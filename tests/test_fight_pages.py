@@ -333,6 +333,26 @@ async def test_a_replay_starts_from_the_fight_as_it_began(db):
     assert all(not each["yours"] and "menu" not in each for each in replay["start"]["fighters"])  # (a replay commands nobody)
 
 
+@pytest.mark.anyio
+async def test_a_heros_name_that_failed_the_name_screen_is_a_label_in_the_fight_and_its_replay_for_everyone_but_its_player(db):
+    hero, mike, team = await a_team(db)
+    record = await live.start_team_fight(db, team, ["rat"], RULES)
+    names = lambda view: [each["name"] for each in view["fighters"]]  # noqa: E731
+    assert names(await live.view(db, record, RULES, viewer=mike.id + 1000)) == [hero.name, "Rat"]
+    hero.name_ok = False
+    await db.flush()
+    assert names(await live.view(db, record, RULES, viewer=mike.id + 1000)) == ["Hero", "Rat"], "another player sees a label, and the monster keeps its name"
+    assert names(await live.view(db, record, RULES, viewer=None)) == ["Hero", "Rat"], "so does a page with no login"
+    assert names(await live.view(db, record, RULES, mike.id)) == [hero.name, "Rat"], "its own player sees it"
+    assert names(await live.view(db, record, RULES, viewer=-5)) == ["Hero", "Rat"], "and so does a guest who commands the monsters"
+    replay = await service.replay(db, RULES, record)
+    assert names(replay["start"]) == ["Hero", "Rat"] and names(replay["fight"]) == ["Hero", "Rat"]
+    own = await service.viewable_replay(db, RULES, mike.id, record.id)
+    assert names(own["start"]) == [hero.name, "Rat"] and names(own["fight"]) == [hero.name, "Rat"]
+    kept = await db.scalar(select(FightParticipant.name).where(FightParticipant.fight_id == record.id, FightParticipant.hero_id == hero.id))
+    assert kept == hero.name, "nothing stored is rewritten"
+
+
 # --- the calls ----------------------------------------------------------------------------------------------------------------
 
 @pytest.fixture

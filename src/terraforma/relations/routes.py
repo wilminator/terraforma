@@ -53,7 +53,7 @@ async def relationships(team_id: Id, account: CurrentAccount, db: Db, relations:
     except heroes.HeroError as error:
         raise refuse(error) from error
     return {"bands": [{"name": band.name, "low": band.low, "high": band.high} for band in relations.bands],
-            "relationships": await service.list_for(db, relations, Ref("team", team.id))}
+            "relationships": await service.list_for(db, relations, Ref("team", team.id), account.id)}
 
 
 @router.post("/set")
@@ -68,7 +68,7 @@ async def set_relationship(team_id: Id, body: SetRelationship, request: Request,
             row = await service.apply(db, relations, Change(subject, other, score=body.score, by="player"))
         if body.note is not None:
             row = await service.set_note(db, relations, subject, other, body.note)
-        return await service.view(db, relations, row)
+        return await service.view(db, relations, row, account.id)
     except (heroes.HeroError, service.RelationError) as error:
         raise refuse(error) from error
 

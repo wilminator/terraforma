@@ -4,8 +4,7 @@ import pytest
 
 from terraforma import testing
 from terraforma.economy import TeamGold
-from terraforma.heroes.models import TeamMember
-
+from terraforma.heroes.models import Team, TeamMember
 from terraforma.testing import in_app_db
 
 from .helpers import expect
@@ -50,6 +49,21 @@ def test_an_offer_is_accepted_and_both_sides_see_it(two_teams):
     assert accepted["state"] == "active" and accepted["ends_at"] == accepted["starts_at"] + 3600
     listed = expect(client.get(f"/api/heroes/{zara}/contracts"), 200).json()
     assert [row["id"] for row in listed] == [made["id"]]
+
+
+def test_a_contract_names_the_other_team_by_a_label_when_its_name_failed_the_name_screen(two_teams):
+    client, mike, aria, a_team, zed, zara, z_team = two_teams
+    made = expect(offer(client, mike(), aria, z_team), 200).json()
+    assert made["b"]["team"] == "Rearguard"
+
+    async def fail(db):
+        await db.execute(Team.__table__.update().where(Team.id == z_team).values(name_ok=False))
+
+    in_app_db(client, fail)
+    seen = expect(client.get(f"/api/heroes/{aria}/contracts/{made['id']}", headers=mike()), 200).json()
+    assert (seen["a"]["team"], seen["b"]["team"]) == ("Vanguard", "Team")
+    theirs = expect(client.get(f"/api/heroes/{zara}/contracts/{made['id']}", headers=zed()), 200).json()
+    assert (theirs["a"]["team"], theirs["b"]["team"]) == ("Vanguard", "Rearguard"), "the flagged team's own player reads it as it is"
 
 
 def test_the_asked_side_declines_and_the_offering_side_withdraws(two_teams):

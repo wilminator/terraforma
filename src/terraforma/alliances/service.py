@@ -17,12 +17,14 @@ from ..economy import FIGHT, SALES, NotEnoughGold
 from ..fighttags.models import AllianceKept, AllianceTop
 from ..heroes.models import Hero, Team, TeamMember
 from ..models import Account
+from ..names.display import ALLIANCE, TEAM, public_name, seen_by
 from ..profiles.models import AllianceProfile
 from ..relations import service as relations
 from ..relations.hooks import Ref
 from .. import wallclock
 from ..names.screen import Screener, screen_name
 from . import roles, taxes, treasury
+from .membership import account_in_alliance
 from .errors import AllianceError, Forbidden, NotFound
 from .hooks import ACTIONS, GOVERNED, MEMBERS_VOTE, OTHER, SUBCOMMANDER, Alliances
 from .models import NAME_MAX, ROLE_MAX, Alliance, AllianceInvite, AllianceAlumnus, AllianceMember, AllianceRole, AllianceRule, Ballot, BallotVote, BallotVoter
@@ -496,7 +498,8 @@ async def run_approved(session: AsyncSession, hooks: Alliances, alliance: Allian
 async def view(session: AsyncSession, hooks: Alliances, alliance: Alliance, viewer_team_id: int) -> dict:
     """The alliance as one of its members sees it: the roles, the teams, and (if its role may invite) who is invited."""
     rows = await members(session, alliance.id)
-    names = {team.id: team.name for team in (await session.scalars(select(Team).where(Team.id.in_([row.team_id for row in rows])))).all()}
+    viewer = await session.scalar(select(Team.account_id).where(Team.id == viewer_team_id))
+    names = {team.id: seen_by(team.name, team.name_ok, TEAM, team.account_id, viewer) for team in (await session.scalars(select(Team).where(Team.id.in_([row.team_id for row in rows])))).all()}
     me = next(row for row in rows if row.team_id == viewer_team_id)
     every = await role_names(session, hooks, alliance)
     can = [action for action in ACTIONS if await hooks.allowed(session, alliance, me, action)]
@@ -510,9 +513,14 @@ async def view(session: AsyncSession, hooks: Alliances, alliance: Alliance, view
     }
     if "invite" in can or "withdraw" in can:
         pending = (await session.scalars(select(AllianceInvite).where(AllianceInvite.alliance_id == alliance.id).order_by(AllianceInvite.id))).all()
-        invited = {team.id: team.name for team in (await session.scalars(select(Team).where(Team.id.in_([row.team_id for row in pending])))).all()}
+        invited = {team.id: seen_by(team.name, team.name_ok, TEAM, team.account_id, viewer) for team in (await session.scalars(select(Team).where(Team.id.in_([row.team_id for row in pending])))).all()}
         shown["invited"] = [{"team_id": row.team_id, "team": invited.get(row.team_id)} for row in pending]
     return shown
+
+
+async def _alliance_name(session: AsyncSession, alliance: Alliance, viewer_id: int | None) -> str:
+    """The alliance's name as the account $viewer_id reads it: its members see it whatever the name screen said, everybody else (an invited team's player, say) a neutral label if it failed."""
+    return public_name(alliance.name, alliance.name_ok, ALLIANCE, own=await account_in_alliance(session, viewer_id, alliance.id))
 
 
 async def mine(session: AsyncSession, account: Account) -> dict:
@@ -528,7 +536,7 @@ async def mine(session: AsyncSession, account: Account) -> dict:
     )).all()
     return {
         "alliances": [{"id": alliance.id, "name": alliance.name, "team_id": row.team_id, "team": teams[row.team_id], "role": row.role} for row, alliance in rows],
-        "invitations": [{"alliance_id": alliance.id, "alliance": alliance.name, "team_id": row.team_id, "team": teams[row.team_id]} for row, alliance in invites],
+        "invitations": [{"alliance_id": alliance.id, "alliance": await _alliance_name(session, alliance, account.id), "team_id": row.team_id, "team": teams[row.team_id]} for row, alliance in invites],
     }
 
 

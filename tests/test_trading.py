@@ -252,6 +252,25 @@ async def test_the_ledger_lists_both_directions_newest_first_and_outlives_the_he
     assert (await trading.history(db, aria))[0]["other"] == "Bram", "the history stays readable after a hero is deleted"
 
 
+@anyio
+async def test_the_ledger_names_another_players_hero_by_a_label_when_its_name_failed_the_name_screen(db):
+    mike, zed = await account(db), await account(db, "Zed")
+    _team, (aria,) = await team_with(db, mike, "Vanguard", ["Aria"])
+    _other, (zara,) = await team_with(db, zed, "Rearguard", ["Zara"])
+    economy = Open()
+    await economy.credit(db, aria, 10)
+    await trading.give_gold(db, economy, aria, zara.id, 4)
+    assert [row["other"] for row in await trading.history(db, aria)] == ["Zara"]
+    zara.name_ok = False
+    await db.flush()
+    assert [row["other"] for row in await trading.history(db, aria)] == ["Hero"]
+    assert [row["other"] for row in await trading.history(db, zara)] == ["Aria"], "the hero's own player has no reason to see a label for the other side"
+    aria.name_ok = False
+    await db.flush()
+    assert [row["other"] for row in await trading.history(db, zara)] == ["Hero"]
+    assert [row["other"] for row in await trading.history(db, aria)] == ["Hero"], "(Zara is still the one that failed)"
+
+
 # --- the calls ---------------------------------------------------------------------------------------------------------------
 
 @pytest.fixture

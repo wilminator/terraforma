@@ -20,6 +20,7 @@ import httpx2 as httpx
 
 from ..fights.rules import Rules
 from ..settings import ExternalProvider
+from .display import public_name  # noqa: F401  (``public_name`` has always been importable from here)
 
 log = logging.getLogger("terraforma.names")
 
@@ -199,8 +200,3 @@ async def screen_name(screen: Screener | None, name: str) -> Screened:
 
     name_ok = await screen.rules.screen_name(name, ask_provider)
     return Screened(name_ok, screen.remote.list_changed if answered and screen.remote is not None else None)
-
-
-def public_name(name: str, name_ok: bool | None, fallback: str, *, own: bool = False) -> str:
-    """The name to show a viewer: $name for its owner ($own) or when nobody called it unsafe (``name_ok`` is not False), else $fallback."""
-    return name if own or name_ok is not False else fallback

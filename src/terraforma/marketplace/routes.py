@@ -71,7 +71,7 @@ async def listings(
     max_gold: int | None = Query(default=None, ge=0, le=market.MAX_PRICE), limit: int = Query(default=20, ge=1, le=market.MAX_PAGE),
     offset: int = Query(default=0, ge=0, le=100_000),
 ) -> list[dict]:
-    return await market.search(db, guild, text, max_gold, limit, offset)
+    return await market.search(db, guild, text, max_gold, limit, offset, account.id)
 
 
 @router.post("/api/heroes/{hero_id}/listings")

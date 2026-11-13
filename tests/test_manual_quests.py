@@ -8,6 +8,7 @@ from terraforma import wallclock
 from terraforma.accounts import ratelimit
 from terraforma.challenge import service as challenge
 from terraforma.game import Game
+from terraforma.heroes.models import Team
 from terraforma.models import Account
 from terraforma.quests import manual
 from terraforma.quests import service as quests
@@ -340,6 +341,26 @@ def test_an_admin_writes_publishes_and_judges_an_event_that_a_team_enters(app_cl
     assert expect(app_client.get("/api/admin/manual-quests?status=draft"), 200).json() == {"events": []}
     standings = expect(app_client.get(f"/api/manual-quests/{event['id']}/standings"), 200).json()
     assert standings == {"event": "Grand Arena", "standings": [{"rank": 1, "team": "Vanguard", "score": 77, "status": "completed"}]}
+
+
+def test_the_standings_name_a_team_that_failed_the_name_screen_by_a_label_to_other_players(app_client):
+    root = an_admin(app_client)
+    event = expect(app_client.post("/api/admin/manual-quests", json=body(), headers=root), 201).json()["event"]["id"]
+    expect(app_client.post(f"/api/admin/manual-quests/{event}/publish", headers=root), 200)
+    mike = sign_in(app_client, "Mike")
+    team = make_team(app_client, mike, "Vanguard")["id"]
+    expect(app_client.post(f"/api/teams/{team}/manual-quests/{event}/enter", headers=mike), 200)
+
+    async def fail(db):
+        await db.execute(Team.__table__.update().where(Team.id == team).values(name_ok=False))
+
+    in_app_db(app_client, fail)
+    names = lambda: [row["team"] for row in expect(app_client.get(f"/api/manual-quests/{event}/standings"), 200).json()["standings"]]  # noqa: E731
+    assert names() == ["Vanguard"], "(still signed in as Mike)"
+    sign_in(app_client, "Zed")
+    assert names() == ["Team"]
+    log_in(app_client, "Root")
+    assert [each["team"] for each in expect(app_client.get(f"/api/admin/manual-quests/{event}"), 200).json()["entries"]] == ["Vanguard"], "an admin judging entries sees the real name"
 
 
 def test_an_admin_cancels_an_event_and_a_draft_has_no_standings(app_client):

@@ -9,8 +9,10 @@ from sqlalchemy import delete, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..alliances.membership import account_in_alliance
 from ..alliances.models import Alliance
 from ..heroes.models import Team
+from ..names.display import ALLIANCE, TEAM, public_name
 from .hooks import Change, Ref, Relations
 from .models import NOTE_MAX, RatingPrompt, Relationship
 
@@ -34,6 +36,18 @@ async def name_of(session: AsyncSession, ref: Ref) -> str | None:
     if ref.kind == "alliance":
         alliance = await session.get(Alliance, ref.id)
         return alliance.name if alliance else None
+    return None
+
+
+async def shown_name_of(session: AsyncSession, ref: Ref, viewer_id: int) -> str | None:
+    """``name_of`` as the account $viewer_id may see it: a name that failed the name screen is a neutral label, unless the viewer owns the
+    team or has a team in the alliance."""
+    if ref.kind == "team":
+        team = await session.get(Team, ref.id)
+        return public_name(team.name, team.name_ok, TEAM, own=team.account_id == viewer_id) if team else None
+    if ref.kind == "alliance":
+        alliance = await session.get(Alliance, ref.id)
+        return public_name(alliance.name, alliance.name_ok, ALLIANCE, own=await account_in_alliance(session, viewer_id, alliance.id)) if alliance else None
     return None
 
 
@@ -115,18 +129,19 @@ async def drop(session: AsyncSession, subject: Ref, object: Ref) -> bool:
     return True
 
 
-async def view(session: AsyncSession, relations: Relations, row: Relationship) -> dict:
+async def view(session: AsyncSession, relations: Relations, row: Relationship, viewer_id: int) -> dict:
+    """The relationship as the account $viewer_id (whose team holds it) reads it."""
     other = Ref(row.object_kind, row.object_id)
     return {
-        "kind": other.kind, "id": other.id, "name": await name_of(session, other),
+        "kind": other.kind, "id": other.id, "name": await shown_name_of(session, other, viewer_id),
         "score": row.score, "band": relations.band(row.score), "note": row.note,
     }
 
 
-async def list_for(session: AsyncSession, relations: Relations, subject: Ref) -> list[dict]:
-    """The subject's own relationships, by name."""
+async def list_for(session: AsyncSession, relations: Relations, subject: Ref, viewer_id: int) -> list[dict]:
+    """The subject's own relationships, by name as the account $viewer_id sees it."""
     rows = (await session.scalars(select(Relationship).where(
         Relationship.subject_kind == subject.kind, Relationship.subject_id == subject.id
     ).order_by(Relationship.id))).all()
-    views = [await view(session, relations, row) for row in rows]
+    views = [await view(session, relations, row, viewer_id) for row in rows]
     return sorted(views, key=lambda each: (each["name"] or "", each["id"]))
