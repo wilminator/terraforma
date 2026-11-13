@@ -356,19 +356,26 @@ async def due(session: AsyncSession, now: datetime | None = None) -> list[int]:
     return list(rows.all())
 
 
+async def claim(session: AsyncSession, fight_id: int) -> FightRecord | None:
+    """Locks the fight for this transaction so only one server plays its round: a fight another server holds is skipped (None),
+    not waited for (``skip_locked``; SQLite has one writer at a time and ignores the lock). The lock is held until the transaction ends."""
+    return await session.scalar(select(FightRecord).where(FightRecord.id == fight_id).with_for_update(skip_locked=True))
+
+
 async def resolve_overdue(sessionmaker: async_sessionmaker, rules: Rules, economy: Economy | None, channels,
                           relations: Relations | None = None) -> int:
     """Plays every round whose time has run out, tells the fights' watchers, and returns how many it played. Each fight
-    is its own transaction, so one that fails does not hold up the rest; a round someone else just played is skipped."""
+    is its own transaction, so one that fails does not hold up the rest; a round someone else just played, or is playing now on
+    another server (the fight is claimed with a lock), is skipped, so servers sharing a database share the work and no round is played twice."""
     async with sessionmaker() as session:
         ids = await due(session)
     played = 0
     for fight_id in ids:
         try:
             async with sessionmaker() as session, session.begin():
-                record = await session.get(FightRecord, fight_id)
-                if record.finished or record.round_deadline is None or aware(record.round_deadline) > wallclock.now():
-                    continue  # played meanwhile
+                record = await claim(session, fight_id)
+                if record is None or record.finished or record.round_deadline is None or aware(record.round_deadline) > wallclock.now():
+                    continue  # another server has it, or it was played meanwhile
                 result = await resolve_round(session, record, rules, economy, relations)
         except (store.SequenceConflict, Refused):
             continue
