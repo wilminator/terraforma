@@ -17,7 +17,7 @@ from datetime import datetime
 from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ..db.base import Base, Timestamps
+from ..db.base import Base, Timestamps, utcnow
 from ..db.dialect import ExactJSON
 from ..world.location import Located
 
@@ -170,3 +170,17 @@ class PendingDropChoice(Base):
     hero_id: Mapped[int] = mapped_column(ForeignKey("heroes.id"), index=True)
     choice: Mapped[str] = mapped_column(String(8))
     roll: Mapped[int | None] = mapped_column(Integer)
+
+
+class FightEvent(Base):
+    """A push to a fight's watchers, written so the other servers of a cluster can send it to their own sockets (``fights.channels``).
+    Rows are short-lived: housekeeping removes the ones nobody can still be waiting for."""
+
+    __tablename__ = "fight_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    fight_id: Mapped[int] = mapped_column(Integer, index=True)
+    # Which server wrote it (it has already sent the push to its own sockets).
+    origin: Mapped[str] = mapped_column(String(32))
+    message: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)

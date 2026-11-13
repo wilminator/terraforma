@@ -26,7 +26,7 @@ from .api.security import TolerantSessionMiddleware
 from .names.screen import build_screener
 from .db.session import make_engine, make_sessionmaker
 from .fights import live
-from .fights.channels import FightChannels
+from .fights.channels import FightChannels, poll_forever
 from .fights.routes import economy_of, fight_socket, relations_of, rules_of
 from .fights.pending_routes import router as pending_drops_router
 from .fights.routes import router as fights_router
@@ -125,6 +125,9 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
         app.state.keys = KeyRing.load(settings.key_dir)
         engine = make_engine(settings.database_url)
         app.state.sessionmaker = make_sessionmaker(engine)
+        # With a poll interval the pushes also go through the database, so the sockets of other servers get them.
+        if settings.fight_event_poll_seconds:
+            app.state.fights.attach(app.state.sessionmaker)
         if game and integrated.seed_dirs:
             # A seed that doesn't check out stops the server here, naming what's wrong.
             async with app.state.sessionmaker() as session, session.begin():
@@ -137,8 +140,9 @@ def create_app(settings: Settings, game: Game | None = None, *, mailer: Mailer |
                     await gamestate.apply_live(session, app.state.state_sections)
         timer = asyncio.create_task(fight_timer(app, settings.fight_timer_seconds)) if settings.fight_timer_seconds else None
         tidier = asyncio.create_task(housekeeping_timer(app, settings.housekeeping_seconds)) if settings.housekeeping_seconds else None
+        listener = asyncio.create_task(poll_forever(app.state.fights, settings.fight_event_poll_seconds)) if settings.fight_event_poll_seconds else None
         yield
-        for task in (timer, tidier):
+        for task in (timer, tidier, listener):
             if task is not None:
                 task.cancel()
                 with suppress(asyncio.CancelledError):

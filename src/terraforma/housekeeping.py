@@ -19,6 +19,7 @@ from .chat.models import OPEN as FLAG_OPEN
 from .chat.models import ChatFlag, ChatMessage
 from .voice.discord import VoiceError, provider_for
 from .voice.models import VoiceRoom
+from .fights import channels as fight_channels
 from .fights.models import PendingDrop
 from .fights.pending import OPEN, expire
 from .contracts import bounties
@@ -61,6 +62,12 @@ async def finished_rate_limit_windows(session: AsyncSession, now: int, settings:
     one-off address never does, so they would pile up."""
     finished = or_(*(and_(RateLimitHit.bucket == limit.name, RateLimitHit.window_start <= now - limit.window) for limit in ALL_LIMITS))
     return (await session.execute(delete(RateLimitHit).where(finished))).rowcount
+
+
+@job
+async def old_fight_events(session: AsyncSession, now: int, settings: Settings, rules: Rules | None = None) -> int:
+    """Fight pushes written for the other servers of a cluster that every server has long since read."""
+    return await fight_channels.prune(session)
 
 
 @job
