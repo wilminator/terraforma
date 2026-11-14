@@ -16,6 +16,7 @@ from ..heroes.models import Hero, Team, TeamMember
 from ..maps.models import EDGE, MapObject
 from ..models import Map
 from ..parties import service as parties
+from ..realms.models import Settlement
 from ..reach.hooks import TALK, Reach
 from .hooks import Npcs
 from .models import Dialog, Npc, NpcTalk
@@ -72,10 +73,10 @@ async def missing_includes(session: AsyncSession) -> list[tuple[str, str]]:
     return [(owner, key) for owner, text in owners for key in parse(text).includes if key not in known]
 
 
-async def place_npc(session: AsyncSession, key: str, name: str, map_id: int, x: int, y: int, dialog: str, counter: list[tuple[int, int]] | None = None) -> Npc:
+async def place_npc(session: AsyncSession, key: str, name: str, map_id: int, x: int, y: int, dialog: str, counter: list[tuple[int, int]] | None = None, settlement_id: int | None = None) -> Npc:
     """Stands an NPC on a map at a tile with its dialog and counter tiles (a game's setup code calls it). The dialog is checked
     (ScriptError says what is wrong with it), and the NPC with this $key is moved and rewritten if it exists, so setup can run
-    again."""
+    again. $settlement_id is the settlement the NPC belongs to (``Npc.settlement_id``), if any."""
     if len(dialog) > MAX_TEXT:
         raise ScriptError(f"a dialog is at most {MAX_TEXT} characters")
     parse(dialog)
@@ -84,10 +85,10 @@ async def place_npc(session: AsyncSession, key: str, name: str, map_id: int, x: 
     tiles = [[int(tile_x), int(tile_y)] for tile_x, tile_y in (counter or [])]
     npc = await session.scalar(select(Npc).where(Npc.key == key))
     if npc is None:
-        npc = Npc(key=key, name=name, map_id=map_id, x=x, y=y, dialog=dialog, counter=tiles)
+        npc = Npc(key=key, name=name, map_id=map_id, x=x, y=y, dialog=dialog, counter=tiles, settlement_id=settlement_id)
         session.add(npc)
     else:
-        npc.name, npc.map_id, npc.x, npc.y, npc.dialog, npc.counter = name, map_id, x, y, dialog, tiles
+        npc.name, npc.map_id, npc.x, npc.y, npc.dialog, npc.counter, npc.settlement_id = name, map_id, x, y, dialog, tiles, settlement_id
     await session.flush()
     return npc
 
@@ -97,7 +98,12 @@ async def apply_npcs(session: AsyncSession, world_id: int, rows: list) -> int:
     rewritten if it exists). An NPC the rows no longer list is left standing. Returns how many."""
     for row in rows:
         found = await session.scalar(select(Map).where(Map.world_id == world_id, Map.name == row.map))
-        await place_npc(session, row.key, row.name, found.id, row.x, row.y, row.dialog, [(x, y) for x, y in row.counter])
+        town = None
+        if row.settlement is not None:
+            town = await session.scalar(select(Settlement.id).where(Settlement.world_id == world_id, Settlement.key == row.settlement))
+            if town is None:
+                raise NpcError(f"NPC {row.key!r} belongs to settlement {row.settlement!r}, which the world does not have")
+        await place_npc(session, row.key, row.name, found.id, row.x, row.y, row.dialog, [(x, y) for x, y in row.counter], town)
     return len(rows)
 
 
