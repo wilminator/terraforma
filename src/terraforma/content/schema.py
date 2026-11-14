@@ -515,6 +515,9 @@ class SettlementSeed(Strict):
     x: int | None = Field(default=None, ge=0)
     y: int | None = Field(default=None, ge=0)
     state: Literal["live", "dormant"] = "live"
+    #: How far (in tiles) the settlement's sphere of influence reaches, for a game that judges it by the factions around it (``Realms.governs``);
+    #: left out, the game's default (``Realms.sphere_default``, 12).
+    sphere: int | None = Field(default=None, ge=1, le=10000)
     supplies: list[SupplySeed] = Field(default=[], max_length=64)
 
     @model_validator(mode="after")
