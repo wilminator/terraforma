@@ -12,7 +12,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import World
-from . import service, supply
+from ..world.rng import WorldRng
+from . import news, service, supply
 from .hooks import Influence, Realms
 from .models import DORMANT, LIVE, RUINS, Realm, Settlement
 
@@ -65,7 +66,9 @@ async def judge(session: AsyncSession, hooks: Realms) -> int:
     before ruins; one that can't be founded is skipped). Returns how many settlements fell or were founded."""
     changed = 0
     for realm in (await session.scalars(select(Realm).order_by(Realm.id))).all():
+        before = realm.as_of_tick
         await drift(session, hooks, realm)
+        await _raid(session, hooks, realm, realm.as_of_tick - before)
         for town in await service.settlements(session, realm, LIVE):
             if not hooks.governs(town) and hooks.falls(realm, town):
                 await service.fall(session, town)
@@ -75,6 +78,26 @@ async def judge(session: AsyncSession, hooks: Realms) -> int:
                 changed += 1
                 break
     return changed + await _judge_governed(session, hooks)
+
+
+async def _raid(session: AsyncSession, hooks: Realms, realm: Realm, elapsed: int) -> int:
+    """The raids the game says fell on the realm's live settlements in the $elapsed ticks since it was last looked at: each cuts a supply for a while and
+    posts its line. Nothing happens when no time has passed. Returns how many."""
+    if elapsed <= 0:
+        return 0
+    world = await session.get(World, realm.world_id)
+    towns = await service.settlements(session, realm, LIVE)
+    done = 0
+    for raid in hooks.raids(realm, towns, WorldRng(world.seed).stream("raid", realm.key, world.tick), elapsed):
+        try:
+            await supply.set_cut(session, raid.settlement, raid.material, raid.cut, raid.ticks)
+        except service.RealmError:  # (a raid on a supply the settlement does not keep is the game's mistake: skipped, not fatal)
+            log.info("realm raid: %s keeps no %s", raid.settlement.name, raid.material)
+            continue
+        if raid.text:
+            await news.post(session, realm.world_id, raid.text, "raid", raid.settlement)
+        done += 1
+    return done
 
 
 async def _judge_governed(session: AsyncSession, hooks: Realms) -> int:

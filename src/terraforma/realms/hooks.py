@@ -18,6 +18,7 @@ A settlement that lives between realms (a wayhouse) is judged by the realms arou
 much the realms within its sphere give it (``Influence``); it falls when the support drops under ``holds_at`` and is founded when it reaches ``founds_at``.
 """
 
+import random
 from dataclasses import dataclass
 
 from .models import Realm, Settlement
@@ -33,6 +34,18 @@ class Influence:
     towns: int
     nearest: int
     fullness: int
+
+
+@dataclass(frozen=True)
+class Raid:
+    """A raid the game says has fallen on a live settlement: for $ticks ticks of the world clock the settlement's own sources of $material are cut by $cut
+    percent (``realms.supply.set_cut``), and $text, if any, is posted to the bulletin (``realms.news``)."""
+
+    settlement: Settlement
+    material: str
+    cut: int
+    ticks: int
+    text: str = ""
 
 
 class Realms:
@@ -59,6 +72,11 @@ class Realms:
     #: (a gap between the two keeps it from opening and closing at every pass).
     holds_at: int = 30
     founds_at: int = 60
+
+    def raids(self, realm: Realm, settlements: list[Settlement], rng: random.Random, elapsed: int) -> list[Raid]:
+        """The raids that fall on the realm's live $settlements in the $elapsed ticks since it was last judged, drawn with $rng (a repeatable stream for this
+        realm and this moment: use it, never ``random``). None, by default. A raid on a supply that is under a raid already starts over."""
+        return []
 
     def governs(self, settlement: Settlement) -> bool:
         """Whether the settlement is judged by the realms around it (``support``) and not by the strength of its own realm (``falls`` and ``founds``).

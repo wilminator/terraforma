@@ -87,6 +87,8 @@ class SettlementSupply(Timestamps, Base):
     rate: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     drain: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     cut: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    #: The tick the cut ends (a raid lasts so long), or 0 when it lasts until something changes it (an admin's cut).
+    cut_until: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
     as_of_tick: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
 
 
