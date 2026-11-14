@@ -18,6 +18,7 @@ from ..heroes.models import Hero
 from ..maps.models import MapObject
 from ..models import Map
 from ..npcs.models import Npc
+from ..realms.models import LIVE, Settlement
 from ..parties.models import Party
 
 TALK, INVITE, OPEN, SEARCH, FIGHT, HELP = "talk", "invite", "open", "search", "fight", "help"
@@ -53,9 +54,13 @@ class Reach:
         """Whether the hero is in range of the NPC for the action: None if so, otherwise why not. By default a talk is from a
         counter tile or next to one (any of the eight tiles around it) that the NPC is also next to, and an NPC with no counter
         is talked to from the tiles around it; any other action is from the tiles around the NPC. A game can ask for more (a
-        level, a quest, a time of day)."""
+        level, a quest, a time of day). An NPC that belongs to a settlement (``Npc.settlement_id``) can't be reached while the settlement is not live."""
         if actor.map_id != npc.map_id:
             return "that person is not here"
+        if npc.settlement_id is not None:
+            town = await session.get(Settlement, npc.settlement_id)
+            if town is not None and town.state != LIVE:
+                return "that place lies in ruins"
         found = await session.get(Map, npc.map_id)
         near = lambda a, b: distance(found, a, b) <= 1  # noqa: E731
         spot, there = (actor.x, actor.y), (npc.x, npc.y)

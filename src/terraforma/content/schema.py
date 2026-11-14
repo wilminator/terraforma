@@ -444,7 +444,7 @@ class DialogSeed(Strict):
 
 class NpcSeed(Strict):
     """An NPC standing on a map: ``map`` is the key of one of the game's maps (or the default ``hub``), ``x`` and ``y`` the tile, ``dialog`` what they
-    say (the dialog language, see ``npcs.script``: a shop, an inn and the rest are tags in it) and ``counter`` the tiles of their counter."""
+    say (the dialog language, see ``npcs.script``: a shop, an inn and the rest are tags in it) and ``counter`` the tiles of their counter. ``settlement`` ties them to a place: they close with it."""
 
     key: Key
     name: str = Field(min_length=1, max_length=64)
@@ -453,6 +453,8 @@ class NpcSeed(Strict):
     y: int = Field(ge=0)
     dialog: str = Field(min_length=1, max_length=MAX_TEXT)
     counter: list[Annotated[list[int], Field(min_length=2, max_length=2)]] = Field(default=[], max_length=64)
+    #: The key of the settlement (``settlements.json``) the NPC belongs to: nobody can reach it while that place is in ruins or not yet founded.
+    settlement: Key | None = None
 
     @model_validator(mode="after")
     def _the_dialog_is_good(self):

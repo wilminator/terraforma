@@ -78,12 +78,12 @@ async def load_content(session: AsyncSession, seed: dict[str, list[dict]], stats
         counts["maps"] = await apply_maps(session, hub.world_id, checked["maps"])
     if "dialogs" in seed:
         counts["dialogs"] = await apply_dialogs(session, checked["dialogs"])
-    if "npcs" in seed:
-        hub = await ensure_start(session)
-        counts["npcs"] = await apply_npcs(session, hub.world_id, checked["npcs"])
     if "realms" in seed or "settlements" in seed or "materials" in seed:
         hub = await ensure_start(session)
         counts["realms"] = await apply_realms(session, hub.world_id, checked["realms"], checked["settlements"], checked["materials"])
+    if "npcs" in seed:
+        hub = await ensure_start(session)
+        counts["npcs"] = await apply_npcs(session, hub.world_id, checked["npcs"])
     if "quest_slots" in seed:
         counts["quest_slots"] = await apply_slots(session, checked["quest_slots"])
     if "quest_templates" in seed:

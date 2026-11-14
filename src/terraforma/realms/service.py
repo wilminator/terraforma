@@ -6,7 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.dialect import upsert
 from ..models import Map, World
-from ..towns.models import VisitedTown
+from ..parties.models import Party
+from ..towns import service as towns_service
+from ..towns.models import TownVisit, VisitedTown
 from .models import DORMANT, KINDS, KINGDOM, LIVE, RUINS, Material, Realm, Settlement, SettlementSupply
 
 
@@ -54,11 +56,18 @@ async def found(session: AsyncSession, settlement: Settlement) -> Settlement:
 
 async def fall(session: AsyncSession, settlement: Settlement) -> Settlement:
     """A live settlement falls: it is kept as ruins and leaves the visited list of every team (the entry that names it; and, when no other
-    live settlement stands on its map, every entry of the map, as a map with one unnamed town has only that). Teams that go there again once it is founded again add it as new."""
+    live settlement stands on its map, every entry of the map, as a map with one unnamed town has only that). Teams that go there again once it is founded again add it as new.
+    A party waiting in the town (suspended at its tile) is put back together outside it, as if its teams had all left, and its NPCs can't be reached (``Npc.settlement_id``)."""
     if settlement.state != LIVE:
         raise RealmError(f"{settlement.name} is not live.")
     settlement.state = RUINS
     await session.flush()
+    if settlement.x is not None:
+        waiting = await session.scalars(
+            select(TownVisit.party_id).join(Party, Party.id == TownVisit.party_id).where(Party.map_id == settlement.map_id, Party.x == settlement.x, Party.y == settlement.y)
+        )
+        for party_id in list(waiting.all()):
+            await towns_service.reform(session, party_id)
     await session.execute(delete(VisitedTown).where(VisitedTown.map_id == settlement.map_id, VisitedTown.town == settlement.key))
     if not await live_on(session, settlement.map_id):  # (a map with no town left forgets the towns no settlement names too)
         await session.execute(delete(VisitedTown).where(VisitedTown.map_id == settlement.map_id))

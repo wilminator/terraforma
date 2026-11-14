@@ -20,6 +20,9 @@ class Npc(Located, Timestamps, Base):
     name: Mapped[str] = mapped_column(String(64))
     dialog: Mapped[str] = mapped_column(Text)
     counter: Mapped[list] = mapped_column(JSON, default=list)
+    #: The settlement (``terraforma.realms``) this NPC belongs to, or None. While that settlement is not live (it fell, or is not yet
+    #: founded) nobody can reach the NPC (``Reach.npc``), so its shop, inn and hall are closed with the place.
+    settlement_id: Mapped[int | None] = mapped_column(ForeignKey("settlements.id"), default=None, index=True)
 
 
 class Dialog(Timestamps, Base):
