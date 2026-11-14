@@ -56,6 +56,8 @@ class Settlement(Timestamps, Base):
     #: (the overworld is one big map), told apart by where they are; the default ``Towns.town_key`` finds a settlement by this tile.
     x: Mapped[int | None] = mapped_column(Integer, default=None)
     y: Mapped[int | None] = mapped_column(Integer, default=None)
+    #: How far, in tiles, its sphere of influence reaches (the realms around it that give it a reason to exist), or None for the game's default.
+    sphere: Mapped[int | None] = mapped_column(Integer, default=None)
 
 
 class Material(Timestamps, Base):
