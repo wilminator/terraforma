@@ -415,8 +415,8 @@ async def test_an_alliance_has_relationships_and_a_role_that_speaks_for_it(db):
     row = await relating.apply(db, Relations(), Change(Ref("alliance", alliance.id), Ref("team", rivals.id), score=-60))
     assert (row.subject_kind, row.object_kind, row.score) == ("alliance", "team", -60)
     await relating.apply(db, Relations(), Change(Ref("team", rivals.id), Ref("alliance", alliance.id), score=30))
-    assert (await relating.list_for(db, Relations(), Ref("alliance", alliance.id)))[0]["name"] == "Rivals"
-    assert (await relating.list_for(db, Relations(), Ref("team", rivals.id)))[0]["name"] == "Pact", "teams can have views of alliances"
+    assert (await relating.list_for(db, Relations(), Ref("alliance", alliance.id), mike.id))[0]["name"] == "Rivals"
+    assert (await relating.list_for(db, Relations(), Ref("team", rivals.id), zed.id))[0]["name"] == "Pact", "teams can have views of alliances"
 
 
 # --- the calls ------------------------------------------------------------------------------------------------------------------------------------

@@ -72,7 +72,7 @@ async def talk_to_party(
     helping = await reach.party(session, HELP, hero, party) or rules.may_help(stance)
     return {
         "party_id": party.id,
-        "teams": await _shown_teams(session, party.id),
+        "teams": await _shown_teams(session, party.id, hero.account_id),
         "stance": stance,
         "options": [
             {"action": "fight", "available": fight is None, "reason": fight},

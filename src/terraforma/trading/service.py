@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..economy import Economy, NotEnoughGold
 from ..heroes import inventory
 from ..heroes.models import Hero
+from ..names.display import HERO, public_name
 from .models import TradeRecord
 from .policy import Trade
 
@@ -95,17 +96,26 @@ async def give_item(session: AsyncSession, economy: Economy, giver: Hero, receiv
     await session.flush()
 
 
+def _other_name(row: TradeRecord, hero: Hero, found: dict) -> str:
+    """The other hero's name as the trade recorded it, unless the hero (still there) is another player's and its name failed the name screen."""
+    name = row.receiver_name if row.giver_id == hero.id else row.giver_name
+    name_ok, owner = found.get(row.receiver_id if row.giver_id == hero.id else row.giver_id, (None, None))
+    return public_name(name, name_ok, HERO, own=owner == hero.account_id)
+
+
 async def history(session: AsyncSession, hero: Hero, limit: int = 50) -> list[dict]:
     """What the hero gave and received, newest first."""
-    rows = await session.scalars(
+    rows = (await session.scalars(
         select(TradeRecord).where(or_(TradeRecord.giver_id == hero.id, TradeRecord.receiver_id == hero.id))
         .order_by(TradeRecord.id.desc()).limit(limit)
-    )
+    )).all()
+    others = {row.receiver_id if row.giver_id == hero.id else row.giver_id for row in rows}
+    found = {id_: (ok, owner) for id_, ok, owner in (await session.execute(select(Hero.id, Hero.name_ok, Hero.account_id).where(Hero.id.in_(others)))).all()} if others else {}
     return [
         {
             "id": row.id, "direction": "gave" if row.giver_id == hero.id else "received",
-            "other": row.receiver_name if row.giver_id == hero.id else row.giver_name,
+            "other": _other_name(row, hero, found),
             "kind": row.kind, "item": row.item_key or None, "qty": row.qty, "at": row.created_at.isoformat(),
         }
-        for row in rows.all()
+        for row in rows
     ]

@@ -11,9 +11,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..alliances import service as alliances
+from ..alliances.membership import account_in_alliance
 from ..alliances.models import Alliance, AllianceMember
 from ..heroes.models import Team
 from ..models import Account
+from ..names.display import ALLIANCE, PLAYER, TEAM, public_name, seen_by
 from ..social.models import ProfileBan
 from .models import BIO_MAX, AllianceProfile, PlayerProfile, TeamProfile
 
@@ -199,10 +201,18 @@ async def player_page(session: AsyncSession, token: str, viewer_id: int | None =
         select(Team, TeamProfile).join(TeamProfile, TeamProfile.team_id == Team.id)
         .where(Team.account_id == profile.account_id, TeamProfile.visible.is_(True)).order_by(Team.id)
     )).all()
-    return {"handle": account.handle, "bio": profile.bio, "teams": [{"name": team.name, "page": row.token} for team, row in shown]}
+    return {
+        "handle": public_name(account.handle, account.name_ok, PLAYER, own=account.id == viewer_id), "bio": profile.bio,
+        "teams": [{"name": shown_name(team, viewer_id), "page": row.token} for team, row in shown],
+    }
 
 
-async def _team_page(session: AsyncSession, team: Team, members: bool) -> dict:
+def shown_name(team: Team, viewer_id: int | None) -> str:
+    """The team's name as the account $viewer_id (None: nobody is signed in) is shown it: its owner always sees it, others unless it failed the screen."""
+    return seen_by(team.name, team.name_ok, TEAM, team.account_id, viewer_id)
+
+
+async def _team_page(session: AsyncSession, team: Team, members: bool, viewer_id: int | None = None) -> dict:
     """A visible team's page: its name and the alliances it is in (each with a link once it has a page). The player's
     handle is on it only if the player is in the directory, and an alliance's $members (reading it as one) also get the
     token of the player's page (``player``)."""
@@ -213,12 +223,12 @@ async def _team_page(session: AsyncSession, team: Team, members: bool) -> dict:
         .outerjoin(AllianceProfile, AllianceProfile.alliance_id == Alliance.id)
         .where(AllianceMember.team_id == team.id).order_by(Alliance.name)
     )).all()
-    page = {"name": team.name}
+    page = {"name": shown_name(team, viewer_id)}
     if profile is not None and profile.directory:
-        page["handle"] = owner.handle
+        page["handle"] = public_name(owner.handle, owner.name_ok, PLAYER, own=owner.id == viewer_id)
         if members:
             page["player"] = profile.token
-    page["alliances"] = [{"name": alliance.name, "page": row.token if row else None} for alliance, row in rows]
+    page["alliances"] = [{"name": public_name(alliance.name, alliance.name_ok, ALLIANCE, own=await account_in_alliance(session, viewer_id, alliance.id)), "page": row.token if row else None} for alliance, row in rows]
     return page
 
 
@@ -234,7 +244,7 @@ async def team_page(session: AsyncSession, token: str, viewer_id: int | None = N
     team = await _visible_team(session, row.team_id) if row else None
     if team is None or await _barred(session, team.account_id, viewer_id):
         raise NotFound("there's no such page")
-    return await _team_page(session, team, False)
+    return await _team_page(session, team, False, viewer_id)
 
 
 async def alliance_page(session: AsyncSession, token: str) -> dict:
@@ -245,11 +255,11 @@ async def alliance_page(session: AsyncSession, token: str) -> dict:
     if row is None:
         raise NotFound("there's no such page")
     alliance = await session.get(Alliance, row.alliance_id)
-    teams = [{key: value for key, value in entry.items() if key not in ("team_id", "player")} for entry in await _roster(session, alliance)]
-    return {"name": alliance.name, "bio": row.bio, "teams": teams}
+    teams = [{key: value for key, value in entry.items() if key not in ("team_id", "player")} for entry in await _roster(session, alliance, None)]
+    return {"name": public_name(alliance.name, alliance.name_ok, ALLIANCE), "bio": row.bio, "teams": teams}
 
 
-async def _roster(session: AsyncSession, alliance: Alliance) -> list[dict]:
+async def _roster(session: AsyncSession, alliance: Alliance, viewer_id: int | None) -> list[dict]:
     """Every team in the alliance in the order it joined: name and role, and while the team is visible the token of its page
     and, if its player is in the directory, the handle and the token of the player's page. A hidden team is its name alone."""
     found = (await session.execute(
@@ -263,9 +273,9 @@ async def _roster(session: AsyncSession, alliance: Alliance) -> list[dict]:
     teams = []
     for team, member, team_row, player_row, owner in found:
         shown = team_row is not None and team_row.visible
-        entry = {"team_id": team.id, "name": team.name, "role": member.role, "page": team_row.token if shown else None}
+        entry = {"team_id": team.id, "name": shown_name(team, viewer_id), "role": member.role, "page": team_row.token if shown else None}
         if shown and player_row is not None and player_row.directory:
-            entry["handle"] = owner.handle
+            entry["handle"] = public_name(owner.handle, owner.name_ok, PLAYER, own=owner.id == viewer_id)
             entry["player"] = player_row.token
         teams.append(entry)
     return teams
@@ -275,7 +285,7 @@ async def member_roster(session: AsyncSession, account: Account, alliance_id: in
     """The roster as one of the alliance's own players reads it (NotFound for anyone else)."""
     alliance = await alliances.get_alliance(session, alliance_id)
     await alliances.reading_team(session, account, alliance)
-    return await _roster(session, alliance)
+    return await _roster(session, alliance, account.id)
 
 
 async def member_team_page(session: AsyncSession, account: Account, alliance_id: int, team_id: int) -> dict:
@@ -288,4 +298,4 @@ async def member_team_page(session: AsyncSession, account: Account, alliance_id:
     team = await _visible_team(session, team_id)
     if team is None or await _barred(session, team.account_id, account.id):
         raise NotFound("there's no such team in this alliance")
-    return await _team_page(session, team, True)
+    return await _team_page(session, team, True, account.id)

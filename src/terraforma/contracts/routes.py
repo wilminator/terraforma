@@ -11,6 +11,7 @@ from ..accounts.routes import Strict, limited
 from ..api.deps import ActingAccount, CurrentAccount, Db, GameAlliances, GameContracts, GameEconomy, GameFees, GameRules, GameStorage
 from ..heroes import service
 from ..heroes.models import Hero, Team, TeamMember
+from ..names.display import TEAM, seen_by
 from ..heroes.routes import Id
 from ..heroes.routes import refuse as refuse_hero
 from . import bounties
@@ -47,8 +48,10 @@ async def _team_id(db, hero: Hero) -> int | None:
     return await db.scalar(select(TeamMember.team_id).where(TeamMember.hero_id == hero.id))
 
 
-async def _view(db, contract: Contract) -> dict:
-    names = dict((await db.execute(select(Team.id, Team.name).where(Team.id.in_([t for t in (contract.a_team_id, contract.b_team_id) if t is not None])))).all())
+async def _view(db, contract: Contract, viewer_id: int) -> dict:
+    """The contract as the account $viewer_id reads it: a team whose name failed the name screen is a neutral label unless it is theirs."""
+    rows = (await db.execute(select(Team.id, Team.name, Team.name_ok, Team.account_id).where(Team.id.in_([t for t in (contract.a_team_id, contract.b_team_id) if t is not None])))).all()
+    names = {id_: seen_by(name, name_ok, TEAM, owner, viewer_id) for id_, name, name_ok, owner in rows}
     return {
         "id": contract.id, "guild": contract.guild, "state": contract.state, "open": contract.a_team_id is None, "reward": contract.reward_gold, "payment": contract.payment_gold,
         "a": {"team_id": contract.a_team_id, "team": names.get(contract.a_team_id), "escrow": contract.a_escrow_gold},
@@ -71,7 +74,7 @@ async def offer_contract(
             [(t.kind, t.params) for t in body.my_terms], [(t.kind, t.params) for t in body.their_terms],
             body.my_escrow, body.their_escrow, body.duration, body.payment,
         )
-        return await _view(db, contract)
+        return await _view(db, contract, account.id)
     except (service.HeroError, contracts_service.ContractError) as error:
         raise refuse(error) from error
 
@@ -84,7 +87,7 @@ async def accept_contract(
     await limited(request, ratelimit.CONTRACT_BY_ACCOUNT, str(account.id))
     try:
         hero = await service.own_hero(db, account, hero_id)
-        return await _view(db, await contracts_service.accept(db, economy, fees, contracts, hero, contract_id, rules.party_size))
+        return await _view(db, await contracts_service.accept(db, economy, fees, contracts, hero, contract_id, rules.party_size), account.id)
     except (service.HeroError, contracts_service.ContractError) as error:
         raise refuse(error) from error
 
@@ -94,7 +97,7 @@ async def enter_contract_instance(hero_id: Id, contract_id: Id, request: Request
     await limited(request, ratelimit.CONTRACT_BY_ACCOUNT, str(account.id))
     try:
         hero = await service.own_hero(db, account, hero_id)
-        return await _view(db, await contracts_service.enter_instance(db, hero, contract_id))
+        return await _view(db, await contracts_service.enter_instance(db, hero, contract_id), account.id)
     except (service.HeroError, contracts_service.ContractError) as error:
         raise refuse(error) from error
 
@@ -106,7 +109,7 @@ async def decline_contract(
     await limited(request, ratelimit.CONTRACT_BY_ACCOUNT, str(account.id))
     try:
         hero = await service.own_hero(db, account, hero_id)
-        return await _view(db, await contracts_service.decline(db, economy, storage, hero, contract_id))
+        return await _view(db, await contracts_service.decline(db, economy, storage, hero, contract_id), account.id)
     except (service.HeroError, contracts_service.ContractError) as error:
         raise refuse(error) from error
 
@@ -118,7 +121,7 @@ async def withdraw_contract(
     await limited(request, ratelimit.CONTRACT_BY_ACCOUNT, str(account.id))
     try:
         hero = await service.own_hero(db, account, hero_id)
-        return await _view(db, await contracts_service.withdraw(db, economy, storage, hero, contract_id))
+        return await _view(db, await contracts_service.withdraw(db, economy, storage, hero, contract_id), account.id)
     except (service.HeroError, contracts_service.ContractError) as error:
         raise refuse(error) from error
 
@@ -136,7 +139,7 @@ async def my_contracts(hero_id: Id, account: CurrentAccount, db: Db, limit: int 
         select(Contract).where(or_(Contract.a_team_id == team_id, Contract.b_team_id == team_id))
         .order_by(Contract.id.desc()).limit(max(1, min(limit, 100)))
     )
-    return [await _view(db, contract) for contract in rows.all()]
+    return [await _view(db, contract, account.id) for contract in rows.all()]
 
 
 @router.get("/open-contracts")
@@ -145,7 +148,7 @@ async def open_contracts(hero_id: Id, account: CurrentAccount, db: Db, guild: st
         await service.own_hero(db, account, hero_id)
     except service.HeroError as error:
         raise refuse(error) from error
-    return [await _view(db, contract) for contract in await contracts_service.open_offers(db, guild, limit)]
+    return [await _view(db, contract, account.id) for contract in await contracts_service.open_offers(db, guild, limit)]
 
 
 @router.get("/contracts/{contract_id}")
@@ -158,7 +161,7 @@ async def one_contract(hero_id: Id, contract_id: Id, account: CurrentAccount, db
     team_id = await _team_id(db, hero)
     if contract is None or team_id not in (contract.a_team_id, contract.b_team_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "there is no such contract of yours")
-    return await _view(db, contract)
+    return await _view(db, contract, account.id)
 
 
 class PostBounty(Strict):

@@ -228,6 +228,17 @@ async def test_search_finds_open_listings_by_guild_text_and_price(clock, db):
     assert ids(await service.search(db, limit=1, offset=1)) == [sword.id]
 
 
+async def test_search_names_a_seller_whose_team_name_failed_the_name_screen_by_a_label_to_everyone_but_that_team(clock, db):
+    mike, cole_owner, mine, _yours, aria, _cole = await a_market(db)
+    await listed(db, aria)
+    assert [row["seller"] for row in await service.search(db, viewer_id=cole_owner.id)] == ["Vanguard"]
+    mine.name_ok = False
+    await db.flush()
+    assert [row["seller"] for row in await service.search(db, viewer_id=cole_owner.id)] == ["Team"]
+    assert [row["seller"] for row in await service.search(db)] == ["Team"], "no viewer is another player"
+    assert [row["seller"] for row in await service.search(db, viewer_id=mike.id)] == ["Vanguard"], "the seller reads their own name"
+
+
 async def test_search_leaves_out_what_is_sold_cancelled_or_out_of_time(clock, db):
     _mike, _cole_owner, _mine, _yours, aria, cole = await a_market(db)
     sold = await listed(db, aria, items=((0, 1),), gold=10)

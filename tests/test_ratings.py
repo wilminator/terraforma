@@ -120,6 +120,16 @@ async def test_a_game_decides_whom_to_ask(db):
     assert len(await ratings.create_prompts(db, Always(), record, fight)) == 1, "even one that has an opinion, when the game says so"
 
 
+async def test_the_question_names_the_other_team_by_a_label_when_its_name_failed_the_name_screen(db):
+    mike, zed, alpha, bravo, _a, _b, fight, record = await a_pvp_fight(db)
+    fight.get((0, 0, 0)).xp_debts.append([1, 0, 0, 0.5, 10])
+    await ratings.create_prompts(db, Relations(), record, fight)
+    bravo.name_ok = False
+    await db.flush()
+    [asked] = await ratings.pending(db, mike.id)
+    assert (asked["team"]["name"], asked["other"]["name"]) == ("Alpha", "Team")
+
+
 async def test_only_the_team_asked_sees_the_question_and_with_the_names(db):
     mike, zed, alpha, bravo, _a, _b, fight, record = await a_pvp_fight(db)
     fight.get((0, 0, 0)).xp_debts.append([1, 0, 0, 0.5, 10])
@@ -139,7 +149,7 @@ async def test_answering_rates_the_team_through_the_games_rule_and_closes_the_qu
         async def resolve(self, session, subject, object, current, change):
             return min(await super().resolve(session, subject, object, current, change), 20)
 
-    view = await relations_service.view(db, Cautious(), await ratings.answer(db, Cautious(), mike.id, prompt.id, 90))
+    view = await relations_service.view(db, Cautious(), await ratings.answer(db, Cautious(), mike.id, prompt.id, 90), mike.id)
     assert view["score"] == 20, "the game's rule decides what the answer comes to"
     assert prompt.state == "answered" and await ratings.pending(db, mike.id) == []
     with pytest.raises(relations_service.RelationError, match="dealt with"):

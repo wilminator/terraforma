@@ -17,7 +17,7 @@ It lists the teams their players made visible (``TeamProfile.visible``; a hidden
 whatever their visibility. A result shows the team's number and name, and the player's handle only if that player is in the directory.
 """
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..accounts.service import handle_key
@@ -25,6 +25,7 @@ from ..fights.rules import Rules
 from ..heroes.models import Team
 from ..heroes.service import name_key
 from ..models import Account
+from ..names.display import PLAYER, public_name
 from ..playtime import service as playtime
 from ..playtime.models import PlayTime
 from ..profiles.models import PlayerProfile, TeamProfile
@@ -91,7 +92,7 @@ async def set_share_back(session: AsyncSession, me: Account, handle: str, enable
 async def following(session: AsyncSession, rules: Rules, me: Account) -> dict:
     """The caller's list, the players with the most recent activity first (a player who has not played yet last), and the numbers."""
     rows = (await session.execute(
-        select(Account.handle, Follow.share_back, PlayerProfile.token, PlayerProfile.directory_link)
+        select(Account.handle, Account.name_ok, Follow.share_back, PlayerProfile.token, PlayerProfile.directory_link)
         .select_from(Follow).join(Account, Account.id == Follow.followed_id)
         .outerjoin(PlayerProfile, PlayerProfile.account_id == Follow.followed_id)
         .outerjoin(PlayTime, PlayTime.account_id == Follow.followed_id)
@@ -101,8 +102,8 @@ async def following(session: AsyncSession, rules: Rules, me: Account) -> dict:
     cap = rules.follow_cap(await playtime.seconds_played(session, rules, me.id))
     return {
         "following": [
-            {"handle": handle, "share_back": share, "profile": token if link else None}
-            for handle, share, token, link in rows
+            {"handle": public_name(handle, name_ok, PLAYER), "share_back": share, "profile": token if link else None}
+            for handle, name_ok, share, token, link in rows
         ],
         "cap": cap,
         "followers": await follower_count(session, me),
@@ -119,13 +120,13 @@ async def followers(session: AsyncSession, me: Account) -> dict:
     """How many follow the caller, and those of them who chose to show their handle and profile link."""
     banned = select(ProfileBan.banned_id).where(ProfileBan.owner_id == me.id)
     rows = (await session.execute(
-        select(Account.handle, PlayerProfile.token)
+        select(Account.handle, Account.name_ok, PlayerProfile.token)
         .select_from(Follow).join(Account, Account.id == Follow.follower_id)
         .outerjoin(PlayerProfile, PlayerProfile.account_id == Follow.follower_id)
         .where(Follow.followed_id == me.id, Follow.share_back.is_(True), Follow.follower_id.not_in(banned))
         .order_by(Account.handle_key)
     )).all()
-    return {"count": await follower_count(session, me), "sharing": [{"handle": handle, "profile": token} for handle, token in rows]}
+    return {"count": await follower_count(session, me), "sharing": [{"handle": public_name(handle, name_ok, PLAYER), "profile": token} for handle, name_ok, token in rows]}
 
 
 # --- bans ------------------------------------------------------------------------------------------------------------
@@ -150,9 +151,10 @@ async def unban(session: AsyncSession, me: Account, handle: str) -> None:
 
 async def bans(session: AsyncSession, me: Account) -> list[str]:
     """The handles the caller has banned, by handle."""
-    return list((await session.scalars(
-        select(Account.handle).join(ProfileBan, ProfileBan.banned_id == Account.id).where(ProfileBan.owner_id == me.id).order_by(Account.handle_key)
-    )).all())
+    rows = (await session.execute(
+        select(Account.handle, Account.name_ok).join(ProfileBan, ProfileBan.banned_id == Account.id).where(ProfileBan.owner_id == me.id).order_by(Account.handle_key)
+    )).all()
+    return [public_name(handle, name_ok, PLAYER) for handle, name_ok in rows]
 
 
 # --- the directory ---------------------------------------------------------------------------------------------------
@@ -166,7 +168,8 @@ async def search(session: AsyncSession, me: Account, prefix: str) -> list[dict]:
     rows = (await session.execute(
         select(Account.id, Account.handle, PlayerProfile.bio, PlayerProfile.token, PlayerProfile.directory_link)
         .join(PlayerProfile, PlayerProfile.account_id == Account.id)
-        .where(PlayerProfile.directory.is_(True), Account.handle_key.startswith(key, autoescape=True), Account.id != me.id, Account.id.not_in(barred))
+        .where(PlayerProfile.directory.is_(True), Account.handle_key.startswith(key, autoescape=True), Account.id != me.id, Account.id.not_in(barred),
+               or_(Account.name_ok.is_(None), Account.name_ok.is_(True)))  # (a handle that failed the screen is found by nobody else)
         .order_by(Account.handle_key).limit(RESULTS)
     )).all()
     followed = set((await session.scalars(select(Follow.followed_id).where(Follow.follower_id == me.id, Follow.followed_id.in_([row[0] for row in rows])))).all()) if rows else set()
@@ -184,7 +187,7 @@ async def search_teams(session: AsyncSession, me: Account, prefix: str) -> list[
         return []
     barred = select(ProfileBan.owner_id).where(ProfileBan.banned_id == me.id)
     rows = (await session.execute(
-        select(Team.id, Team.name, Team.account_id, Account.handle, PlayerProfile.directory)
+        select(Team.id, Team.name, Team.account_id, Account.handle, PlayerProfile.directory, Team.name_ok, Account.name_ok)
         .join(Account, Account.id == Team.account_id)
         .outerjoin(TeamProfile, TeamProfile.team_id == Team.id)
         .outerjoin(PlayerProfile, PlayerProfile.account_id == Team.account_id)
@@ -192,10 +195,11 @@ async def search_teams(session: AsyncSession, me: Account, prefix: str) -> list[
             Team.name_key.startswith(text, autoescape=True),
             (TeamProfile.visible.is_(True)) | (Team.account_id == me.id),
             Team.account_id.not_in(barred),
+            or_(Team.account_id == me.id, Team.name_ok.is_(None), Team.name_ok.is_(True)),  # (a name that failed the screen is found by nobody but its owner)
         )
         .order_by(Team.name_key, Team.id).limit(RESULTS)
     )).all()
     return [
-        {"id": id_, "name": name, "mine": owner == me.id, "handle": handle if listed else None}
-        for id_, name, owner, handle, listed in rows
+        {"id": id_, "name": name, "mine": owner == me.id, "handle": public_name(handle, handle_ok, PLAYER, own=owner == me.id) if listed else None}
+        for id_, name, owner, handle, listed, _team_ok, handle_ok in rows
     ]

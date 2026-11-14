@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from terraforma.fights.rules import Rules
 from terraforma.game import Game
 from terraforma.heroes import service as heroes
-from terraforma.heroes.models import Hero
+from terraforma.heroes.models import Hero, Team
 from terraforma.models import Account
 from terraforma.parties import service as parties
 from terraforma.parties.models import Party
@@ -116,6 +116,18 @@ def test_visible_teams_are_named(pair):
 
     in_app_db(client, work)
     assert [entry["id"] for entry in expect(talk(client, aria, teams["bram"][1]), 200).json()["teams"]] == [teams["bram"][0]]
+
+
+def test_a_visible_team_that_failed_the_name_screen_is_a_label_to_the_other_player(pair):
+    client, mike, aria, bram, teams = pair
+
+    async def work(db):
+        owner = await db.get(Account, (await db.get(Hero, bram)).account_id)
+        await profiles.set_visible(db, owner, teams["bram"][0], True)
+        await db.execute(Team.__table__.update().where(Team.id == teams["bram"][0]).values(name_ok=False))
+
+    in_app_db(client, work)
+    assert [entry["name"] for entry in expect(talk(client, aria, teams["bram"][1]), 200).json()["teams"]] == ["Team"]
 
 
 # --- when not ----------------------------------------------------------------------------------------------------

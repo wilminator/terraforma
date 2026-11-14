@@ -17,6 +17,7 @@ from ..accounts.routes import Strict, limited
 from ..api.deps import ActingAccount, CurrentAccount, Db, GameManualQuests
 from ..heroes import service as heroes
 from ..heroes.models import Team
+from ..names.display import TEAM, seen_by
 from . import manual
 from .manual_models import CANCELLED, DRAFT, PUBLISHED
 
@@ -205,6 +206,6 @@ async def standings(event_id: EventId, account: CurrentAccount, db: Db) -> dict:
     except manual.ManualError as error:
         raise refuse(error) from error
     ranked = await manual.entries(db, quest)
-    names = {team.id: team.name for team in await _teams(db, [each.team_id for each in ranked])}
+    names = {team.id: seen_by(team.name, team.name_ok, TEAM, team.account_id, account.id) for team in await _teams(db, [each.team_id for each in ranked])}
     return {"event": quest.name, "standings": [{"rank": place, "team": names.get(each.team_id), "score": each.score, "status": each.status}
                                                for place, each in enumerate(ranked, 1)]}

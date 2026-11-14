@@ -18,6 +18,7 @@ from ..content.models import Item
 from ..heroes import inventory
 from ..heroes.models import Hero
 from ..models import Map, World
+from ..names.display import HERO, public_name
 from ..parties import service as parties
 from ..world.rng import WorldRng
 from .drops import ASSIGN, NEED_WANT
@@ -177,17 +178,17 @@ async def view(session: AsyncSession, pending: PendingDrop, hero: Hero) -> dict:
              "mode": pending.mode, "status": pending.status, "your_choice": mine.choice if mine else None, "winner_id": pending.winner_id,
              "lost": pending.lost}
     if pending.status == OPEN and pending.mode == ASSIGN:
-        shown["heroes"] = await _named(session, await heroes_of(session, pending))
+        shown["heroes"] = await _named(session, await heroes_of(session, pending), hero.account_id)
     if pending.status != OPEN:
-        names = {each["id"]: each["name"] for each in await _named(session, ({each.hero_id for each in answers} | {pending.winner_id}) - {None})}
+        names = {each["id"]: each["name"] for each in await _named(session, ({each.hero_id for each in answers} | {pending.winner_id}) - {None}, hero.account_id)}
         shown["winner"] = names.get(pending.winner_id)
         shown["rolls"] = [{"hero_id": each.hero_id, "hero": names.get(each.hero_id), "choice": each.choice, "roll": each.roll}
                           for each in sorted(answers, key=lambda each: each.hero_id)]
     return shown
 
 
-async def _named(session: AsyncSession, hero_ids) -> list[dict]:
-    """``{"id", "name"}`` of each hero, by id."""
+async def _named(session: AsyncSession, hero_ids, viewer_id: int) -> list[dict]:
+    """``{"id", "name"}`` of each hero, by id, with the names as the account $viewer_id sees them (a hero of another player whose name failed the name screen is a label)."""
     ids = sorted(hero_ids)
-    rows = (await session.execute(select(Hero.id, Hero.name).where(Hero.id.in_(ids)).order_by(Hero.id))).all() if ids else []
-    return [{"id": row.id, "name": row.name} for row in rows]
+    rows = (await session.execute(select(Hero.id, Hero.name, Hero.name_ok, Hero.account_id).where(Hero.id.in_(ids)).order_by(Hero.id))).all() if ids else []
+    return [{"id": row.id, "name": public_name(row.name, row.name_ok, HERO, own=row.account_id == viewer_id)} for row in rows]

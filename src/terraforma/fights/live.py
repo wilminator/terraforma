@@ -26,6 +26,7 @@ from ..disuse import gate as disuse
 from ..economy import Economy
 from ..heroes.models import Hero, Team
 from ..models import Map, World
+from ..names.display import HERO
 from ..monsterplay import service as seating
 from ..monsterplay.models import MonsterSeat
 from ..parties import service as parties
@@ -438,26 +439,42 @@ async def looks(session: AsyncSession, fight) -> dict[Address, str | dict]:
     return found
 
 
-async def view(session: AsyncSession, record: FightRecord, rules: Rules, account_id: int | None = None) -> dict:
+async def view(session: AsyncSession, record: FightRecord, rules: Rules, account_id: int | None = None, viewer: int | None = None) -> dict:
     """The fight as a page shows it: whose turn to be commanded, who is standing and with how much, which fighters are
-    the caller's and have committed, and when the round plays."""
+    the caller's and have committed, and when the round plays. ($viewer: see ``describe``; the caller's own account counts as one.)"""
     fight, played = await store.load_state(session, record, rules)
     mine, ready = await owners(session, record), await waiting(session, record, played + 1)
-    return await describe(session, record, rules, fight, played + 1, fight.over or record.finished, mine, ready, account_id)
+    return await describe(session, record, rules, fight, played + 1, fight.over or record.finished, mine, ready, account_id, account_id if viewer is None else viewer)
 
 
-async def describe(session: AsyncSession, record: FightRecord, rules: Rules, fight, round_: int, over: bool, mine: dict, ready: set, account_id: int | None) -> dict:
+async def hero_labels(session: AsyncSession, fight, viewer: int | None) -> dict[int, str]:
+    """The fighters' names to show in place of the hero's own, by hero id: a hero of another player whose name failed the name screen
+    (``public_name``) is a neutral label to the account $viewer (None: nobody is signed in, or a guest), so only those are listed. The
+    fight's own record keeps the real name: this is the display."""
+    ids = [who.charid for who in (fight.get(address) for address in fight.addresses()) if who.monster is None]
+    if not ids:
+        return {}
+    rows = (await session.execute(select(Hero.id, Hero.name_ok, Hero.account_id).where(Hero.id.in_(ids)))).all()
+    return {id_: HERO for id_, name_ok, owner in rows if name_ok is False and (viewer is None or owner != viewer)}
+
+
+async def describe(
+    session: AsyncSession, record: FightRecord, rules: Rules, fight, round_: int, over: bool, mine: dict, ready: set, account_id: int | None, viewer: int | None = None,
+) -> dict:
     """``view`` of a given state of the fight (the replay pages show the ones it passed through): $round_ is the round it waits for,
-    $mine says who owns which fighter and $ready who has committed."""
+    $mine says who owns which fighter and $ready who has committed. $viewer is the account that reads it, for the names: a hero of
+    another player whose name failed the name screen shows as a label (a replay passes the signed-in account, or None)."""
     seat = await session.get(MonsterSeat, record.id)
     pictures = await looks(session, fight)
+    labels = await hero_labels(session, fight, viewer)
     view = {
         "id": record.id, "guid": record.guid, "round": round_, "over": over, "vital": rules.vital,
         "monster_play": record.monster_play, "monsters_played": seat is not None,
         "deadline": aware(record.round_deadline).isoformat() if record.round_deadline else None,
         "fighters": [
             {
-                "party": address[0], "group": address[1], "character": address[2], "name": fight.get(address).name,
+                "party": address[0], "group": address[1], "character": address[2],
+                "name": labels.get(fight.get(address).charid, fight.get(address).name) if fight.get(address).monster is None else fight.get(address).name,
                 "alive": fight.get(address).alive(rules), "fled": fight.get(address).fled,
                 "resources": {name: [fight.get(address).current[name], fight.get(address).get_base(rules, name)] for name in rules.resource_names},
                 "statuses": [token.spec.key for token in fight.get(address).tokens],

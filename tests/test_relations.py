@@ -160,7 +160,7 @@ async def test_a_team_lists_only_its_own_views_by_name_with_their_bands(db):
     await service.apply(db, RELATIONS, Change(ref(aria), ref(bram), score=65))
     await service.set_note(db, RELATIONS, ref(aria), ref(bram), "good people")
     await service.apply(db, RELATIONS, Change(ref(cole), ref(aria), score=100))
-    mine = await service.list_for(db, RELATIONS, ref(aria))
+    mine = await service.list_for(db, RELATIONS, ref(aria), mike.id)
     assert [(row["name"], row["score"], row["band"], row["note"]) for row in mine] == [
         ("Bram", 65, "close", "good people"), ("Cole", -80, "enemy", ""),
     ]

@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..heroes.models import Team
+from ..names.display import TEAM, public_name
 from . import service
 from .hooks import Change, Ref, Relations
 from .models import ANSWERED, BOTH, DISMISSED, HARMED, HELPED, PENDING, RatingPrompt
@@ -100,7 +101,7 @@ async def pending(session: AsyncSession, account_id: int, limit: int = 50) -> li
 
     asking, asked = Team.__table__.alias("asking"), Team.__table__.alias("asked")
     rows = await session.execute(
-        select(RatingPrompt, FightRecord.guid, asking.c.id, asking.c.name, asked.c.id, asked.c.name)
+        select(RatingPrompt, FightRecord.guid, asking.c.id, asking.c.name, asked.c.id, asked.c.name, asked.c.name_ok, asked.c.account_id)
         .join(FightRecord, FightRecord.id == RatingPrompt.fight_id)
         .join(asking, asking.c.id == RatingPrompt.subject_team_id).join(asked, asked.c.id == RatingPrompt.object_team_id)
         .where(asking.c.account_id == account_id, RatingPrompt.state == PENDING).order_by(RatingPrompt.id).limit(limit)
@@ -108,8 +109,8 @@ async def pending(session: AsyncSession, account_id: int, limit: int = 50) -> li
     return [
         {"id": prompt.id, "fight": guid, "interaction": prompt.interaction, "suggested": prompt.suggested, "reason": prompt.reason,
          "team": {"id": team_id, "name": team_name},
-         "other": {"id": other_id, "name": other_name}}
-        for prompt, guid, team_id, team_name, other_id, other_name in rows.all()
+         "other": {"id": other_id, "name": public_name(other_name, other_ok, TEAM, own=other_owner == account_id)}}
+        for prompt, guid, team_id, team_name, other_id, other_name, other_ok, other_owner in rows.all()
     ]
 
 
