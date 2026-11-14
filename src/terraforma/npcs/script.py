@@ -65,6 +65,8 @@ its command, followed by comma separated parameters. Text outside tags is shown.
                          the label if none fits. It takes nothing from the hero (take the goods first with remove_item)
     realm_strength,realm,op,value,label  jump to the label unless the realm's strength (``realms.json``; may be negative) compares true with value: a quest
                          board offers a rescue quest only while a realm is weak
+    news,count,label     shows the latest count (1 to 10) lines of the world's bulletin, newest first, one to a line (a bulletin board in a town; the engine posts
+                         when a settlement falls or is founded); the label, with nothing shown, if there are none
     realm_nudge,realm,delta  a quest outcome moves the realm's strength by delta (whole, not 0, may be negative; it stays within 1000000 of zero)
     supply_take,settlement,material,amount,label  a crafter at work: uses amount of the material up, all or nothing; the label (and nothing taken) if the
                          settlement keeps less
@@ -118,7 +120,7 @@ from dataclasses import dataclass
 SCOPES = ("any", "lead", "each")
 OPS = ("eq", "ne", "lt", "le", "gt", "ge")
 #: The tags that read or change the game's state, which the engine itself runs (through ``advance``'s $state).
-STATE_TAGS = ("set_job", "lost", "have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker", "add_guild_points", "set_guild_rank", "guild_points", "guild_rank", "guild_rank_any", "party_gate", "open_party", "add_status", "has_status", "have_tokens", "spend_tokens", "add_tokens", "add_gold", "warp", "warp_visited", "enter_instance", "complete_instance", "leave_instance", "instance_won", "weekly_quest", "slot_quest", "slot_template", "slot_boss", "slot_supply", "slot_supply_deliver", "npc_fight", "npc_fight_result", "manual_quest", "supply_level", "supply_add", "supply_take", "realm_strength", "realm_nudge")
+STATE_TAGS = ("set_job", "lost", "have_item", "add_item", "remove_item", "quests", "quest_marker", "set_quest_marker", "add_guild_points", "set_guild_rank", "guild_points", "guild_rank", "guild_rank_any", "party_gate", "open_party", "add_status", "has_status", "have_tokens", "spend_tokens", "add_tokens", "add_gold", "warp", "warp_visited", "enter_instance", "complete_instance", "leave_instance", "instance_won", "weekly_quest", "slot_quest", "slot_template", "slot_boss", "slot_supply", "slot_supply_deliver", "npc_fight", "npc_fight_result", "manual_quest", "supply_level", "supply_add", "supply_take", "realm_strength", "realm_nudge", "news")
 MAX_TEXT = 20000
 #: How many guilds one ``guild_rank_any`` may list.
 MAX_GUILD_CHOICES = 8
@@ -270,6 +272,11 @@ def check_tag(parts: list[str]) -> list[str]:
         _name(command, args[0], "a realm key")
         if _signed(command, args[1], "the change") == 0:
             raise ScriptError(f"{command} tag: the change is not 0")
+    elif command == "news":
+        count(2)
+        if not 1 <= _whole(command, args[0], "how many posts") <= 10:
+            raise ScriptError(f"{command} tag: how many posts is 1 to 10")
+        return [args[1]]
     elif command in ("supply_add", "supply_take"):
         count(4)
         _name(command, args[0], "a settlement key")
@@ -656,6 +663,10 @@ async def advance(script: Script, pos: int, prompt: dict | None, choice: int | N
             if state is None:
                 raise ScriptError(f"this dialog reads the game's state ({command}), and there is no one to ask")
             failed = await state(command, args)
+            for said in getattr(state, "said", None) or ():  # (a tag that shows something, like the bulletin's lines)
+                _show(events, said)
+            if getattr(state, "said", None):
+                state.said.clear()
             if failed:
                 pos = go(failed)
             elif (command in ("warp", "warp_visited", "enter_instance", "leave_instance") and not (command == "enter_instance" and args[1] == "public")) or (command == "slot_boss" and args[1] == "fight") or command == "npc_fight":  # the hero is somewhere else now, or in a fight: the dialog is over

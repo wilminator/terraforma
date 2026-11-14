@@ -20,7 +20,10 @@ async def tick(session: AsyncSession, settlement: Settlement) -> int:
 def level_at(row: SettlementSupply, now: int) -> int:
     """The level the supply has at tick $now (not before ``as_of_tick``), without changing the row."""
     elapsed = max(0, now - row.as_of_tick)
-    gained = row.rate * (100 - row.cut) * elapsed // 100
+    cut_for = elapsed  # (how many of those ticks the cut was on: all of them, unless it ended on its own on the way)
+    if row.cut and row.cut_until:
+        cut_for = min(elapsed, max(0, row.cut_until - row.as_of_tick))
+    gained = row.rate * (100 - row.cut) * cut_for // 100 + row.rate * (elapsed - cut_for)
     return max(0, min(row.capacity, row.level + gained - row.drain * elapsed))
 
 
@@ -28,6 +31,8 @@ async def settle(session: AsyncSession, settlement: Settlement, row: SettlementS
     """Brings the row up to the world clock: its level is now, its ``as_of_tick`` the clock."""
     now = await tick(session, settlement)
     row.level, row.as_of_tick = level_at(row, now), max(row.as_of_tick, now)
+    if row.cut and row.cut_until and row.cut_until <= now:  # a raid that has run its course
+        row.cut, row.cut_until = 0, 0
     await session.flush()
     return row
 
@@ -51,13 +56,16 @@ async def supplies(session: AsyncSession, settlement: Settlement) -> list[tuple[
     return [(material, await settle(session, settlement, row)) for material, row in found]
 
 
-async def set_cut(session: AsyncSession, settlement: Settlement, material_key: str, cut: int) -> SettlementSupply:
+async def set_cut(session: AsyncSession, settlement: Settlement, material_key: str, cut: int, ticks: int | None = None) -> SettlementSupply:
     """An event cuts the settlement's own sources of a material by $cut percent (100: nothing arrives; 0: back to normal). The level up to
-    now is kept as it was; the new cut counts from now."""
+    now is kept as it was; the new cut counts from now, for $ticks ticks of the world clock (a raid) or until it is changed (None)."""
     if not 0 <= cut <= 100:
         raise RealmError("A cut is a percent from 0 to 100.")
+    if ticks is not None and ticks < 1:
+        raise RealmError("A cut lasts at least one tick.")
     row = await supply_of(session, settlement, material_key)
     row.cut = cut
+    row.cut_until = (await tick(session, settlement)) + ticks if ticks and cut else 0
     await session.flush()
     return row
 
@@ -113,4 +121,4 @@ async def fullness(session: AsyncSession, world_id: int, settlement_key: str, ma
 
 
 def view(material: Material, row: SettlementSupply) -> dict:
-    return {"material": material.key, "name": material.name, "level": row.level, "capacity": row.capacity, "rate": row.rate, "drain": row.drain, "cut": row.cut}
+    return {"material": material.key, "name": material.name, "level": row.level, "capacity": row.capacity, "rate": row.rate, "drain": row.drain, "cut": row.cut, "cut_until": row.cut_until}

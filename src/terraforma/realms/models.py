@@ -56,6 +56,8 @@ class Settlement(Timestamps, Base):
     #: (the overworld is one big map), told apart by where they are; the default ``Towns.town_key`` finds a settlement by this tile.
     x: Mapped[int | None] = mapped_column(Integer, default=None)
     y: Mapped[int | None] = mapped_column(Integer, default=None)
+    #: How far, in tiles, its sphere of influence reaches (the realms around it that give it a reason to exist), or None for the game's default.
+    sphere: Mapped[int | None] = mapped_column(Integer, default=None)
 
 
 class Material(Timestamps, Base):
@@ -85,4 +87,20 @@ class SettlementSupply(Timestamps, Base):
     rate: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     drain: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     cut: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    #: The tick the cut ends (a raid lasts so long), or 0 when it lasts until something changes it (an admin's cut).
+    cut_until: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
     as_of_tick: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
+
+
+class NewsPost(Timestamps, Base):
+    """A line on the world's bulletin: a settlement fell, was founded, or whatever else the game posts (``realms.news``). A bulletin board in a
+    town shows the latest ones (the dialog tag ``news``). ``at_tick`` is the world-clock tick it was posted; ``settlement_id`` the place it is about, if any."""
+
+    __tablename__ = "news_posts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    world_id: Mapped[int] = mapped_column(ForeignKey("worlds.id"), index=True)
+    settlement_id: Mapped[int | None] = mapped_column(ForeignKey("settlements.id"), default=None)
+    kind: Mapped[str] = mapped_column(String(16), default="news", server_default="news")
+    text: Mapped[str] = mapped_column(String(255))
+    at_tick: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")

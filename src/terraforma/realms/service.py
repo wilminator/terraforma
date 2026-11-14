@@ -9,6 +9,7 @@ from ..models import Map, World
 from ..parties.models import Party
 from ..towns import service as towns_service
 from ..towns.models import TownVisit, VisitedTown
+from . import news
 from .models import DORMANT, KINDS, KINGDOM, LIVE, RUINS, Material, Realm, Settlement, SettlementSupply
 
 
@@ -27,7 +28,7 @@ async def create_realm(session: AsyncSession, world_id: int, key: str, name: str
     return realm
 
 
-async def add_settlement(session: AsyncSession, realm: Realm, map_id: int, key: str, name: str, state: str = LIVE, tier: int = 0, x: int | None = None, y: int | None = None) -> Settlement:
+async def add_settlement(session: AsyncSession, realm: Realm, map_id: int, key: str, name: str, state: str = LIVE, tier: int = 0, x: int | None = None, y: int | None = None, sphere: int | None = None) -> Settlement:
     """A settlement of the realm on the map: live now, or dormant until it is founded."""
     if state not in (LIVE, DORMANT):
         raise RealmError("A settlement starts live or dormant.")
@@ -39,7 +40,7 @@ async def add_settlement(session: AsyncSession, realm: Realm, map_id: int, key: 
         raise RealmError("That map does not exist.")
     if await session.scalar(select(Settlement.id).where(Settlement.world_id == realm.world_id, Settlement.key == key)) is not None:
         raise RealmError(f"There is already a settlement {key!r}.")
-    settlement = Settlement(world_id=realm.world_id, realm_id=realm.id, map_id=map_id, key=key, name=name, state=state, tier=tier, x=x, y=y)
+    settlement = Settlement(world_id=realm.world_id, realm_id=realm.id, map_id=map_id, key=key, name=name, state=state, tier=tier, x=x, y=y, sphere=sphere)
     session.add(settlement)
     await session.flush()
     return settlement
@@ -49,8 +50,10 @@ async def found(session: AsyncSession, settlement: Settlement) -> Settlement:
     """A dormant settlement is founded, or one in ruins is founded again: it is live."""
     if settlement.state == LIVE:
         raise RealmError(f"{settlement.name} is already live.")
+    was = settlement.state
     settlement.state = LIVE
     await session.flush()
+    await news.post(session, settlement.world_id, f"{settlement.name} {'was founded' if was == DORMANT else 'was founded again'}.", "founded", settlement)
     return settlement
 
 
@@ -62,6 +65,7 @@ async def fall(session: AsyncSession, settlement: Settlement) -> Settlement:
         raise RealmError(f"{settlement.name} is not live.")
     settlement.state = RUINS
     await session.flush()
+    await news.post(session, settlement.world_id, f"{settlement.name} has fallen.", "fell", settlement)
     if settlement.x is not None:
         waiting = await session.scalars(
             select(TownVisit.party_id).join(Party, Party.id == TownVisit.party_id).where(Party.map_id == settlement.map_id, Party.x == settlement.x, Party.y == settlement.y)
@@ -124,7 +128,7 @@ async def apply_realms(session: AsyncSession, world_id: int, realms: list, towns
     realm_ids = {each.key: each.id for each in (await session.scalars(select(Realm).where(Realm.world_id == world_id))).all()}
     map_ids = {each.name: each.id for each in (await session.scalars(select(Map).where(Map.world_id == world_id))).all()}
     for row in towns:
-        values = {"world_id": world_id, "key": row.key, "name": row.name, "realm_id": realm_ids[row.realm], "map_id": map_ids[row.map], "tier": row.tier, "x": row.x, "y": row.y, "state": row.state}
+        values = {"world_id": world_id, "key": row.key, "name": row.name, "realm_id": realm_ids[row.realm], "map_id": map_ids[row.map], "tier": row.tier, "x": row.x, "y": row.y, "sphere": row.sphere, "state": row.state}
         await upsert(session, Settlement.__table__, values, ["world_id", "key"], insert_only=["state"])
     await session.flush()
     for row in towns:
@@ -155,4 +159,4 @@ def realm_view(row: Realm) -> dict:
 
 
 def settlement_view(row: Settlement) -> dict:
-    return {"id": row.id, "key": row.key, "name": row.name, "realm_id": row.realm_id, "map_id": row.map_id, "state": row.state, "tier": row.tier, "x": row.x, "y": row.y}
+    return {"id": row.id, "key": row.key, "name": row.name, "realm_id": row.realm_id, "map_id": row.map_id, "state": row.state, "tier": row.tier, "x": row.x, "y": row.y, "sphere": row.sphere}
