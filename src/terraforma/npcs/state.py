@@ -30,6 +30,7 @@ from ..quests import bossfight, manual, rotation
 from ..quests.manual_models import PUBLISHED, ManualQuest
 from ..quests.hooks import ManualQuests, RotatingQuests, WeeklyQuests
 from ..quests.weekly_models import OFFERED, QuestTemplate
+from ..realms import news
 from ..realms import service as realms
 from ..realms import supply
 from ..standing import service as standing
@@ -45,6 +46,8 @@ class DialogState:
         self.economy = economy
         self.rules = rules  # (to measure a party's strength: ``party_gate``)
         self._party: towns.ActingParty | None | bool = False  # (False: not asked yet)
+        #: What the last tag has to show (``script.advance`` takes it after the tag and shows it).
+        self.said: list[str] = []
 
     async def __call__(self, command: str, parts: list[str]) -> str:
         return await getattr(self, command)(*parts)
@@ -553,6 +556,15 @@ class DialogState:
     async def realm_nudge(self, realm: str, delta: str) -> str:
         """A quest outcome moves the realm's strength by $delta."""
         await realms.nudge_strength(self.session, await self._realm("realm_nudge", realm), int(delta))
+        return ""
+
+    async def news(self, count: str, label: str) -> str:
+        """Shows the world's latest $count bulletin lines (newest first, one to a line); the label if there are none."""
+        world_id = (await self.session.get(Map, self.hero.map_id)).world_id
+        rows = await news.latest(self.session, world_id, int(count))
+        if not rows:
+            return label
+        self.said.append("\n".join(row.text for row in rows) + "\n")
         return ""
 
     # --- Challenge Tokens and gold -------------------------------------------------------------------------------------
