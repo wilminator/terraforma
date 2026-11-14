@@ -9,6 +9,7 @@ from ..models import Map, World
 from ..parties.models import Party
 from ..towns import service as towns_service
 from ..towns.models import TownVisit, VisitedTown
+from . import news
 from .models import DORMANT, KINDS, KINGDOM, LIVE, RUINS, Material, Realm, Settlement, SettlementSupply
 
 
@@ -49,8 +50,10 @@ async def found(session: AsyncSession, settlement: Settlement) -> Settlement:
     """A dormant settlement is founded, or one in ruins is founded again: it is live."""
     if settlement.state == LIVE:
         raise RealmError(f"{settlement.name} is already live.")
+    was = settlement.state
     settlement.state = LIVE
     await session.flush()
+    await news.post(session, settlement.world_id, f"{settlement.name} {'was founded' if was == DORMANT else 'was founded again'}.", "founded", settlement)
     return settlement
 
 
@@ -62,6 +65,7 @@ async def fall(session: AsyncSession, settlement: Settlement) -> Settlement:
         raise RealmError(f"{settlement.name} is not live.")
     settlement.state = RUINS
     await session.flush()
+    await news.post(session, settlement.world_id, f"{settlement.name} has fallen.", "fell", settlement)
     if settlement.x is not None:
         waiting = await session.scalars(
             select(TownVisit.party_id).join(Party, Party.id == TownVisit.party_id).where(Party.map_id == settlement.map_id, Party.x == settlement.x, Party.y == settlement.y)
