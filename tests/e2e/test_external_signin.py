@@ -2,23 +2,20 @@
 address is answered by Playwright (a redirect straight back with a code), and the server's call to its token address by a mock
 transport (the calls behind all this are tests/test_external_signin.py)."""
 
-import base64
-import json
 import re
 import time
 from urllib.parse import parse_qs, urlsplit
 
 import httpx2 as httpx
+import jwt
+from cryptography.hazmat.primitives.asymmetric import ec
 from playwright.sync_api import expect
 
 from terraforma.settings import ExternalProvider
 
 ISSUER = "https://idp.test"
 EMAIL = "kim@example.com"
-
-
-def b64(data):
-    return base64.urlsafe_b64encode(json.dumps(data).encode()).rstrip(b"=").decode()
+KEY = ec.generate_private_key(ec.SECP256R1())
 
 
 def play_provider(page, live_server, email=EMAIL):
@@ -26,12 +23,14 @@ def play_provider(page, live_server, email=EMAIL):
     state = {}
 
     def token(request):
+        if request.url.path == "/jwks":
+            return httpx.Response(200, json={"keys": [{**jwt.algorithms.ECAlgorithm.to_jwk(KEY.public_key(), as_dict=True), "kid": "k1", "alg": "ES256", "use": "sig"}]})
         now = int(time.time())
         claims = {"iss": ISSUER, "aud": "client-1", "sub": "subject-1", "email": email, "email_verified": True, "exp": now + 600, "nonce": state["nonce"]}
-        return httpx.Response(200, json={"id_token": f"{b64({'alg': 'none'})}.{b64(claims)}."})
+        return httpx.Response(200, json={"id_token": jwt.encode(claims, KEY, algorithm="ES256", headers={"kid": "k1"})})
 
     live_server.app.state.settings.external_providers = [
-        ExternalProvider(name="fake", label="Fake", issuer=ISSUER, client_id="client-1", client_secret="client-secret-1", authorization_endpoint=f"{ISSUER}/authorize", token_endpoint=f"{ISSUER}/token")
+        ExternalProvider(name="fake", label="Fake", issuer=ISSUER, client_id="client-1", client_secret="client-secret-1", authorization_endpoint=f"{ISSUER}/authorize", token_endpoint=f"{ISSUER}/token", jwks_uri=f"{ISSUER}/jwks")
     ]
     live_server.app.state.http_client = httpx.AsyncClient(transport=httpx.MockTransport(token))
 

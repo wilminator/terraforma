@@ -119,8 +119,12 @@ class ExternalProvider(BaseModel):
     # Both set: used instead of the provider's published settings (for a provider that publishes none). Only for kind "oidc".
     authorization_endpoint: str | None = None
     token_endpoint: str | None = None
-    # Where the provider publishes the keys that sign its messages (found in its published settings when not given). Only for kind "oidc".
+    # Where the provider publishes the keys that sign its ID tokens and messages (found in its published settings when not given; must be
+    # given when the endpoints above are). Only for kind "oidc".
     jwks_uri: str | None = None
+    # The signature algorithms an ID token from this provider may use; its signature is always checked. Google and Microsoft sign with RS256;
+    # the Wilminator Games account service signs with ES256 only, so its section says ["ES256"]. Only for kind "oidc".
+    id_token_algorithms: list[Literal["ES256", "RS256"]] = Field(default=["ES256", "RS256"], min_length=1)
     # true: the provider may tell this site that a person deleted their account there (POST <public_url>/api/external/<name>/events,
     # a signed "account deleted" message). Off by default. Only for kind "oidc".
     deletion_events: bool = False
@@ -150,8 +154,8 @@ class ExternalProvider(BaseModel):
                     raise ValueError(f"{setting} is needed")
             if (self.authorization_endpoint is None) != (self.token_endpoint is None):
                 raise ValueError("authorization_endpoint and token_endpoint are set together or not at all")
-            if self.deletion_events and self.authorization_endpoint and not self.jwks_uri:
-                raise ValueError("deletion_events with endpoints given here needs jwks_uri too")
+            if self.authorization_endpoint and not self.jwks_uri:
+                raise ValueError("endpoints given here need jwks_uri too: the ID token's signature is checked against the provider's keys")
             if self.name_api and not self.name_screen:
                 raise ValueError("name_api is for name_screen = true")
             return self
@@ -161,6 +165,8 @@ class ExternalProvider(BaseModel):
                 raise ValueError(f"{setting} is only for kind \"oidc\"")
         if self.scopes != ["openid", "email"]:
             raise ValueError('scopes is only for kind "oidc"')
+        if self.id_token_algorithms != ["ES256", "RS256"]:
+            raise ValueError('id_token_algorithms is only for kind "oidc"')
         if self.deletion_events:
             raise ValueError('deletion_events is only for kind "oidc"')
         if self.name_screen or self.name_api:
