@@ -31,7 +31,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..api.deps import ActingAccount, CurrentAccount, Db, Screen, client_address, current_account, sign_in_of
-from ..api.security import start_session
+from ..api.security import refuse_if_suspended, start_session
 from ..models import Account
 from ..settings import ExternalProvider
 from .tokens import TokenError
@@ -237,7 +237,10 @@ async def callback(name: str, query: Annotated[CallbackQuery, Query()], request:
 
 
 async def _logged_in(request: Request, db: Db, account: Account, next: str | None, oidc_request: str | None = None) -> RedirectResponse:
-    """Logs $account in, or, with two-factor login on (and this browser not remembered), waits for the second factor."""
+    """Logs $account in, or, with two-factor login on (and this browser not remembered), waits for the second factor. A suspended account gets neither."""
+    if account.suspended_by:
+        request.session.clear()
+        return back("error", "suspended", next=next, request=oidc_request)
     if twofa.enabled(account) and not await remember.is_remembered(request, db, account):
         request.session.clear()
         request.session[SESSION_TWOFA] = {"account_id": account.id, "version": account.session_version, "next": next, "request": oidc_request}
@@ -306,6 +309,7 @@ async def _waiting(request: Request, db: Db) -> tuple[Account, dict]:
     account = await db.get(Account, waiting["account_id"]) if isinstance(waiting, dict) else None
     if account is None or account.session_version != waiting.get("version"):
         raise HTTPException(status.HTTP_409_CONFLICT, "sign in with a provider first")
+    refuse_if_suspended(account)
     return account, waiting
 
 

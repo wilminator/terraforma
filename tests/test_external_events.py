@@ -216,3 +216,84 @@ def test_a_lookup_that_does_not_check_out_is_refused(client):
 def test_the_lookup_is_off_without_deletion_events(client):
     client.app.state.settings.external_providers = [events_provider().model_copy(update={"deletion_events": False})]
     expect(lookup(client, asking()), 404)
+
+
+# --- suspension -------------------------------------------------------------------------------------------------------------
+
+SUSPENDED = f"{ISSUER}/events/account-suspended"
+REINSTATED = f"{ISSUER}/events/account-reinstated"
+
+
+def suspension(kind, sub=SUBJECT):
+    return event(events={kind: {"sub": sub}})
+
+
+def test_a_suspension_ends_the_logins_and_blocks_every_way_in_until_reinstated(client, idp):
+    from .test_external_signin import PASSWORD, outcome, sign_in
+
+    new_player(client, idp, password=PASSWORD)
+    assert logged_in(client)
+    assert expect(post(client, suspension(SUSPENDED)), 200).json() == {"ok": True}
+    assert not logged_in(client)
+    # nothing is deleted
+    assert identities_in_db(client) == [("fake", SUBJECT, "kim@example.com")]
+    # the password does not get in, nor does the provider
+    assert expect(client.post("/api/login", json={"username": "Kim", "password": PASSWORD}), 403).json()["detail"] == "this account is suspended"
+    assert outcome(sign_in(client, idp)) == {"external": "error", "reason": "suspended"}
+    assert not logged_in(client)
+    # asked again: the same
+    expect(post(client, suspension(SUSPENDED)), 200)
+    # reinstated: both work again
+    assert expect(post(client, suspension(REINSTATED)), 200).json() == {"ok": True}
+    token = expect(client.post("/api/login", json={"username": "Kim", "password": PASSWORD}), 200).json()["csrf_token"]
+    assert logged_in(client)
+    client.post("/api/logout", headers={"X-CSRF-Token": token})
+    assert outcome(sign_in(client, idp))["external"] == "done"
+
+
+def test_a_suspension_or_reinstatement_of_an_unknown_person_is_answered_200(client):
+    assert expect(post(client, suspension(SUSPENDED, "nobody")), 200).json() == {"ok": True}
+    assert expect(post(client, suspension(REINSTATED, "nobody")), 200).json() == {"ok": True}
+
+
+def test_a_suspension_without_a_subject_is_refused(client):
+    for bad in ({}, {"sub": 5}, {"sub": ""}):
+        expect(post(client, event(events={SUSPENDED: bad})), 400)
+
+
+def test_only_the_provider_that_suspended_an_account_reinstates_it(client, idp):
+    from sqlalchemy import select
+
+    from terraforma.models import Account
+
+    from terraforma.testing import in_app_db
+
+    new_player(client, idp)
+    expect(post(client, suspension(SUSPENDED)), 200)
+
+    async def set_other(db):
+        (await db.scalar(select(Account))).suspended_by = "another"
+
+    in_app_db(client, set_other)
+    expect(post(client, suspension(REINSTATED)), 200)
+
+    async def who(db):
+        return (await db.scalar(select(Account))).suspended_by
+
+    assert in_app_db(client, who) == "another"
+
+
+def test_a_suspended_account_is_refused_even_by_a_login_that_somehow_survived(client, idp):
+    from sqlalchemy import select
+
+    from terraforma.models import Account
+    from terraforma.testing import in_app_db
+
+    new_player(client, idp)
+
+    async def mark(db):
+        (await db.scalar(select(Account))).suspended_by = "fake"  # without moving the session version on
+
+    in_app_db(client, mark)
+    assert expect(client.get("/api/external/identities"), 403).json()["detail"] == "this account is suspended"
+    assert not logged_in(client)  # and the login is gone

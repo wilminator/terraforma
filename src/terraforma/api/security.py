@@ -14,7 +14,7 @@ instead: only pages from this site may open one.
 import hmac
 import secrets
 
-from fastapi import Request
+from fastapi import HTTPException, Request, status
 from itsdangerous import SignatureExpired, TimestampSigner
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import HTTPConnection
@@ -49,6 +49,15 @@ SESSION_ACCOUNT = "account_id"
 SESSION_VERSION = "version"
 SESSION_CSRF = "csrf"
 CSRF_HEADER = "X-CSRF-Token"
+
+
+SUSPENDED = "this account is suspended"
+
+
+def refuse_if_suspended(account) -> None:
+    """403 for an account the sign-in provider has suspended: no login by any method until it is reinstated (``Account.suspended_by``)."""
+    if account.suspended_by:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, SUSPENDED)
 
 
 def start_session(request: Request, account_id: int, version: int) -> str:
