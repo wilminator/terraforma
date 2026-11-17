@@ -102,7 +102,7 @@ def test_the_example_game_is_valid_and_its_tileset_is_drawn_by_its_assets(app_cl
 @pytest.mark.parametrize("game", [None], ids=["no game"])
 def test_an_app_without_a_game_still_serves_the_engines_client(app_client):
     assert expect(app_client.get("/api/client"), 200).json() == {
-        "engine": expect(app_client.get("/api/about"), 200).json()["engine"], "game": None, "modules": [], "styles": [], "assets": None,
+        "engine": expect(app_client.get("/api/about"), 200).json()["engine"], "game": None, "modules": [], "styles": [], "assets": None, "contact_url": None,
     }
     expect(app_client.get("/play/"), 200)
     expect(app_client.get("/assets/grass.svg"), 404)
@@ -144,3 +144,51 @@ def test_a_games_client_files_are_checked(tmp_path):
         with pytest.raises(ClientError):
             check_game_client(game)
             pytest.fail(f"accepted {what}")
+
+
+CONTACT = "https://accounts.example/contact"
+
+
+def game_with_contact(url):
+    from dataclasses import replace
+
+    class Contact(type(EXAMPLE.rules)):
+        def contact_url(self):
+            return url
+
+    return replace(EXAMPLE, rules=Contact())
+
+
+def test_the_manifest_has_no_contact_address_unless_the_game_gives_one(app_client):
+    assert expect(app_client.get("/api/client"), 200).json()["contact_url"] is None
+
+
+@pytest.mark.parametrize("game", [game_with_contact(CONTACT)], ids=["contact"])
+def test_the_manifest_gives_the_games_contact_address(app_client):
+    assert expect(app_client.get("/api/client"), 200).json()["contact_url"] == CONTACT
+
+
+def test_an_email_has_no_contact_line_unless_the_game_gives_an_address(app_client, mailbox):
+    from .test_accounts import MIKE, register
+
+    register(app_client)
+    assert "Contact us" not in mailbox.last_to(MIKE["email"]).body
+
+
+@pytest.mark.parametrize("game", [game_with_contact(CONTACT)], ids=["contact"])
+def test_every_email_ends_with_the_games_contact_address(app_client, mailbox):
+    from .test_accounts import MIKE, register
+
+    register(app_client)
+    assert mailbox.last_to(MIKE["email"]).body.rstrip().endswith(f"Need help? Contact us: {CONTACT}")
+
+
+@pytest.mark.parametrize("url", ["", CONTACT, "http://localhost:8000/contact"])
+def test_a_contact_address_that_is_empty_or_a_web_address_starts(url):
+    check_game_client(game_with_contact(url))
+
+
+@pytest.mark.parametrize("url", ["help@example.com", "mailto:help@example.com", "javascript:alert(1)", "https://a b"])
+def test_a_mailbox_or_a_non_web_contact_address_stops_the_server_at_start(url):
+    with pytest.raises(ClientError, match="contact_url"):
+        check_game_client(game_with_contact(url))

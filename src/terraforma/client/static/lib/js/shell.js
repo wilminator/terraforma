@@ -27,6 +27,7 @@ import * as api from "./api.js";
 import { Art } from "./art.js";
 import { Sounds } from "./audio.js";
 import { Conversation } from "./conversation.js";
+import { h } from "./dom.js";
 import { Panels } from "./panels.js";
 import { Text } from "./strings.js";
 
@@ -78,6 +79,7 @@ export class Shell {
     document.querySelectorAll("[data-game-name]").forEach((element) => {
       element.textContent = this.game.game ?? "TerraForma";
     });
+    this.#addFooter();
     for (const href of this.game.styles) {
       document.head.append(Object.assign(document.createElement("link"), { rel: "stylesheet", href }));
     }
@@ -94,6 +96,13 @@ export class Shell {
     document.querySelectorAll("[data-text]").forEach((element) => {
       element.textContent = this.text.get(element.dataset.text);
     });
+  }
+
+  /** A link to the game's contact page at the foot of a site page (not the play stage), when the operator set one. */
+  #addFooter() {
+    const url = this.game.contact_url;
+    if (!url || !document.body.classList.contains("site")) return;
+    document.body.append(h("footer", { class: "foot" }, h("a", { href: url, rel: "noopener" }, this.text.get("site.contact"))));
   }
 
   /** Looks for a login that is still good (a reload keeps the cookie, not the CSRF token); returns the account or null. */

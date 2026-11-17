@@ -3,6 +3,7 @@
 export const STRINGS = {
   "site.play": "Play",
   "site.account": "Account",
+  "site.contact": "Contact",
   "site.tagline": "A browser RPG.",
   "login.title": "Log in",
   "login.username": "Username",

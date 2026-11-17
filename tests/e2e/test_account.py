@@ -296,3 +296,14 @@ def test_a_site_that_asks_for_a_sign_in_sends_a_logged_out_player_through_the_lo
     page.wait_for_url(re.compile(r"[?&]code="), timeout=30_000)
     query = parse_qs(urlsplit(page.url).query)
     assert query["state"] == ["xyz"] and query["iss"] == [live_server.settings.public_url]
+
+
+def test_a_contact_link_shows_at_the_foot_of_a_page_only_when_the_game_gives_an_address(page, live_server, monkeypatch):
+    page.goto("/account/")
+    expect(page.locator("#app")).to_be_visible()
+    expect(page.locator("footer.foot")).to_have_count(0)
+    monkeypatch.setattr(live_server.game.rules, "contact_url", lambda: "https://accounts.example/contact")
+    page.goto("/account/")
+    link = page.locator("footer.foot a")
+    expect(link).to_have_text("Contact")
+    expect(link).to_have_attribute("href", "https://accounts.example/contact")

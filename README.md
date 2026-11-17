@@ -158,6 +158,27 @@ Only `preview` needs Pillow; the rest is standard library.
 
 **The example game** (`terraforma.example`) is the smallest game that uses all of this: a seed with a small map drawn with a 13-picture tileset (`tiles.png`, made by Mike and converted from QBasic), a cellar, a marsh in the hub where a slime fights the party (the swamp tiles meet monsters), four jobs (Fighter, Scout, Mage and Cleric, each with abilities learned by level), sixteen abilities and five statuses, twenty items (potions, an antidote, weapons with a bow and its arrows, armor for every slot), six monsters with drop tables (a slime in the marsh; bats, goblins, wolves, skeletons and imps in the dark swamp beside it), a personality for each job and each monster with its pictures, and three people to talk to next to where heroes start (Old Tom gives gold, Hana sells the potions, weapons and armor, Bede keeps the inn), a signpost and stairs down to a cellar map (its town is the gate tile where heroes start: a party that steps onto it waits there, and the rest of the meadow is open ground to walk), and a browser module and stylesheet that use the hooks above. `python -m terraforma serve` runs it, and it is the game the browser tests play. A game of your own can start from it. Its pictures are drawn for this repository (the heroes' and monsters' sheets by `utils/example_art.py`, which draws them again the same every time: `PYTHONPATH=src python3 utils/example_art.py`) and a game that wants more bodies draws them with `utils/monster_art.py` (a brute, a mage, a ghost, a robot and a drone, four poses each, drawn the same way: `PYTHONPATH=src python3 utils/monster_art.py --out YOUR/assets --prefix yourgame_`, then recolored by color maps); every asset's source and license are recorded beside it (`assets/ASSETS.md`). The jobs' personalities share the keys of the jobs (`fighter`, `scout`, `mage`, `cleric`) and one pair of hero sheets, told apart by a color map each.
 
+## Data the engine keeps
+
+A game's privacy page has to say what the game stores about a person. This is what the engine keeps; a game that adds tables of its own adds its own lines. (No analytics: the engine measures nothing about how people use the site beyond the play time below.)
+
+| What | Why | How long |
+| --- | --- | --- |
+| The account: username, email address (to log in and for mail), the public handle, a password hash (Argon2id; none for a person who only signs in through a provider), the second factor (a TOTP secret, kept encrypted, recovery code hashes, security keys) | Logging in | Until the account is removed |
+| Sign-in provider links: the provider's name, the person's id there and the email it gave | Signing in through a provider | Until unlinked |
+| Cookies: the signed login cookie, and a "remember this browser" cookie (a random secret, kept as a hash on the server) that lets a browser skip the second factor | Keeping a login | A login lasts `session_max_age`; a remembered browser the days the game sets |
+| Heroes, teams, parties, alliances, pack, gold, quests, settings and anything else a person does in the game | Playing | Until the account is removed |
+| Fight logs and the fights' players | Replays, ratings, the record of what happened | Fights nobody kept are cleared by housekeeping; kept ones stay |
+| Chat messages (and mutes, and reports against a message) | Talking, and settling reports | Messages `chat_retention_days` (7 by default); a reported one stays until an admin settles it |
+| Chat bans (until when, the reason, which admin) | Enforcing the game's terms | Until the account is removed |
+| Play time and rating prompts | Rules that depend on time played, and ratings | The play time stays; settled prompts are cleared after `rating_prompt_retention_days` |
+| Rate-limit counters (by address) | Slowing down abuse | Hours; housekeeping clears them |
+| Logs | Running the server | Passwords, tokens and email addresses are scrubbed before they are written |
+
+The engine has no account erase routine yet; until it does, a game's privacy page should not promise one. It sets no cookie from another site, and its Content-Security-Policy keeps a page from loading anything from another address.
+
+**Contact link.** `Rules.contact_url()` (a public interface the license exception covers) gives the address of the game's contact page, or an empty text for none (the default). It must be an `http://` or `https://` address, never a mailbox, or the server won't start. A game that gives one gets a "Contact" link at the foot of the engine's site pages (the account pages; not the play stage), and every email the engine sends ends with "Need help? Contact us: <address>".
+
 ## Running it
 
 Everything runs in Docker.

@@ -6,6 +6,7 @@ accept a JSON body, which another site's page can't send cross-origin
 without the browser asking this server first (and it says no).
 """
 
+from dataclasses import replace
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
@@ -66,6 +67,11 @@ def link(request: Request, path: str, token: str) -> str:
 
 
 async def send(request: Request, mail: Mail) -> None:
+    """Sends $mail; with a ``contact_url`` setting its last line says where to ask for help."""
+    game = request.app.state.game
+    contact = game.rules.contact_url() if game else ""
+    if contact:
+        mail = replace(mail, body=f"{mail.body.rstrip()}\n\nNeed help? Contact us: {contact}\n")
     await request.app.state.mailer.send(mail)
 
 
