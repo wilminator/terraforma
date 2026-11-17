@@ -86,7 +86,9 @@ key_dir = "keys"
 # client_id = "..."
 # client_secret = "..."
 # scopes = ["openid", "email"]              # the default; both are required
-# jwks_uri = "https://.../jwks"             # the provider's signing keys; read from its published settings when left out
+# jwks_uri = "https://.../jwks"             # the provider's signing keys; read from its published settings when left out (needed when you give the endpoints yourself)
+# id_token_algorithms = ["ES256"]           # which signatures an ID token may have; its signature is always checked. Default ["ES256", "RS256"] (Google and Microsoft use RS256);
+#                                           # the Wilminator Games account service signs with ES256 only, so say so for it
 # deletion_events = true                    # accept the provider's signed "this person deleted their account" message (off by default)
 # name_screen = true                        # let the game's rules (Rules.screen_name; by default they just ask) ask this provider whether a name players type (hero, team, alliance, handle) is safe to show others (off by default;
 #                                           # at most one provider). The text of the name goes to the provider, nothing else. A name that isn't safe is still saved, but other players never see it. If it can't be reached, names are saved unchecked.

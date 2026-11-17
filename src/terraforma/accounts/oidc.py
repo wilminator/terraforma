@@ -2,10 +2,10 @@
 
 The server sends the player's browser to the provider with a one-time ``state``, ``nonce`` and PKCE challenge (kept in the
 signed session cookie), and gets the browser back with a ``code``. It trades the code for an ID token by calling the
-provider's token address itself, over TLS, with the client secret and the PKCE verifier. An ID token received that way,
-straight from the token endpoint, needs no signature check (OpenID Connect Core 3.1.3.7); what is checked is who issued it
-(``iss``), who it is for (``aud``), that it has not expired, that its ``nonce`` is the one this sign-in made, and that the
-provider calls the email address verified. Nothing the browser carries is trusted: it only brings the code and the state.
+provider's token address itself, over TLS, with the client secret and the PKCE verifier. The ID token's signature is checked against the
+provider's published keys (only with an algorithm the provider's section allows, ``id_token_algorithms``) even though it came straight from
+the token endpoint; then who issued it (``iss``), who it is for (``aud``), that it has not expired, that its ``nonce`` is the one this
+sign-in made, and that the provider calls the email address verified. Nothing the browser carries is trusted: it only brings the code and the state.
 
 Two providers do not speak OpenID Connect and have their own small adapters here, chosen by the provider's ``kind``:
 
@@ -18,7 +18,6 @@ Two providers do not speak OpenID Connect and have their own small adapters here
 import base64
 import hashlib
 import hmac
-import json
 import re
 import secrets
 from dataclasses import dataclass
@@ -26,6 +25,7 @@ from datetime import UTC, datetime
 from urllib.parse import urlencode
 
 import httpx2 as httpx
+import jwt
 
 from .. import wallclock
 from ..settings import ExternalProvider
@@ -186,13 +186,33 @@ def authorize_address(provider: ExternalProvider, where: Endpoints, public_url: 
     return where.authorization + separator + urlencode(query)
 
 
-def _claims(id_token: str) -> dict:
-    """The claims of $id_token (its signature is not read: see the module's note)."""
+async def _claims(http: httpx.AsyncClient, provider: ExternalProvider, where: Endpoints, id_token: str) -> dict:
+    """The claims of $id_token, once its signature checks out against the provider's keys (found by the token's ``kid``) with an algorithm
+    the provider's section allows. Nothing else is read from a token that fails this."""
+    if not where.jwks:
+        raise SignInError("failed", f"{provider.name}: no signing keys are known")
     try:
-        payload = id_token.split(".")[1]
-        claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
-    except (IndexError, ValueError):
-        raise SignInError("failed", "the ID token is not readable") from None
+        header = jwt.get_unverified_header(id_token)
+        algorithm = header.get("alg")
+        if algorithm not in provider.id_token_algorithms:
+            raise SignInError("failed", "the ID token is signed with an algorithm that is not allowed")
+        answer = await http.get(where.jwks, timeout=TIMEOUT)
+        answer.raise_for_status()
+        keys = answer.json()["keys"]
+        key = next((each for each in keys if each.get("kid") == header.get("kid")), None) if header.get("kid") is not None else (keys[0] if len(keys) == 1 else None)
+        if key is None:
+            raise SignInError("failed", "the ID token is signed with an unknown key")
+        # The signature only: who issued it, for whom and until when are checked next (``check_claims``), with the sign-in's own values.
+        claims = jwt.decode(
+            id_token,
+            jwt.PyJWK.from_dict(key, algorithm=algorithm).key,
+            algorithms=[algorithm],
+            options={"verify_aud": False, "verify_iss": False, "verify_exp": False, "verify_iat": False, "verify_nbf": False},
+        )
+    except SignInError:
+        raise
+    except Exception as error:  # a bad token, a bad key set, an unreachable provider: all the same answer
+        raise SignInError("failed", f"{provider.name}: the ID token was not accepted") from error
     if not isinstance(claims, dict):
         raise SignInError("failed", "the ID token is not readable")
     return claims
@@ -254,7 +274,7 @@ async def complete(
         raise SignInError("failed", f"{provider.name}: the code was not accepted") from error
     if not isinstance(id_token, str):
         raise SignInError("failed", "the ID token is not readable")
-    return check_claims(provider, where, _claims(id_token), flow.nonce)
+    return check_claims(provider, where, await _claims(http, provider, where, id_token), flow.nonce)
 
 
 async def _complete_facebook(

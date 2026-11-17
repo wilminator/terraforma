@@ -10,7 +10,9 @@ import re
 from urllib.parse import parse_qs, urlsplit
 
 import httpx2 as httpx
+import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import ec
 from pydantic import ValidationError
 
 from terraforma import wallclock
@@ -30,6 +32,14 @@ EMAIL = "kim@example.com"
 ISSUER = "https://idp.test"
 
 
+KEY = ec.generate_private_key(ec.SECP256R1())
+
+
+def jwk(private, kid="k1", algorithm="ES256") -> dict:
+    """The public half of $private as the provider would publish it."""
+    return {**jwt.algorithms.ECAlgorithm.to_jwk(private.public_key(), as_dict=True), "kid": kid, "alg": algorithm, "use": "sig"}
+
+
 def b64(data: dict) -> str:
     return base64.urlsafe_b64encode(json.dumps(data).encode()).rstrip(b"=").decode()
 
@@ -43,6 +53,15 @@ class FakeProvider:
         self.token_status = 200
         self.requests: list[httpx.Request] = []
         self.forms: list[dict] = []
+        # What the ID tokens are signed with, and the keys the provider publishes.
+        self.key = KEY
+        self.algorithm = "ES256"
+        self.headers = {"kid": "k1"}
+        self.keys = [jwk(KEY)]
+        self.keys_status = 200
+
+    def id_token(self) -> str:
+        return jwt.encode(self.claims, self.key, algorithm=self.algorithm, headers=self.headers)
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
@@ -52,7 +71,9 @@ class FakeProvider:
             if self.token_status != 200:
                 return httpx.Response(self.token_status, json={"error": "invalid_grant"})
             assert challenge(form["code_verifier"]) == self.challenge, "the verifier must match the challenge the browser was sent with"
-            return httpx.Response(200, json={"id_token": f"{b64({'alg': 'none'})}.{b64(self.claims)}.", "access_token": "unused"})
+            return httpx.Response(200, json={"id_token": self.id_token(), "access_token": "unused"})
+        if request.url.path == "/jwks":
+            return httpx.Response(self.keys_status, json={"keys": self.keys})
         return httpx.Response(404)
 
 
@@ -71,6 +92,7 @@ def provider(**changes) -> ExternalProvider:
             "client_secret": "client-secret-1",
             "authorization_endpoint": f"{ISSUER}/authorize",
             "token_endpoint": f"{ISSUER}/token",
+            "jwks_uri": f"{ISSUER}/jwks",
             **changes,
         }
     )
@@ -795,3 +817,78 @@ def test_a_remembered_browser_skips_the_second_factor_of_a_provider_sign_in(clie
     later(3600)
     assert outcome(sign_in(client, idp)) == {"external": "done"}
     assert client.get("/api/session").json()["account"]["username"] == "Kim"
+
+
+# --- the ID token's signature -------------------------------------------------------------------------------------------------
+
+def test_an_id_token_signed_with_a_key_the_provider_does_not_publish_signs_nobody_in(client, idp):
+    idp.key = ec.generate_private_key(ec.SECP256R1())  # (still named k1, but not the published key)
+    assert outcome(sign_in(client, idp)) == {"external": "error", "reason": "failed"}
+    assert client.get("/api/external/identities").status_code == 401
+
+
+def test_an_unsigned_id_token_signs_nobody_in(client, idp):
+    idp.id_token = lambda: f"{b64({'alg': 'none'})}.{b64(idp.claims)}."
+    assert outcome(sign_in(client, idp))["reason"] == "failed"
+
+
+def test_an_id_token_naming_an_unknown_key_signs_nobody_in(client, idp):
+    idp.headers = {"kid": "other"}
+    assert outcome(sign_in(client, idp))["reason"] == "failed"
+
+
+def test_an_id_token_with_no_key_id_is_checked_against_the_only_key_the_provider_publishes(client, idp):
+    idp.headers = {}
+    assert outcome(sign_in(client, idp))["external"] == "finish"
+
+
+def test_an_id_token_with_no_key_id_among_several_keys_signs_nobody_in(client, idp):
+    idp.headers = {}
+    idp.keys = [jwk(KEY), jwk(ec.generate_private_key(ec.SECP256R1()), kid="k2")]
+    assert outcome(sign_in(client, idp))["reason"] == "failed"
+
+
+def test_a_provider_whose_keys_cannot_be_read_signs_nobody_in(client, idp):
+    idp.keys_status = 500
+    assert outcome(sign_in(client, idp))["reason"] == "failed"
+
+
+def test_a_shared_secret_signature_is_never_accepted(client, idp):
+    idp.key, idp.algorithm = "a-shared-secret-of-at-least-32-bytes!", "HS256"
+    assert outcome(sign_in(client, idp))["reason"] == "failed"
+
+
+def test_an_rs256_token_is_accepted_by_default_as_google_and_microsoft_sign_with_it(client, idp):
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    idp.key, idp.algorithm = private, "RS256"
+    idp.keys = [{**jwt.algorithms.RSAAlgorithm.to_jwk(private.public_key(), as_dict=True), "kid": "k1", "alg": "RS256", "use": "sig"}]
+    assert outcome(sign_in(client, idp))["external"] == "finish"
+
+
+def test_a_provider_that_allows_only_es256_refuses_an_rs256_token(client, idp):
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    client.app.state.settings.external_providers = [provider(id_token_algorithms=["ES256"])]
+    private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    idp.key, idp.algorithm = private, "RS256"
+    idp.keys = [{**jwt.algorithms.RSAAlgorithm.to_jwk(private.public_key(), as_dict=True), "kid": "k1", "alg": "RS256", "use": "sig"}]
+    assert outcome(sign_in(client, idp))["reason"] == "failed"
+
+
+def test_the_signature_settings():
+    assert provider().id_token_algorithms == ["ES256", "RS256"]
+    with pytest.raises(ValidationError):
+        provider(id_token_algorithms=[])
+    with pytest.raises(ValidationError):
+        provider(id_token_algorithms=["HS256"])
+    with pytest.raises(ValidationError):
+        provider(id_token_algorithms=["none"])
+    with pytest.raises(ValidationError):
+        ExternalProvider(name="steam", label="Steam", kind="steam", id_token_algorithms=["ES256"])
+    # Endpoints given by hand leave nowhere to find the keys, so the keys' address must be given too.
+    with pytest.raises(ValidationError):
+        provider(jwks_uri=None)
+    # Left out, it is read from the provider's published settings.
+    ExternalProvider(name="g", label="G", issuer=ISSUER, client_id="i", client_secret="s")

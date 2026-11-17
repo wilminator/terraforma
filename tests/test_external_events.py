@@ -11,17 +11,12 @@ from pydantic import ValidationError
 from terraforma.settings import ExternalProvider
 
 from .helpers import expect
-from .test_external_signin import ISSUER, SUBJECT, FakeProvider, identities_in_db, new_player, provider
+from .test_external_signin import ISSUER, KEY, SUBJECT, FakeProvider, identities_in_db, jwk, new_player, provider
 
 pytestmark = pytest.mark.accounts
 
 DELETED = f"{ISSUER}/events/account-deleted"
-KEY = ec.generate_private_key(ec.SECP256R1())
 OTHER_KEY = ec.generate_private_key(ec.SECP256R1())
-
-
-def jwk(private, kid="k1") -> dict:
-    return {**jwt.algorithms.ECAlgorithm.to_jwk(private.public_key(), as_dict=True), "kid": kid, "alg": "ES256", "use": "sig"}
 
 
 class EventsProvider(FakeProvider):
@@ -29,14 +24,10 @@ class EventsProvider(FakeProvider):
 
     def __init__(self):
         super().__init__()
-        self.keys = [jwk(KEY)]
-        self.keys_status = 200
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         if request.url.path == "/.well-known/openid-configuration":
             return httpx.Response(200, json={"issuer": ISSUER, "authorization_endpoint": f"{ISSUER}/authorize", "token_endpoint": f"{ISSUER}/token", "jwks_uri": f"{ISSUER}/jwks"})
-        if request.url.path == "/jwks":
-            return httpx.Response(self.keys_status, json={"keys": self.keys})
         return super().handle(request)
 
 
@@ -82,7 +73,7 @@ def test_deletion_events_are_off_by_default_and_only_for_openid_connect():
         provider(jwks_uri="http://idp.example.com/keys")
     # Endpoints given by hand leave nowhere to find the keys, so they must be given too.
     with pytest.raises(ValidationError):
-        provider(deletion_events=True)
+        provider(deletion_events=True, jwks_uri=None)
     provider(deletion_events=True, jwks_uri=f"{ISSUER}/jwks")
 
 
