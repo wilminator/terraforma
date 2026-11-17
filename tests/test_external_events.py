@@ -88,16 +88,25 @@ def test_deletion_events_are_off_by_default_and_only_for_openid_connect():
 
 # --- the message ------------------------------------------------------------------------------------------------------------
 
-def test_a_deletion_unlinks_the_person_and_logs_them_out(client, idp):
+UNLINKED = f"{ISSUER}/events/account-unlinked"
+
+
+@pytest.mark.parametrize("kind", [DELETED, UNLINKED], ids=["deleted", "unlinked"])
+def test_a_known_person_is_answered_500_until_their_data_can_be_erased(client, idp, kind):
+    """A 200 says "everything is deleted" and the provider forgets the message, so it must wait for an erase. The link stays: a replay finds the person by it."""
     new_player(client, idp)
     assert logged_in(client) and identities_in_db(client) == [("fake", SUBJECT, "kim@example.com")]
-    assert expect(post(client, event()), 200).json() == {"ok": True}
-    assert identities_in_db(client) == []
-    assert not logged_in(client)
+    assert expect(post(client, event(events={kind: {"sub": SUBJECT}})), 500).json()["ok"] is False
+    assert identities_in_db(client) == [("fake", SUBJECT, "kim@example.com")]
+    assert not logged_in(client)  # but their logins end
+    # asked again (the provider retries), the answer is the same
+    expect(post(client, event(events={kind: {"sub": SUBJECT}})), 500)
+    assert identities_in_db(client) == [("fake", SUBJECT, "kim@example.com")]
 
 
-def test_an_unknown_person_gets_the_same_answer(client):
-    assert expect(post(client, event("nobody")), 200).json() == {"ok": True}
+@pytest.mark.parametrize("kind", [DELETED, UNLINKED], ids=["deleted", "unlinked"])
+def test_an_unknown_person_gets_200(client, kind):
+    assert expect(post(client, event(events={kind: {"sub": "nobody"}})), 200).json() == {"ok": True}
 
 
 def test_other_events_are_accepted_and_ignored(client, idp):
@@ -116,6 +125,7 @@ def test_a_deletion_without_a_subject_is_refused(client):
     "token",
     [
         event(key=OTHER_KEY),  # signed by someone else
+        event(algorithm="ES384", key=ec.generate_private_key(ec.SECP384R1())),  # only ES256 is accepted
         event(aud="client-2"),
         event(iss="https://evil.test"),
         event(exp=int(time.time()) - 3600),
@@ -126,7 +136,7 @@ def test_a_deletion_without_a_subject_is_refused(client):
         "not-a-token",
         jwt.encode({"iss": ISSUER, "aud": "client-1", "exp": int(time.time()) + 300, "iat": 1, "events": {DELETED: {"sub": SUBJECT}}}, "a-shared-secret-of-at-least-32-bytes!", algorithm="HS256", headers={"kid": "k1", "typ": "secevent+jwt"}),
     ],
-    ids=["other-key", "audience", "issuer", "expired", "no-expiry", "no-jti", "type", "unknown-key", "garbage", "shared-secret"],
+    ids=["other-key", "es384", "audience", "issuer", "expired", "no-expiry", "no-jti", "type", "unknown-key", "garbage", "shared-secret"],
 )
 def test_a_message_that_does_not_check_out_changes_nothing(client, idp, token):
     new_player(client, idp)

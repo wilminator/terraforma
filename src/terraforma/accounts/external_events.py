@@ -11,17 +11,18 @@ whether the person has an account here: the answer is ``{"exists": bool}`` and, 
 
 The token is checked against the provider's published signing keys (found by the ``kid`` in its header; the algorithm must be
 one of ``ALGORITHMS``, never ``none`` or a shared-secret one), and its issuer, audience (this site's ``client_id``) and expiry.
-The token must carry a ``jti`` (the provider's one-per-message id); it is not remembered, because a deletion done twice is the same as once and nothing else is acted on. Only the event ``<issuer>/events/account-deleted`` is understood; a token with any other event is accepted and ignored.
+The token must carry a ``jti`` (the provider's one-per-message id); it is not remembered, because acting on a message twice is the same as once. Only the events ``<issuer>/events/account-deleted`` and ``account-unlinked`` are understood; a token with any other event is accepted and ignored.
 
-What a deletion does here: the link between the person's account here and the provider is removed, and every login of that
-account ends. The account itself (heroes, teams, history) is not deleted: that is a decision for the game, and an account with a
-password of its own still works. A provider that is the only way into an account leaves it with no way in.
+What a deletion does here: nothing is deleted yet. The account service wants a 200 only once everything the site holds for the person is gone, and
+this site has no routine that erases it, so for a person it knows the answer is 500 (their logins end, the link to the provider stays so a
+replay can find them). An erase that answers 200 comes with its own slice.
 """
 
 import logging
 
 import jwt
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import func, select
 
@@ -35,12 +36,13 @@ from .external_routes import provider_of
 router = APIRouter(prefix="/api/external")
 log = logging.getLogger(__name__)
 
-# Both are asymmetric: a message the site could also have made itself (a shared secret) proves nothing.
-ALGORITHMS = ("ES256", "RS256")
+# Only ES256: the account service signs with nothing else, and a message the site could also have made itself (a shared secret) proves nothing.
+ALGORITHMS = ("ES256",)
 EVENT_TYPE = "secevent+jwt"
 # A lookup request is not an event, and the header says so, so neither can pass as the other.
 LOOKUP_TYPE = "account-lookup+jwt"
 DELETED = "/events/account-deleted"
+UNLINKED = "/events/account-unlinked"
 
 
 class EventRequest(Strict):
@@ -92,23 +94,32 @@ async def checked(name: str, token: str, request: Request, typ: str = EVENT_TYPE
 
 
 @router.post("/{name}/events")
-async def events(name: str, body: EventRequest, request: Request, db: Db) -> dict:
-    """The provider's "account deleted" message: unlinks the person and ends their logins here. Answers the same whether or not they were known."""
+async def events(name: str, body: EventRequest, request: Request, db: Db) -> Response:
+    """The provider's "account deleted" or "account unlinked" message.
+
+    Both mean "delete everything you hold for this person", and the answer 200 says that is done and committed, after which the provider
+    forgets the message. The engine has no erase yet, so for a person it knows the answer is 500 (the provider retries for about three days,
+    then alerts its operator, who can replay the message once the erase exists) and nothing is deleted: the link stays, because the link is
+    how a replay finds the person. Their logins do end. A person nobody here knows, and any other event, are answered 200.
+    """
     claims, where = await checked(name, body.token, request)
     events = claims.get("events")
-    deleted = events.get(where.issuer.rstrip("/") + DELETED) if isinstance(events, dict) else None
-    if deleted is None:
-        return {"ok": True}
-    subject = deleted.get("sub") if isinstance(deleted, dict) else None
+    issuer = where.issuer.rstrip("/")
+    erasing = events.get(issuer + DELETED) if isinstance(events, dict) else None
+    if erasing is None and isinstance(events, dict):
+        erasing = events.get(issuer + UNLINKED)
+    if erasing is None:
+        return JSONResponse({"ok": True})
+    subject = erasing.get("sub") if isinstance(erasing, dict) else None
     if not isinstance(subject, str) or not 0 < len(subject) <= 255:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "the message is not accepted")
     identity = await service.find_identity(db, name, subject)
-    if identity is not None:
-        account = await db.get(Account, identity.account_id)
-        await db.delete(identity)
-        if account is not None:
-            account.session_version += 1
-    return {"ok": True}
+    if identity is None:
+        return JSONResponse({"ok": True})
+    account = await db.get(Account, identity.account_id)
+    if account is not None:
+        account.session_version += 1
+    return JSONResponse({"ok": False, "reason": "erasing a person's data is not built yet"}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @router.post("/{name}/account-lookup")
