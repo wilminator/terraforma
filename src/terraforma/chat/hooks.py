@@ -18,6 +18,7 @@ This is a public interface (the license exception covers it): the names and sign
 """
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import or_, select
@@ -221,6 +222,21 @@ class Chat:
     async def actioned(self, session: AsyncSession, admin: Account, sender_id: int, message: ChatMessage, reason: str) -> None:
         """An admin settled a flag on $message as actioned: the place for the game's own consequence (a warning mail, a strike, a
         timed ban through ``service.ban``). Nothing happens by default beyond the flag being recorded."""
+
+    def ban_message(self, game_name: str, handle: str, until: datetime | None, reason: str, clause: str) -> tuple[str, str] | None:
+        """The email an admin's chat ban sends the player, as (subject, body), or None to send none. $until is None for a ban for good;
+        $reason and $clause are what the admin wrote (either may be empty). The engine adds the game's contact link (``Rules.contact_url``)
+        to the end of the body, and sends it to the player's confirmed address; a player with none gets no mail. A game overrides this to
+        word the mail its own way (and to add its escalation: a day, three days, for good). This is a public interface the license
+        exception covers."""
+        lasting = f"until {until:%Y-%m-%d %H:%M} UTC" if until else "for good"
+        lines = [f"Hello {handle},", "", f"You have been barred from speaking in the chat of {game_name} {lasting}. You can still read it."]
+        if clause:
+            lines += ["", f"The rule you broke: {clause}"]
+        if reason:
+            lines += ["", f"What the admin wrote: {reason}"]
+        lines += ["", "If you think this is a mistake, you can appeal through the contact page below."]
+        return (f"You are barred from chat in {game_name}", "\n".join(lines))
 
     async def may_speak(self, session: AsyncSession, speaker: Account, kind: str, key: str, body: str) -> str | None:
         """Why the player may not say this just now (a muted player, a rule against links...), or None. Anyone may by default."""

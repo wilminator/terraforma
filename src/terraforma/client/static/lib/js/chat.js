@@ -219,7 +219,7 @@ export function chatPanel(shell) {
                   { class: "row-actions" },
                   h("button", { type: "button", "aria-label": t("chat.admin_actioned_label", { id: each.id }), onclick: () => settle(each.id, "actioned") }, t("chat.admin_actioned")),
                   h("button", { type: "button", "aria-label": t("chat.admin_dismiss_label", { id: each.id }), onclick: () => settle(each.id, "dismissed") }, t("chat.admin_dismiss")),
-                  h("button", { type: "button", "aria-label": t("chat.admin_ban_label", { name: each.message.sender }), onclick: () => ban(each.message.sender) }, t("chat.admin_ban")),
+                  h("button", { type: "button", "aria-label": t("chat.admin_ban_label", { name: each.message.sender }), onclick: () => ban(each.message.sender, t(`chat.reason.${each.reason}`)) }, t("chat.admin_ban")),
                 ),
               ),
             )
@@ -250,9 +250,9 @@ export function chatPanel(shell) {
     });
   }
 
-  async function ban(name) {
+  async function ban(name, clause = "") {
     await attempt(shell, problem, async () => {
-      await api.post("/api/chat/admin/ban", { handle: name, hours: 24, reason: "" });
+      await api.post("/api/chat/admin/ban", { handle: name, hours: 24, reason: "", clause });
       await drawAdmin(true);
     });
   }
@@ -264,9 +264,9 @@ export function chatPanel(shell) {
     });
   }
 
-  async function ban(name) {
+  async function ban(name, clause = "") {
     await attempt(shell, problem, async () => {
-      await api.post("/api/chat/admin/ban", { handle: name, hours: 24, reason: "" });
+      await api.post("/api/chat/admin/ban", { handle: name, hours: 24, reason: "", clause });
       await drawAdmin(true);
     });
   }

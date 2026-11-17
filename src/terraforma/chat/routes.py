@@ -9,9 +9,11 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import Field
 
 from ..accounts import ratelimit
-from ..accounts.routes import Strict, limited
+from ..accounts.routes import Strict, game_name, limited, send
 from ..api.deps import ActingAccount, CurrentAccount, Db
 from ..game import Game
+from ..mail import Mail
+from ..models import Account
 from . import service
 from .models import ACTIONED, DISMISSED, NOTE_MAX, OPEN
 
@@ -46,6 +48,8 @@ class Ban(Strict):
     handle: str = Field(min_length=1, max_length=64)
     hours: int | None = Field(default=None, ge=1, le=24 * 365)
     reason: str = Field(default="", max_length=NOTE_MAX)
+    # The clause of the game's terms the ban rests on; the player's email quotes it.
+    clause: str = Field(default="", max_length=NOTE_MAX)
 
 
 def game_of(request: Request) -> Game:
@@ -157,13 +161,18 @@ async def admin_bans(account: CurrentAccount, db: Db) -> dict:
 
 
 @router.post("/admin/ban")
-async def admin_ban(body: Ban, account: ActingAccount, db: Db) -> dict:
-    """Bars a player from speaking, for ``hours`` or for good when left out. They can still read."""
+async def admin_ban(body: Ban, request: Request, account: ActingAccount, db: Db) -> dict:
+    """Bars a player from speaking, for ``hours`` or for good when left out. They can still read. The player is emailed the reason, the
+    clause and the end of the ban (``Chat.ban_message``), when they have a confirmed address."""
     admin_only(account)
     try:
-        await service.ban(db, account, body.handle, body.hours, body.reason)
+        row = await service.ban(db, account, body.handle, body.hours, body.reason, body.clause)
     except service.ChatError as error:
         raise refuse(error) from error
+    target = await db.get(Account, row.account_id)
+    message = game_of(request).chat.ban_message(game_name(request), target.handle or target.username, row.until, row.reason, row.clause)
+    if message is not None and target.email and target.email_confirmed_at is not None:
+        await send(request, Mail(to=target.email, subject=message[0], body=message[1]))
     return {"bans": await service.bans(db)}
 
 
