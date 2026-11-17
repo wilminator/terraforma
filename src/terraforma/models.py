@@ -128,6 +128,9 @@ class Account(Timestamps, Base):
     name_ok: Mapped[bool | None] = mapped_column(Boolean)
     # The word-list time (``names.screen``) the name last passed the provider's name check under; None: never checked that way.
     screened_at_list: Mapped[str | None] = mapped_column(String(32))
+    # The sign-in provider (its name in settings.toml) that suspended this account, or None. A suspended account has no login by any method
+    # (password, provider, remembered browser) until that provider reinstates it; its data stays. Only the account service decides this.
+    suspended_by: Mapped[str | None] = mapped_column(String(32))
     # Every login carries this number; bumping it ends them all (a password reset does).
     session_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     # Two-factor login (see accounts.twofa). The secret is encrypted; it is set

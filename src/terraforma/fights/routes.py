@@ -143,7 +143,7 @@ async def logged_in(socket: WebSocket) -> int | None:
         return None
     async with socket.app.state.sessionmaker() as session:
         account = await session.get(Account, account_id)
-    if account is None or account.session_version != socket.session.get(SESSION_VERSION):
+    if account is None or account.suspended_by or account.session_version != socket.session.get(SESSION_VERSION):
         return None
     return account.id
 
