@@ -51,12 +51,12 @@ SESSION_CSRF = "csrf"
 CSRF_HEADER = "X-CSRF-Token"
 
 
-SUSPENDED = "this account is suspended"
+SUSPENDED = "Please sign in again."
 
 
 def refuse_if_suspended(account) -> None:
     """403 for an account the sign-in provider has suspended: no login by any method until it is reinstated (``Account.suspended_by``)."""
-    if account.suspended_by:
+    if account.is_blocked():
         raise HTTPException(status.HTTP_403_FORBIDDEN, SUSPENDED)
 
 

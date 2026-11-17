@@ -272,3 +272,18 @@ async def run(
         except Exception:  # one bad job must not stop the others
             log.exception("housekeeping job %s failed", name)
     return removed
+
+
+@job
+async def ended_account_blocks(session: AsyncSession, now: int, settings: Settings, rules: Rules | None = None) -> int:
+    """Lifts the blocks (the sign-in provider's bans and suspensions) whose end has passed, so the names they hid show again."""
+    from .accounts import blocks
+    from .models import Account
+
+    ended = await session.scalars(select(Account).where(Account.suspended_by.is_not(None), Account.suspended_until.is_not(None)).limit(BATCH))
+    lifted = 0
+    for account in list(ended):
+        if not account.is_blocked(wallclock.now()):
+            await blocks.lift(session, account)
+            lifted += 1
+    return lifted

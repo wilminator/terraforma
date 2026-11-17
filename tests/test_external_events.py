@@ -8,6 +8,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import ec
 from pydantic import ValidationError
 
+from terraforma import wallclock
 from terraforma.settings import ExternalProvider
 
 from .helpers import expect
@@ -229,7 +230,7 @@ def test_a_suspension_ends_the_logins_and_blocks_every_way_in_until_reinstated(c
     # nothing is deleted
     assert identities_in_db(client) == [("fake", SUBJECT, "kim@example.com")]
     # the password does not get in, nor does the provider
-    assert expect(client.post("/api/login", json={"username": "Kim", "password": PASSWORD}), 403).json()["detail"] == "this account is suspended"
+    assert expect(client.post("/api/login", json={"username": "Kim", "password": PASSWORD}), 403).json()["detail"] == "Please sign in again."
     assert outcome(sign_in(client, idp)) == {"external": "error", "reason": "suspended"}
     assert not logged_in(client)
     # asked again: the same
@@ -286,5 +287,142 @@ def test_a_suspended_account_is_refused_even_by_a_login_that_somehow_survived(cl
         (await db.scalar(select(Account))).suspended_by = "fake"  # without moving the session version on
 
     in_app_db(client, mark)
-    assert expect(client.get("/api/external/identities"), 403).json()["detail"] == "this account is suspended"
+    assert expect(client.get("/api/external/identities"), 403).json()["detail"] == "Please sign in again."
     assert not logged_in(client)  # and the login is gone
+
+
+# --- bans: kind, end, hidden names, queues, and the ways a block ends -------------------------------------------------------------
+
+def block(kind="ban", until=None, sub=SUBJECT):
+    payload = {"sub": sub, "kind": kind}
+    if until is not None:
+        payload["until"] = until
+    return event(events={SUSPENDED: payload})
+
+
+def the_account(client, change=None):
+    """The account's block fields and name states, read (and, with $change, first changed) in the app's database."""
+    from sqlalchemy import select
+
+    from terraforma.models import Account, BlockHidden
+    from terraforma.heroes.models import Team
+    from terraforma.testing import in_app_db
+
+    async def read(db):
+        account = await db.scalar(select(Account))
+        if change:
+            change(account)
+            await db.flush()
+        teams = [(each.name, each.name_ok) for each in await db.scalars(select(Team).order_by(Team.id))]
+        hidden = len(list(await db.scalars(select(BlockHidden))))
+        return account.suspended_by, account.suspended_kind, account.suspended_until, account.name_ok, teams, hidden
+
+    return in_app_db(client, read)
+
+
+def two_teams(client):
+    from sqlalchemy import select
+
+    from terraforma.heroes.models import Team
+    from terraforma.models import Account
+    from terraforma.testing import in_app_db
+
+    async def make(db):
+        account = await db.scalar(select(Account))
+        db.add(Team(account_id=account.id, name="Fine", name_key="fine", name_ok=True))
+        db.add(Team(account_id=account.id, name="Rude", name_key="rude", name_ok=False))
+        db.add(Team(account_id=account.id, name="Unchecked", name_key="unchecked", name_ok=None))
+
+    in_app_db(client, make)
+
+
+def test_a_ban_is_remembered_with_its_kind_and_end_and_hides_the_names_until_it_is_lifted(client, idp):
+    new_player(client, idp)
+    two_teams(client)
+    before = the_account(client)
+    assert before[:2] == (None, None) and before[3] is None  # (the handle was never screened)
+    expect(post(client, block("ban", until=wallclock.timestamp() + 3600)), 200)
+    provider_, kind, until, handle_ok, teams, hidden = the_account(client)
+    assert (provider_, kind, handle_ok) == ("fake", "ban", False)
+    assert 3500 < until.timestamp() - wallclock.timestamp() < 3700
+    # every name is hidden from others; the rude one was hidden already and is not remembered twice
+    assert teams == [("Fine", False), ("Rude", False), ("Unchecked", False)] and hidden == 3
+    # the same message again changes nothing (but its end)
+    expect(post(client, block("ban", until=wallclock.timestamp() + 7200)), 200)
+    assert the_account(client)[5] == 3
+    expect(post(client, suspension(REINSTATED)), 200)
+    assert the_account(client) == (None, None, None, None, [("Fine", True), ("Rude", False), ("Unchecked", None)], 0)
+
+
+def test_a_permanent_ban_has_no_end_and_a_short_until_counts_from_now(client, idp):
+    new_player(client, idp)
+    expect(post(client, block("ban")), 200)
+    assert the_account(client)[:3] == ("fake", "ban", None)
+    expect(post(client, block("suspended", until=900)), 200)
+    _, kind, until, *_ = the_account(client)
+    assert kind == "suspended" and 800 < until.timestamp() - wallclock.timestamp() < 1000
+    expect(post(client, block("something-new", until="soon")), 200)  # unknown kinds and strange ends are not refusals
+    assert the_account(client)[1:3] == ("suspended", None)
+
+
+def test_a_block_whose_end_has_passed_is_lifted_at_the_next_login(client, idp, later):
+    from .test_external_signin import PASSWORD
+
+    new_player(client, idp, password=PASSWORD)
+    two_teams(client)
+    expect(post(client, block("ban", until=wallclock.timestamp() + 3600)), 200)
+    expect(client.post("/api/login", json={"username": "Kim", "password": PASSWORD}), 403)
+
+    later(7200)
+    expect(client.post("/api/login", json={"username": "Kim", "password": PASSWORD}), 200)
+    assert the_account(client) == (None, None, None, None, [("Fine", True), ("Rude", False), ("Unchecked", None)], 0)
+
+
+def test_housekeeping_lifts_a_block_whose_end_has_passed(client, idp, later):
+    from terraforma import wallclock
+    from terraforma.housekeeping import ended_account_blocks
+    from terraforma.testing import in_app_db
+
+    new_player(client, idp)
+    two_teams(client)
+    expect(post(client, block("suspended", until=3600)), 200)
+    assert in_app_db(client, lambda db: ended_account_blocks(db, wallclock.timestamp(), client.app.state.settings)) == 0  # not yet
+
+    later(7200)
+    assert in_app_db(client, lambda db: ended_account_blocks(db, wallclock.timestamp(), client.app.state.settings)) == 1
+    assert the_account(client)[0] is None and the_account(client)[5] == 0
+
+
+def test_a_sign_in_token_issued_after_the_block_began_lifts_it_and_an_older_one_does_not(client, idp, later):
+    from .test_external_signin import outcome, sign_in
+
+    new_player(client, idp)
+    expect(post(client, block("ban")), 200)
+    assert outcome(sign_in(client, idp)) == {"external": "error", "reason": "suspended"}
+    assert the_account(client)[0] == "fake"
+    later(5)  # (the provider would not issue a token while the block is on, so one issued later means it was lifted)
+    assert outcome(sign_in(client, idp))["external"] == "done"
+    assert the_account(client)[0] is None
+
+
+def test_a_banned_account_leaves_the_monster_queue(client, idp):
+    from sqlalchemy import select
+
+    from terraforma import wallclock
+    from terraforma.models import Account
+    from terraforma.monsterplay.models import MonsterVolunteer
+    from terraforma.testing import in_app_db
+
+    new_player(client, idp)
+
+    async def queue(db):
+        db.add(MonsterVolunteer(account_id=(await db.scalar(select(Account))).id, queued_at=wallclock.now(), checked_in=wallclock.now()))
+
+    in_app_db(client, queue)
+
+    async def waiting(db):
+        return len(list(await db.scalars(select(MonsterVolunteer))))
+
+    assert in_app_db(client, waiting) == 1
+    expect(post(client, block("ban")), 200)
+    assert in_app_db(client, waiting) == 0

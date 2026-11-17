@@ -220,4 +220,5 @@ def test_every_housekeeping_job_is_registered_and_so_runs():
         "unanswered_contract_offers",
         "running_contracts",
         "standing_bounties",
+        "ended_account_blocks",
     ]

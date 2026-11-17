@@ -29,7 +29,7 @@ from sqlalchemy import func, select
 from ..api.deps import Db, client_address
 from ..heroes.models import Team
 from ..models import Account
-from . import oidc, ratelimit, service
+from . import blocks, oidc, ratelimit, service
 from .common import Strict, limited
 from .external_routes import provider_of
 
@@ -122,6 +122,7 @@ async def events(name: str, body: EventRequest, request: Request, db: Db) -> Res
     events = claims.get("events")
     issuer = where.issuer.rstrip("/")
     suspended = subject_of(events, issuer + SUSPENDED)
+    block = events.get(issuer + SUSPENDED) if suspended is not None and isinstance(events, dict) else {}
     reinstated = subject_of(events, issuer + REINSTATED)
     erasing = subject_of(events, issuer + DELETED) or subject_of(events, issuer + UNLINKED)
     refuse = False
@@ -133,11 +134,10 @@ async def events(name: str, body: EventRequest, request: Request, db: Db) -> Res
         if account is None:
             continue
         if kind == "suspend":
-            account.suspended_by = name
-            account.session_version += 1
+            await blocks.block(db, account, name, str(block.get("kind", "")), block.get("until"))
         elif kind == "reinstate":
-            if account.suspended_by == name:  # only the provider that suspended it lifts it
-                account.suspended_by = None
+            if account.suspended_by == name:  # only the provider that blocked it lifts it
+                await blocks.lift(db, account)
         else:
             account.session_version += 1
             refuse = True

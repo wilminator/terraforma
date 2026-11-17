@@ -35,7 +35,7 @@ from ..api.security import refuse_if_suspended, start_session
 from ..models import Account
 from ..settings import ExternalProvider
 from .tokens import TokenError
-from . import oidc, ratelimit, remember, second, service, twofa
+from . import blocks, oidc, ratelimit, remember, second, service, twofa
 from .common import Strict, limited
 from .routes import single_method_note
 
@@ -218,6 +218,7 @@ async def callback(name: str, query: Annotated[CallbackQuery, Query()], request:
         account = await db.get(Account, known.account_id)
         if account is None:
             return back("error", "failed")
+        await blocks.lift_if_signed_in_since(db, account, who.issued_at)
         return await _logged_in(request, db, account, flow.next, flow.request)
 
     if provider.kind == "steam":
@@ -238,7 +239,8 @@ async def callback(name: str, query: Annotated[CallbackQuery, Query()], request:
 
 async def _logged_in(request: Request, db: Db, account: Account, next: str | None, oidc_request: str | None = None) -> RedirectResponse:
     """Logs $account in, or, with two-factor login on (and this browser not remembered), waits for the second factor. A suspended account gets neither."""
-    if account.suspended_by:
+    await blocks.lift_if_ended(db, account)
+    if account.is_blocked():
         request.session.clear()
         return back("error", "suspended", next=next, request=oidc_request)
     if twofa.enabled(account) and not await remember.is_remembered(request, db, account):

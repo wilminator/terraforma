@@ -16,7 +16,7 @@ from ..api.deps import ActingAccount, CurrentAccount, Db, Screen, client_address
 from ..api.security import SESSION_CSRF, refuse_if_suspended, start_session
 from ..mail import Mail
 from ..models import Account
-from . import ratelimit, remember, second, service, twofa
+from . import blocks, ratelimit, remember, second, service, twofa
 from .common import Strict, limited
 from .tokens import TokenError
 
@@ -129,6 +129,7 @@ async def login(body: LoginRequest, request: Request, response: Response, db: Db
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "wrong username or password")
     if account.email_confirmed_at is None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "confirm your email address first: the link is in your inbox")
+    await blocks.lift_if_ended(db, account)
     refuse_if_suspended(account)
     if twofa.enabled(account) and not await remember.is_remembered(request, db, account):
         if body.code is None and body.assertion is None:

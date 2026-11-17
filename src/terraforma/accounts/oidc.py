@@ -97,6 +97,8 @@ class Identity:
     subject: str
     email: str
     email_verified: bool
+    # When the provider issued the ID token (Unix seconds), if it said.
+    issued_at: float | None = None
 
 
 def new_flow(provider: ExternalProvider, purpose: str, account_id: int | None = None, next: str | None = None, request: str | None = None) -> Flow:
@@ -245,6 +247,7 @@ def check_claims(provider: ExternalProvider, where: Endpoints, claims: dict, non
         subject=subject,
         email=email.strip() if isinstance(email, str) else "",
         email_verified=verified is True or verified == "true",
+        issued_at=claims["iat"] if isinstance(claims.get("iat"), (int, float)) and not isinstance(claims.get("iat"), bool) else None,
     )
 
 
