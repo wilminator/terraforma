@@ -444,6 +444,12 @@ class Rules:
         license exception covers."""
         return await ask_provider(name)
 
+    def contact_url(self) -> str:
+        """Where a player asks for help or appeals (the address of a contact page, never a mailbox): empty (the default) for none. The
+        site shows it as a link at the foot of its pages and ends every email it sends with it. It must be an ``http://`` or
+        ``https://`` address with no spaces, or the server won't start. This is a public interface the license exception covers."""
+        return ""
+
     def may_queue_monsters(self, volunteer) -> str | None:
         """Whether $volunteer (a ``monsterplay.facts.Volunteer``, whose ``account_id`` may be None for someone not logged in) may
         wait to command monsters: None if they may, otherwise why not. By default a logged-in account with a team and no fight

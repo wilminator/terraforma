@@ -68,16 +68,3 @@ def test_the_development_app_starts_from_the_settings_file(tmp_path, monkeypatch
     path = write(tmp_path, f'database_url = "sqlite+aiosqlite:///{tmp_path}/dev.db"\nsession_secret = "' + "x" * 32 + '"\n')
     monkeypatch.setenv("TERRAFORMA_SETTINGS", str(path))
     assert app().title == "TerraForma Example"
-
-
-@pytest.mark.parametrize("value", ["", "https://accounts.example/contact", "http://localhost:8000/contact"])
-def test_the_contact_url_is_empty_or_a_web_address(tmp_path, value):
-    secret = 'session_secret = "' + "x" * 32 + '"\n'
-    assert load_settings(write(tmp_path, secret + f'contact_url = "{value}"\n')).contact_url == value
-
-
-@pytest.mark.parametrize("value", ["help@example.com", "mailto:help@example.com", "javascript:alert(1)", "https://a b"])
-def test_the_contact_url_refuses_a_mailbox_or_anything_that_is_not_a_web_address(tmp_path, value):
-    secret = 'session_secret = "' + "x" * 32 + '"\n'
-    with pytest.raises(Exception):
-        load_settings(write(tmp_path, secret + f'contact_url = "{value}"\n'))

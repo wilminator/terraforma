@@ -68,7 +68,8 @@ def link(request: Request, path: str, token: str) -> str:
 
 async def send(request: Request, mail: Mail) -> None:
     """Sends $mail; with a ``contact_url`` setting its last line says where to ask for help."""
-    contact = request.app.state.settings.contact_url
+    game = request.app.state.game
+    contact = game.rules.contact_url() if game else ""
     if contact:
         mail = replace(mail, body=f"{mail.body.rstrip()}\n\nNeed help? Contact us: {contact}\n")
     await request.app.state.mailer.send(mail)

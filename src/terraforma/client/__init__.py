@@ -61,6 +61,8 @@ def check_game_client(game: Game) -> None:
                 raise ClientError(f"{field}: {name!r} must be a plain file name under client_dir ending in {' or '.join(suffixes)}")
             if not (game.client_dir / name).is_file():
                 raise ClientError(f"{field}: {name!r} is not in client_dir ({game.client_dir})")
+    if not re.fullmatch(r"(https?://[^\s<>\"]{1,300})?", game.rules.contact_url()):
+        raise ClientError("Rules.contact_url must be empty or an http:// or https:// address with no spaces (a contact page, not a mailbox)")
     for field in ("client_dir", "assets_dir"):
         folder = getattr(game, field)
         if folder is not None and not Path(folder).is_dir():
@@ -165,7 +167,7 @@ async def manifest(request: Request, response: Response) -> dict:
         "modules": [f"/game/{name}" for name in game.client_modules] if game else [],
         "styles": [f"/game/{name}" for name in game.client_styles] if game else [],
         "assets": "/assets/" if request.app.state.asset_dirs else None,
-        "contact_url": request.app.state.settings.contact_url or None,
+        "contact_url": (game.rules.contact_url() or None) if game else None,
     }
 
 
