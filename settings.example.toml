@@ -12,6 +12,8 @@ secure_cookies = false
 
 # The address players reach the game at: links in emails start with it.
 public_url = "http://localhost:8000"
+# Where players ask for help or appeal (a contact page, not a mailbox): a link at the foot of the pages and in every email. Empty: none.
+contact_url = ""
 
 # Where the encryption key files are (mounted into the container).
 key_dir = "keys"

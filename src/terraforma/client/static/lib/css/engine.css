@@ -91,6 +91,7 @@ button:disabled { opacity: 0.6; cursor: progress; }
   padding: 0.75rem var(--gutter);
   border-bottom: 1px solid var(--border);
 }
+.site .foot { padding: 1rem var(--gutter); border-top: 1px solid var(--border); text-align: center; }
 .site .brand { font-weight: 700; text-decoration: none; color: var(--text); }
 .site nav { display: flex; gap: var(--gutter); }
 .page { max-width: 60rem; margin: 0 auto; padding: var(--gutter); }

@@ -102,7 +102,7 @@ def test_the_example_game_is_valid_and_its_tileset_is_drawn_by_its_assets(app_cl
 @pytest.mark.parametrize("game", [None], ids=["no game"])
 def test_an_app_without_a_game_still_serves_the_engines_client(app_client):
     assert expect(app_client.get("/api/client"), 200).json() == {
-        "engine": expect(app_client.get("/api/about"), 200).json()["engine"], "game": None, "modules": [], "styles": [], "assets": None,
+        "engine": expect(app_client.get("/api/about"), 200).json()["engine"], "game": None, "modules": [], "styles": [], "assets": None, "contact_url": None,
     }
     expect(app_client.get("/play/"), 200)
     expect(app_client.get("/assets/grass.svg"), 404)
@@ -144,3 +144,20 @@ def test_a_games_client_files_are_checked(tmp_path):
         with pytest.raises(ClientError):
             check_game_client(game)
             pytest.fail(f"accepted {what}")
+
+
+def test_the_manifest_gives_the_contact_address_only_when_the_operator_set_one(app_client):
+    assert expect(app_client.get("/api/client"), 200).json()["contact_url"] is None
+    app_client.app.state.settings.contact_url = "https://accounts.example/contact"
+    assert expect(app_client.get("/api/client"), 200).json()["contact_url"] == "https://accounts.example/contact"
+
+
+def test_every_email_ends_with_the_contact_address_when_one_is_set(app_client, mailbox):
+    from .test_accounts import MIKE, register
+
+    register(app_client)
+    assert "Contact us" not in mailbox.last_to(MIKE["email"]).body
+    app_client.app.state.settings.contact_url = "https://accounts.example/contact"
+    register(app_client, username="Other", email="other@example.com")
+    body = mailbox.last_to("other@example.com").body
+    assert body.rstrip().endswith("Need help? Contact us: https://accounts.example/contact")

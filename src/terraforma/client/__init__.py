@@ -15,7 +15,7 @@ The game's pictures and sounds (``Game(assets_dir=...)``) are served at ``/asset
     /monsters/      command a fight's monsters with no login (a guest, if the game takes guests)
     /profile/       the player's own page settings           /p/{token}  /p/team/{token}  /p/alliance/{token}   the public pages
     /confirm-email  /change-email  /reset-password  /confirm-2fa     the pages the emailed links open (account pages too)
-    GET /api/client what a page needs to know: the game's name, modules, styles and assets
+    GET /api/client what a page needs to know: the game's name, modules, styles, assets and contact_url
 """
 
 import re
@@ -165,6 +165,7 @@ async def manifest(request: Request, response: Response) -> dict:
         "modules": [f"/game/{name}" for name in game.client_modules] if game else [],
         "styles": [f"/game/{name}" for name in game.client_styles] if game else [],
         "assets": "/assets/" if request.app.state.asset_dirs else None,
+        "contact_url": request.app.state.settings.contact_url or None,
     }
 
 

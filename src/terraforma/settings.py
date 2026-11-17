@@ -187,6 +187,9 @@ class Settings(BaseModel):
     session_max_age: int = 60 * 60 * 24 * 14
     # The address players reach the game at, for links in emails.
     public_url: str = "http://localhost:8000"
+    # Where a player asks for help or appeals (an address of a contact page, never a mailbox). Empty: no link. Shown at the foot of the
+    # site's pages and at the end of every email the game sends.
+    contact_url: str = Field(default="", pattern=r"^(https?://[^\s<>\"]{1,300})?$")
     # Development without [mail]: messages are written here as .eml files.
     outbox_dir: Path = Path("outbox")
     # Where the encryption key files live (two slots: current and previous).
