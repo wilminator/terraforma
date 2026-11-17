@@ -203,7 +203,7 @@ async def current_account(request: Request, db: Db) -> Account:
         if account_id is not None:  # a stale login ends; a visitor mid-way through an external sign-in keeps theirs
             request.session.clear()
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "not logged in")
-    if account.suspended_by:  # (its logins ended when it was suspended; this keeps one that somehow survived out)
+    if account.is_blocked():  # (its logins ended when it was suspended; this keeps one that somehow survived out)
         request.session.clear()
         refuse_if_suspended(account)
     return account
@@ -230,7 +230,7 @@ async def viewer_id(request: Request, db: Db) -> int | None:
     """For public pages that no login is needed to see: the id of the logged-in account looking, or None for anyone else (a bad login is no error here)."""
     account_id = request.session.get(SESSION_ACCOUNT)
     account = await db.get(Account, account_id) if account_id is not None else None
-    if account is None or account.suspended_by or request.session.get(SESSION_VERSION) != account.session_version:
+    if account is None or account.is_blocked() or request.session.get(SESSION_VERSION) != account.session_version:
         return None
     return account.id
 

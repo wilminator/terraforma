@@ -1,12 +1,13 @@
 """Every engine model, imported here so their tables register together."""
 
 import secrets
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, false, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
+from . import wallclock
 from .db.base import Base, Timestamps
 from .keys import encrypted_column
 from .world.location import Located, Position
@@ -131,6 +132,10 @@ class Account(Timestamps, Base):
     # The sign-in provider (its name in settings.toml) that suspended this account, or None. A suspended account has no login by any method
     # (password, provider, remembered browser) until that provider reinstates it; its data stays. Only the account service decides this.
     suspended_by: Mapped[str | None] = mapped_column(String(32))
+    # What the provider said when it blocked the account: "ban" or "suspended", when the block began, and when it ends (None: it does not).
+    suspended_kind: Mapped[str | None] = mapped_column(String(12))
+    suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    suspended_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Every login carries this number; bumping it ends them all (a password reset does).
     session_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     # Two-factor login (see accounts.twofa). The secret is encrypted; it is set
@@ -148,6 +153,28 @@ class Account(Timestamps, Base):
     webauthn_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     # Set only by a game's own setup (``challenge.service.set_admin``), never by a call a player can make.
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+
+
+    def is_blocked(self, now: datetime | None = None) -> bool:
+        """Whether the sign-in provider has blocked this account and the block has not ended (``accounts.blocks``)."""
+        if not self.suspended_by:
+            return False
+        if self.suspended_until is None:
+            return True
+        until = self.suspended_until if self.suspended_until.tzinfo is not None else self.suspended_until.replace(tzinfo=UTC)
+        return until > (now or wallclock.now())
+
+
+class BlockHidden(Base):
+    """A name hidden from other players for as long as its owner's account is blocked, with what ``name_ok`` was before, so lifting the block
+    puts it back (``accounts.blocks``). ``kind`` is "account" (the handle), "hero" or "team"; ``row_id`` is the row's id."""
+
+    __tablename__ = "block_hidden"
+
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(8), primary_key=True)
+    row_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    name_ok_before: Mapped[bool | None] = mapped_column(Boolean)
 
 
 encrypted_column(Account.__table__.c.totp_secret, "accounts.totp_secret")
