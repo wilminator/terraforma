@@ -490,6 +490,40 @@ def ban(client, who, handle, hours=None, reason="", status=200):
     return call(client, "POST", who, "/api/chat/admin/ban", {"handle": handle, "hours": hours, "reason": reason}, status)
 
 
+def test_a_ban_emails_the_player_the_clause_the_reason_and_the_end(players, mailbox, monkeypatch):
+    from terraforma.fights.rules import Rules
+
+    client, _ = players
+    make_admin(client, "Yan")
+    monkeypatch.setattr(Rules, "contact_url", lambda self: "https://accounts.example/contact")
+    listed = call(client, "POST", "Yan", "/api/chat/admin/ban", {"handle": "zedthebold", "hours": 24, "reason": "rude", "clause": "Be kind"})["bans"]
+    assert listed[0]["clause"] == "Be kind"
+    mail = mailbox.last_to("zed@example.com")
+    assert mail.subject == "You are barred from chat in Test Game"
+    assert "The rule you broke: Be kind" in mail.body and "What the admin wrote: rude" in mail.body and " UTC." in mail.body
+    assert mail.body.rstrip().endswith("Need help? Contact us: https://accounts.example/contact")
+
+
+def test_a_ban_for_good_says_so_and_a_blank_clause_and_reason_are_left_out(players, mailbox):
+    client, _ = players
+    make_admin(client, "Yan")
+    ban(client, "Yan", "zedthebold")
+    body = mailbox.last_to("zed@example.com").body
+    assert "for good" in body and "The rule you broke" not in body and "What the admin wrote" not in body
+
+
+def test_a_game_can_word_the_ban_mail_or_send_none(players, mailbox, monkeypatch):
+    client, _ = players
+    make_admin(client, "Yan")
+    monkeypatch.setattr(Chat, "ban_message", lambda self, game, handle, until, reason, clause: ("Custom", f"Dear {handle}"))
+    ban(client, "Yan", "zedthebold", hours=1)
+    assert (mailbox.last_to("zed@example.com").subject, mailbox.last_to("zed@example.com").body) == ("Custom", "Dear Zedthe" + "Bold")
+    monkeypatch.setattr(Chat, "ban_message", lambda self, *args: None)
+    before = len(mailbox.sent)
+    ban(client, "Yan", "zedthebold", hours=2)
+    assert len(mailbox.sent) == before, "None sends no mail"
+
+
 def test_a_barred_player_can_read_but_not_speak_until_the_ban_is_lifted(players):
     client, _ = players
     make_admin(client, "Yan")

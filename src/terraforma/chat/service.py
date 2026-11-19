@@ -206,7 +206,7 @@ def _aware(moment: datetime) -> datetime:
     return moment if moment.tzinfo else moment.replace(tzinfo=wallclock.now().tzinfo)
 
 
-async def ban(session: AsyncSession, admin: Account, handle: str, hours: int | None, reason: str = "") -> ChatBan:
+async def ban(session: AsyncSession, admin: Account, handle: str, hours: int | None, reason: str = "", clause: str = "") -> ChatBan:
     """Bars the player from speaking for $hours (for good when None); a ban already on them is replaced. Admins can't be barred."""
     target = await session.scalar(select(Account).where(Account.handle_key == handle_key(handle)))
     if target is None:
@@ -216,10 +216,10 @@ async def ban(session: AsyncSession, admin: Account, handle: str, hours: int | N
     until = wallclock.now() + timedelta(hours=hours) if hours else None
     row = await session.scalar(select(ChatBan).where(ChatBan.account_id == target.id))
     if row is None:
-        row = ChatBan(account_id=target.id, until=until, reason=reason.strip()[:NOTE_MAX], by_id=admin.id)
+        row = ChatBan(account_id=target.id, until=until, reason=reason.strip()[:NOTE_MAX], clause=clause.strip()[:NOTE_MAX], by_id=admin.id)
         session.add(row)
     else:
-        row.until, row.reason, row.by_id = until, reason.strip()[:NOTE_MAX], admin.id
+        row.until, row.reason, row.clause, row.by_id = until, reason.strip()[:NOTE_MAX], clause.strip()[:NOTE_MAX], admin.id
     await session.flush()
     return row
 
@@ -233,4 +233,4 @@ async def unban(session: AsyncSession, handle: str) -> None:
 async def bans(session: AsyncSession) -> list[dict]:
     """The bans still running, oldest first."""
     rows = (await session.execute(select(ChatBan, Account.handle).join(Account, Account.id == ChatBan.account_id).order_by(ChatBan.id))).all()
-    return [{"handle": handle, "until": row.until, "reason": row.reason} for row, handle in rows if await active_ban(session, row.account_id) is not None]
+    return [{"handle": handle, "until": row.until, "reason": row.reason, "clause": row.clause} for row, handle in rows if await active_ban(session, row.account_id) is not None]

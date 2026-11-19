@@ -69,4 +69,6 @@ class ChatBan(Timestamps, Base):
     account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), unique=True)
     until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reason: Mapped[str] = mapped_column(String(NOTE_MAX), default="", server_default="")
+    # The clause of the game's terms the ban rests on, as the admin wrote it (the ban email quotes it).
+    clause: Mapped[str] = mapped_column(String(NOTE_MAX), default="", server_default="")
     by_id: Mapped[int] = mapped_column(Integer)
